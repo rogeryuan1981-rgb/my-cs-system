@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
 import { 
   Phone, MessageCircle, Clock, Save, FileText, BarChart3, 
   Search, CheckCircle, AlertCircle, User, Building2, 
@@ -10,7 +11,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // --- Firebase Initialization (正式上線版) ---
-// ⚠️ 請在此處填入您在 Firebase Console 第一階段取得的「專屬金鑰」內容
+// ⚠️ 請務必將以下欄位替換成您在 Firebase Console 取得的專屬內容！
 const firebaseConfig = {
   apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
   authDomain: "customerservice-1f9c0.firebaseapp.com",
@@ -38,7 +39,6 @@ const STATUS_OPTIONS = [
 
 const PROGRESS_OPTIONS = ["待處理", "處理中", "待回覆", "結案"];
 
-// --- Utility Functions ---
 const getFormatDate = (date = new Date()) => {
   const tzOffset = (new Date()).getTimezoneOffset() * 60000;
   return (new Date(date - tzOffset)).toISOString().slice(0, 16);
@@ -62,7 +62,7 @@ const getInitialForm = (currentUser = null) => ({
   notes: ''
 });
 
-export default function App() {
+function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('form');
   const [tickets, setTickets] = useState([]);
@@ -110,7 +110,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
-    // 監聽紀錄
     const q = query(collection(db, 'cs_records'));
     const unsubscribeDb = onSnapshot(q, (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -119,7 +118,6 @@ export default function App() {
       setLoading(false);
     });
 
-    // 監聽院所
     const qInst = query(collection(db, 'mohw_institutions'));
     const unsubscribeInst = onSnapshot(qInst, (snapshot) => {
       let instList = [];
@@ -250,7 +248,7 @@ export default function App() {
           const row = jsonData[i];
           if (!row || !row[1] || !row[3]) continue;
           const code = String(row[1]).trim().padStart(10, '0');
-          if (instMap[code] && typeof instMap[code] !== 'boolean') continue; 
+          if (instMap[code]) continue;
           const levelRaw = row[7] ? String(row[7]).trim().toUpperCase() : 'X';
           currentChunk.push({ code, name: String(row[3]).trim(), level: levelMapping[levelRaw] || '其他' });
           instMap[code] = true;
@@ -272,7 +270,7 @@ export default function App() {
 
   const filteredInsts = useMemo(() => {
     if (!instSearchTerm) return institutions;
-    return institutions.filter(inst => inst.code.includes(instSearchTerm) || inst.name.includes(instSearchTerm));
+    return institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm));
   }, [institutions, instSearchTerm]);
 
   const dashboardStats = useMemo(() => {
@@ -284,7 +282,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
-      {/* Sidebar */}
       <div className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
         <div className="p-6 border-b border-slate-100 flex items-center space-x-3">
           <div className="bg-blue-600 text-white p-2 rounded-lg"><PhoneCall size={24} /></div>
@@ -300,17 +297,15 @@ export default function App() {
 
       <div className="flex-1 overflow-auto bg-slate-50">
         <div className="p-4 md:p-8 max-w-6xl mx-auto">
-          {/* TAB 1: FORM */}
           {activeTab === 'form' && (
             <div className="animate-in fade-in space-y-6">
-              <div className="mb-6"><h2 className="text-2xl font-black">建立新案件</h2><p className="text-slate-400 text-sm">正式營運版：所有資料均永久保存於 Firebase 雲端。</p></div>
+              <div className="mb-6"><h2 className="text-2xl font-black">建立新案件</h2><p className="text-slate-400 text-sm">正式營運版：雲端同步中。</p></div>
               {submitStatus.msg && <div className={`p-4 rounded-xl flex items-center space-x-2 ${submitStatus.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}><CheckCircle size={20}/><span>{submitStatus.msg}</span></div>}
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                   <h3 className="font-bold mb-4 flex items-center text-blue-600"><User size={20} className="mr-2"/> 聯絡管道與人員</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div><label className="text-xs font-bold text-slate-400 uppercase">管道</label><select name="channel" value={formData.channel} onChange={handleChange} className="w-full mt-1 p-2.5 border rounded-xl bg-slate-50">
-                      <option>電話</option><option>LINE</option></select></div>
+                    <div><label className="text-xs font-bold text-slate-400 uppercase">管道</label><select name="channel" value={formData.channel} onChange={handleChange} className="w-full mt-1 p-2.5 border rounded-xl bg-slate-50"><option>電話</option><option>LINE</option></select></div>
                     <div><label className="text-xs font-bold text-slate-400 uppercase">時間</label><div className="flex mt-1"><input type="datetime-local" name="receiveTime" value={formData.receiveTime} onChange={handleChange} className="flex-1 p-2.5 border rounded-l-xl"/><button type="button" onClick={()=>handleSetCurrentTime('receiveTime')} className="bg-slate-100 px-3 border border-l-0 rounded-r-xl"><Clock size={16}/></button></div></div>
                     <div><label className="text-xs font-bold text-slate-400 uppercase">接收人員</label><input type="text" name="receiver" required value={formData.receiver} onChange={handleChange} className="w-full mt-1 p-2.5 border rounded-xl" placeholder="您的姓名"/></div>
                   </div>
@@ -319,10 +314,7 @@ export default function App() {
                   <h3 className="font-bold mb-4 flex items-center text-blue-600"><Building2 size={20} className="mr-2"/> 院所比對</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div><label className="text-xs font-bold text-slate-400 uppercase">院所代碼 (10碼)</label>
-                      <div className="relative mt-1">
-                        <input type="text" name="instCode" value={formData.instCode} onChange={handleChange} onBlur={handleInstCodeBlur} className="w-full p-2.5 border rounded-xl" placeholder="例如: 0101090517"/>
-                        {isLookingUp && <div className="absolute right-3 top-3 animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>}
-                      </div>
+                      <div className="relative mt-1"><input type="text" name="instCode" value={formData.instCode} onChange={handleChange} onBlur={handleInstCodeBlur} className="w-full p-2.5 border rounded-xl" placeholder="例如: 0101090517"/>{isLookingUp && <div className="absolute right-3 top-3 animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>}</div>
                     </div>
                     <div className="md:col-span-1"><label className="text-xs font-bold text-slate-400 uppercase">院所名稱</label><input type="text" name="instName" value={formData.instName} readOnly className="w-full mt-1 p-2.5 border rounded-xl bg-slate-50 text-slate-500"/></div>
                     <div><label className="text-xs font-bold text-slate-400 uppercase">層級</label><input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-full mt-1 p-2.5 border rounded-xl bg-slate-50 text-slate-500"/></div>
@@ -335,46 +327,39 @@ export default function App() {
                     <div><label className="text-sm font-medium">狀態</label><select name="status" value={formData.status} onChange={handleChange} className="w-full p-2.5 border rounded-xl">{STATUS_OPTIONS.map(s=><option key={s}>{s}</option>)}</select></div>
                     <div><label className="text-sm font-medium">進度</label><select name="progress" value={formData.progress} onChange={handleChange} className="w-full p-2.5 border rounded-xl font-bold">{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
                   </div>
-                  <div className="space-y-4">
-                    <textarea name="extraInfo" value={formData.extraInfo} onChange={handleChange} rows="3" className="w-full p-3 border rounded-xl" placeholder="問題詳情..."></textarea>
-                    <textarea name="replyContent" value={formData.replyContent} onChange={handleChange} rows="3" className="w-full p-3 border rounded-xl bg-blue-50/20" placeholder="給予的答覆..."></textarea>
-                  </div>
+                  <div className="space-y-4"><textarea name="extraInfo" value={formData.extraInfo} onChange={handleChange} rows="3" className="w-full p-3 border rounded-xl" placeholder="問題詳情..."></textarea><textarea name="replyContent" value={formData.replyContent} onChange={handleChange} rows="3" className="w-full p-3 border rounded-xl bg-blue-50/20" placeholder="給予的答覆..."></textarea></div>
                 </div>
-                <div className="flex justify-end pb-12">
-                  <button type="submit" disabled={submitStatus.type === 'loading'} className="px-10 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center shadow-lg hover:bg-blue-700">
-                    <Save size={20} className="mr-2"/> 儲存案件
-                  </button>
-                </div>
+                <div className="flex justify-end pb-12"><button type="submit" disabled={submitStatus.type === 'loading'} className="px-10 py-3 bg-blue-600 text-white rounded-2xl font-bold flex items-center shadow-lg hover:bg-blue-700"><Save size={20} className="mr-2"/> 儲存案件</button></div>
               </form>
             </div>
           )}
           {activeTab === 'list' && (
             <div className="animate-in fade-in space-y-6">
               <div className="flex justify-between items-center"><h2 className="text-2xl font-black">紀錄清單</h2><input type="text" placeholder="搜尋..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="p-2 border rounded-xl"/></div>
-              <div className="bg-white rounded-2xl shadow-sm border overflow-hidden"><table className="w-full text-left">
-                <thead className="bg-slate-50 border-b text-xs font-bold"><tr><th className="p-4">日期</th><th className="p-4">院所</th><th className="p-4">描述</th><th className="p-4">進度</th></tr></thead>
-                <tbody className="divide-y text-sm">
-                  {tickets.filter(t=> (t.instName||'').includes(searchTerm)).map(t=>(
-                    <tr key={t.id} className="hover:bg-slate-50"><td className="p-4">{new Date(t.receiveTime).toLocaleDateString()}</td><td className="p-4">{t.instName}</td><td className="p-4 truncate max-w-xs">{t.extraInfo}</td><td className="p-4"><span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold">{t.progress}</span></td></tr>
-                  ))}
+              <div className="bg-white rounded-2xl shadow-sm border overflow-hidden"><table className="w-full text-left"><thead className="bg-slate-50 border-b text-xs font-bold"><tr><th className="p-4">日期</th><th className="p-4">院所</th><th className="p-4">描述</th><th className="p-4">進度</th></tr></thead><tbody className="divide-y text-sm">
+                {tickets.filter(t=> (t.instName||'').includes(searchTerm)).map(t=>(<tr key={t.id} className="hover:bg-slate-50"><td className="p-4">{new Date(t.receiveTime).toLocaleDateString()}</td><td className="p-4">{t.instName}</td><td className="p-4 truncate max-w-xs">{t.extraInfo}</td><td className="p-4"><span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold">{t.progress}</span></td></tr>))}
                 </tbody></table></div>
             </div>
           )}
-          {activeTab === 'dashboard' && <div className="p-8 bg-white rounded-2xl border">案件總數：{dashboardStats.total} / 已結案：{dashboardStats.resolved}</div>}
+          {activeTab === 'dashboard' && <div className="p-8 bg-white rounded-2xl border shadow-sm text-lg font-bold">總案件數：{dashboardStats.total} / 已結案：{dashboardStats.resolved}</div>}
           {activeTab === 'settings' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
               <div className="space-y-6">
                 <div className="bg-white p-6 rounded-2xl border shadow-sm"><h3 className="font-bold mb-4">單筆新增</h3><form onSubmit={handleAddInst} className="space-y-4"><input type="text" placeholder="代碼" value={newInst.code} onChange={e=>setNewInst({...newInst, code:e.target.value})} className="w-full p-2.5 border rounded-xl"/><input type="text" placeholder="名稱" value={newInst.name} onChange={e=>setNewInst({...newInst, name:e.target.value})} className="w-full p-2.5 border rounded-xl"/><button type="submit" className="w-full py-2.5 bg-slate-800 text-white rounded-xl font-bold">手動存入</button></form></div>
                 <div className="bg-white p-6 rounded-2xl border shadow-sm"><h3 className="font-bold mb-2">批次匯入</h3><div className="relative"><input type="file" onChange={handleFileUpload} disabled={isImporting} className="absolute inset-0 opacity-0 cursor-pointer"/><button className="w-full py-2.5 bg-green-600 text-white rounded-xl font-bold">開始匯入</button></div></div>
               </div>
-              <div className="lg:col-span-2 bg-white rounded-2xl border shadow-sm h-[600px] flex flex-col">
-                <div className="p-4 bg-slate-50 border-b flex justify-between items-center"><h3 className="font-bold">雲端院所檔 ({institutions.length.toLocaleString()} 筆)</h3><button onClick={()=>setShowInstList(!showInstList)} className="text-blue-600 text-xs font-bold">{showInstList?'隱藏':'展開'}</button></div>
-                {showInstList && <div className="flex-1 overflow-auto"><table className="w-full text-left text-xs divide-y"><tbody>{filteredInsts.slice(0, 100).map(i=>(<tr key={i.id}><td className="p-2">{i.code}</td><td className="p-2">{i.name}</td></tr>))}</tbody></table></div>}
-              </div>
+              <div className="lg:col-span-2 bg-white rounded-2xl border shadow-sm h-[600px] flex flex-col"><div className="p-4 bg-slate-50 border-b flex justify-between items-center"><h3 className="font-bold">院所清單 ({institutions.length.toLocaleString()})</h3><button onClick={()=>setShowInstList(!showInstList)} className="text-blue-600 text-xs font-bold">{showInstList?'隱藏':'展開'}</button></div>{showInstList && <div className="flex-1 overflow-auto"><table className="w-full text-left text-xs divide-y"><tbody>{filteredInsts.slice(0, 100).map(i=>(<tr key={i.id}><td className="p-2 font-mono">{i.code}</td><td className="p-2">{i.name}</td></tr>))}</tbody></table></div>}</div>
             </div>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+// 核心修正：將程式碼渲染到 HTML 的 root 節點中
+const container = document.getElementById('root');
+if (container) {
+  const root = createRoot(container);
+  root.render(<App />);
 }
