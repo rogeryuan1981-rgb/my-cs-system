@@ -4,14 +4,15 @@ import {
   Phone, MessageCircle, Clock, Save, FileText, BarChart3, 
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
-  Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags
+  Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.3.0 (正式版)";
+const APP_VERSION = "v1.4.0 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -43,6 +44,7 @@ const DEFAULT_STATUS_OPTIONS = [
 
 const DEFAULT_CHANNELS = ["電話", "LINE"];
 const PROGRESS_OPTIONS = ["待處理", "處理中", "待回覆", "結案"];
+const DEFAULT_CANNED_MESSAGES = ["請提供更詳細的相關資訊以便查詢", "目前已由相關單位接手處理中", "此案件已協助處理完畢"];
 
 const ROLES = {
   ADMIN: "後台管理者",
@@ -130,7 +132,55 @@ const LineChart = ({ data, labels }) => {
   );
 };
 
-// 2. 主應用程式
+// 2. 罐頭文字側邊欄組件
+const CannedMessagesPanel = ({ messages }) => {
+  const [copyId, setCopyId] = useState(null);
+
+  const handleCopy = (text, idx) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setCopyId(idx);
+      setTimeout(() => setCopyId(null), 2000);
+    } catch (err) {
+      console.error('Copy failed', err);
+    }
+    document.body.removeChild(textArea);
+  };
+
+  return (
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 sticky top-6 flex flex-col h-full max-h-[800px]">
+      <h3 className="font-black text-slate-800 mb-4 flex items-center shrink-0">
+        <MessageSquare size={18} className="mr-2 text-blue-600"/> 罐頭回覆
+      </h3>
+      <div className="space-y-3 overflow-y-auto pr-2 flex-1">
+        {messages.map((m, idx) => (
+          <div 
+            key={idx} 
+            className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-300 hover:shadow-md transition-all group relative cursor-pointer" 
+            onClick={() => handleCopy(m, idx)}
+            title="點擊複製"
+          >
+            <p className="text-sm text-slate-600 line-clamp-4 leading-relaxed">{m}</p>
+            <button className="absolute top-2 right-2 p-1.5 bg-white rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600">
+              {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            </button>
+          </div>
+        ))}
+        {(!messages || messages.length === 0) && (
+          <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
+        )}
+      </div>
+      <div className="shrink-0 pt-4 mt-2 border-t border-slate-100 text-[10px] text-slate-400 text-center">點擊卡片即可快速複製文字</div>
+    </div>
+  );
+};
+
+
+// 3. 主應用程式
 export default function App() {
   // Auth State
   const [firebaseUser, setFirebaseUser] = useState(null);
@@ -144,12 +194,19 @@ export default function App() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
-  const [searchTerm, setSearchTerm] = useState('');
 
   // Dropdown States (Dynamic Settings)
   const [channels, setChannels] = useState(DEFAULT_CHANNELS);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [statuses, setStatuses] = useState(DEFAULT_STATUS_OPTIONS);
+  const [cannedMessages, setCannedMessages] = useState(DEFAULT_CANNED_MESSAGES);
+
+  // History State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [historyStartDate, setHistoryStartDate] = useState('');
+  const [historyEndDate, setHistoryEndDate] = useState('');
+  const [historyProgress, setHistoryProgress] = useState('全部');
+  const [sortConfig, setSortConfig] = useState({ key: 'receiveTime', direction: 'desc' });
 
   // Dashboard State
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
@@ -229,8 +286,7 @@ export default function App() {
     // 2. 監聽案件紀錄
     const unsubscribeTickets = onSnapshot(query(buildPath('cs_records')), (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      records.sort((a, b) => new Date(b.receiveTime) - new Date(a.receiveTime));
-      setTickets(records);
+      setTickets(records); // 排序改由前端動態處理
     });
 
     // 3. 監聽院所資料
@@ -262,12 +318,14 @@ export default function App() {
         if (data.channels) setChannels(data.channels);
         if (data.categories) setCategories(data.categories);
         if (data.statuses) setStatuses(data.statuses);
+        if (data.cannedMessages) setCannedMessages(data.cannedMessages);
       } else {
         // 如果還沒有設定檔，主動建立預設值
         setDoc(buildDocPath('cs_settings', 'dropdowns'), {
           channels: DEFAULT_CHANNELS,
           categories: DEFAULT_CATEGORIES,
-          statuses: DEFAULT_STATUS_OPTIONS
+          statuses: DEFAULT_STATUS_OPTIONS,
+          cannedMessages: DEFAULT_CANNED_MESSAGES
         });
       }
     });
@@ -514,7 +572,7 @@ export default function App() {
       setNewItem('');
     };
     const handleRemove = async (itemToRemove) => {
-      if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？這不會影響已存在的歷史紀錄，但後續無法再選擇此項目。`)) return;
+      if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
       const newArray = items.filter(i => i !== itemToRemove);
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
@@ -530,9 +588,9 @@ export default function App() {
         </form>
         <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
           {items.map(item => (
-            <li key={item} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm">
+            <li key={item} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm group">
               <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
-              <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>
+              <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
             </li>
           ))}
         </ul>
@@ -615,6 +673,76 @@ export default function App() {
   const filteredInsts = useMemo(() => {
     return institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm));
   }, [institutions, instSearchTerm]);
+
+  // --- History Filtering & Sorting ---
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const filteredAndSortedHistory = useMemo(() => {
+    // Filter
+    let result = tickets.filter(t => {
+      const matchSearch = searchTerm === '' || 
+        (t.ticketId||'').includes(searchTerm) || 
+        (t.instName||'').includes(searchTerm) || 
+        (t.extraInfo||'').includes(searchTerm) || 
+        (t.receiver||'').includes(searchTerm);
+      
+      const matchProgress = historyProgress === '全部' || t.progress === historyProgress;
+      
+      let matchDate = true;
+      if (historyStartDate && historyEndDate) {
+        const tDate = t.receiveTime.slice(0, 10);
+        matchDate = tDate >= historyStartDate && tDate <= historyEndDate;
+      }
+
+      return matchSearch && matchProgress && matchDate;
+    });
+
+    // Sort
+    result.sort((a, b) => {
+      let valA = a[sortConfig.key] || '';
+      let valB = b[sortConfig.key] || '';
+
+      if (sortConfig.key === 'receiveTime') {
+        valA = new Date(valA).getTime();
+        valB = new Date(valB).getTime();
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig]);
+
+  // History Sortable Header Component
+  const SortHeader = ({ label, sortKey, align = 'left' }) => {
+    const isActive = sortConfig.key === sortKey;
+    return (
+      <th 
+        className={`p-5 cursor-pointer hover:bg-slate-100 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'}`}
+        onClick={() => handleSort(sortKey)}
+      >
+        <div className={`flex items-center ${align === 'center' ? 'justify-center' : 'justify-start'} group`}>
+          {label}
+          <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
+            {isActive ? (
+              sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>
+            ) : (
+              <ArrowUpDown size={14} />
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
 
   // --- Analytics Data Generation ---
   const dashboardStats = useMemo(() => {
@@ -765,7 +893,7 @@ export default function App() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto bg-slate-50 relative">
-        <div className="p-4 md:p-10 max-w-6xl mx-auto">
+        <div className="p-4 md:p-8 lg:p-10 max-w-[1400px] mx-auto">
           
           {/* TAB 1: FORM */}
           {activeTab === 'form' && (
@@ -784,59 +912,70 @@ export default function App() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-8">
-                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                  <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c}>{c}</option>)}</select></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
-                    
-                    <div className="md:col-span-1">
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對)</label>
-                      <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
-                      <div className="flex space-x-4">
-                        <input type="text" name="instName" value={formData.instName} readOnly className="w-2/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-bold outline-none" placeholder="名稱"/>
-                        <input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" placeholder="層級"/>
+              {/* Layout for Form and Canned Messages */}
+              <div className="flex flex-col xl:flex-row gap-8 items-start">
+                
+                {/* Main Form Area */}
+                <form onSubmit={handleSubmit} className="flex-1 w-full space-y-8">
+                  <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                    <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
+                      <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c}>{c}</option>)}</select></div>
+                      <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
+                      
+                      <div className="md:col-span-1">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對)</label>
+                        <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
+                        <div className="flex space-x-4">
+                          <input type="text" name="instName" value={formData.instName} readOnly className="w-2/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-bold outline-none" placeholder="名稱"/>
+                          <input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" placeholder="層級"/>
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                    <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                      <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c}>{c}</option>)}</select></div>
+                      <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s}>{s}</option>)}</select></div>
+                      <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
+                      
+                      {/* 指派功能：只要不是結案即可指派 */}
+                      {formData.progress !== '結案' ? (
+                        <div className="animate-in zoom-in-95 duration-200">
+                          <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
+                          <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
+                             <option value="">-- 未指定 --</option>
+                             {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                          </select>
+                        </div>
+                      ) : <div></div>}
+                    </div>
+                    <div className="space-y-6">
+                      <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="詳細問題描述..."></textarea>
+                      <textarea id="replyContent" name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆 (選填)..."></textarea>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4 pb-12">
+                    <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:scale-95'}`}>
+                      {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
+                      {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Right Side: Canned Messages */}
+                <div className="w-full xl:w-80 shrink-0 h-full">
+                   <CannedMessagesPanel messages={cannedMessages} />
                 </div>
 
-                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                  <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
-                    
-                    {/* 指派功能：只要不是結案即可指派 */}
-                    {formData.progress !== '結案' ? (
-                      <div className="animate-in zoom-in-95 duration-200">
-                        <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
-                           <option value="">-- 未指定 --</option>
-                           {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
-                        </select>
-                      </div>
-                    ) : <div></div>}
-                  </div>
-                  <div className="space-y-6">
-                    <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="詳細問題描述..."></textarea>
-                    <textarea name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆 (選填)..."></textarea>
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-4 pb-12">
-                  <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:scale-95'}`}>
-                    {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
-                    {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
-                  </button>
-                </div>
-              </form>
+              </div>
             </div>
           )}
 
@@ -856,7 +995,7 @@ export default function App() {
                  </div>
                </div>
                
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
                   {maintainTicketsList.map(t => (
                     <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all group flex flex-col h-full relative">
                       <div className="absolute top-4 right-6 text-[10px] font-mono text-slate-300">#{t.ticketId || t.id.slice(0,8)}</div>
@@ -875,69 +1014,82 @@ export default function App() {
                   {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
                </div>
 
-               {/* 維護互動彈窗 */}
+               {/* 維護互動彈窗 - 放大版型以容納罐頭文字 */}
                {maintainModal && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                        <h3 className="font-black text-lg flex items-center"><Edit size={20} className="mr-2 text-blue-600"/> 案件維護 - {maintainModal.instName}</h3>
                        <button onClick={() => setMaintainModal(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
                      </div>
-                     <div className="p-8 overflow-y-auto flex-1 space-y-6">
-                       {/* 原始內容 (唯讀) */}
-                       <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                         <div className="flex justify-between">
-                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
-                           <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
-                         </div>
-                         <p className="text-sm text-slate-700">{maintainModal.extraInfo || '(無)'}</p>
-                       </div>
+                     
+                     {/* Modal Body with Flex Layout */}
+                     <div className="flex-1 flex flex-col xl:flex-row overflow-hidden min-h-[400px]">
                        
-                       {/* 歷史答覆軌跡 (唯讀) */}
-                       <div>
-                         <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
-                         {maintainModal.replies && maintainModal.replies.length > 0 ? (
-                           <div className="space-y-4">
-                             {maintainModal.replies.map((r, i) => (
-                               <div key={i} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
-                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
-                                 <div>
-                                   <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString()}</span></div>
-                                   <div className="text-sm text-slate-600">{r.content}</div>
+                       {/* Left Side: Form Details */}
+                       <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                         {/* 原始內容 (唯讀) */}
+                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                           <div className="flex justify-between">
+                             <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
+                             <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
+                           </div>
+                           <p className="text-sm text-slate-700">{maintainModal.extraInfo || '(無)'}</p>
+                         </div>
+                         
+                         {/* 歷史答覆軌跡 (唯讀) */}
+                         <div>
+                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
+                           {maintainModal.replies && maintainModal.replies.length > 0 ? (
+                             <div className="space-y-4">
+                               {maintainModal.replies.map((r, i) => (
+                                 <div key={i} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
+                                   <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
+                                   <div>
+                                     <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString()}</span></div>
+                                     <div className="text-sm text-slate-600 leading-relaxed">{r.content}</div>
+                                   </div>
                                  </div>
-                               </div>
-                             ))}
-                           </div>
-                         ) : <div className="text-sm text-slate-400 italic">尚無任何答覆紀錄</div>}
-                       </div>
+                               ))}
+                             </div>
+                           ) : <div className="text-sm text-slate-400 italic">尚無任何答覆紀錄</div>}
+                         </div>
 
-                       {/* 維護表單 */}
-                       <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100">
-                         <div className="grid grid-cols-2 gap-4">
-                           <div>
-                             <label className="text-xs font-black text-slate-800 mb-2 block">更新進度</label>
-                             <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 font-bold outline-none">
-                               {PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}
-                             </select>
-                           </div>
-                           {/* 變更指定用戶 (只要不是結案即可用) */}
-                           {maintainForm.progress !== '結案' ? (
+                         {/* 維護表單 */}
+                         <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100">
+                           <div className="grid grid-cols-2 gap-4">
                              <div>
-                               <label className="text-xs font-black text-red-600 mb-2 block">指派後續處理人</label>
-                               <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 border-2 border-red-200 rounded-xl font-bold text-red-700 outline-none">
-                                 <option value="">-- 未指定 --</option>
-                                 {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                               <label className="text-xs font-black text-slate-800 mb-2 block">更新進度</label>
+                               <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 font-bold outline-none">
+                                 {PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}
                                </select>
                              </div>
-                           ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50"/></div>}
-                         </div>
-                         <div>
-                           <label className="text-xs font-black text-slate-800 mb-2 block">追加新答覆 / 註記</label>
-                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="3" className="w-full p-4 border border-slate-200 rounded-2xl bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入新的答覆，儲存後將不可修改..."></textarea>
-                         </div>
-                       </form>
+                             {/* 變更指定用戶 (只要不是結案即可用) */}
+                             {maintainForm.progress !== '結案' ? (
+                               <div>
+                                 <label className="text-xs font-black text-red-600 mb-2 block">指派後續處理人</label>
+                                 <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 border-2 border-red-200 rounded-xl font-bold text-red-700 outline-none">
+                                   <option value="">-- 未指定 --</option>
+                                   {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                                 </select>
+                               </div>
+                             ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50"/></div>}
+                           </div>
+                           <div>
+                             <label className="text-xs font-black text-slate-800 mb-2 block">追加新答覆 / 註記</label>
+                             <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 border border-slate-200 rounded-2xl bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入新的答覆，或從右側點擊罐頭文字貼上..."></textarea>
+                           </div>
+                         </form>
+                       </div>
+
+                       {/* Right Side: Canned Messages in Modal */}
+                       <div className="w-full xl:w-80 border-t xl:border-t-0 xl:border-l border-slate-100 bg-slate-50/50 p-6 overflow-y-auto shrink-0">
+                         <CannedMessagesPanel messages={cannedMessages} />
+                       </div>
+
                      </div>
-                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+
+                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
                        <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl mr-4 transition-colors">取消</button>
                        <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
                      </div>
@@ -950,29 +1102,57 @@ export default function App() {
           {/* TAB 2: LIST (歷史查詢區 Moved below MAINTENANCE) */}
           {activeTab === 'list' && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
-               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                 <h2 className="text-3xl font-black text-slate-900 tracking-tight">歷史查詢區</h2>
-                 <div className="relative w-full md:w-80">
-                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
-                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+               <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                 <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">歷史查詢區</h2>
+                 
+                 {/* 進階複合查詢篩選器 */}
+                 <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
+                   {/* Date Filter */}
+                   <div className="flex items-center space-x-2 bg-white px-3 py-2.5 border border-slate-200 rounded-2xl shadow-sm shrink-0">
+                     <Calendar size={16} className="text-slate-400"/>
+                     <input type="date" value={historyStartDate} onChange={e=>setHistoryStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
+                     <span className="text-slate-300 text-xs">至</span>
+                     <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
+                   </div>
+                   {/* Progress Filter */}
+                   <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white px-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm font-bold text-sm text-slate-700 outline-none shrink-0">
+                     <option value="全部">全部進度</option>
+                     {PROGRESS_OPTIONS.map(p=><option key={p} value={p}>{p}</option>)}
+                   </select>
+                   {/* Keyword Filter */}
+                   <div className="relative flex-1 xl:w-72">
+                     <Search size={18} className="absolute left-4 top-3 text-slate-400"/>
+                     <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                   </div>
                  </div>
                </div>
+               
                <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-                 <div className="overflow-x-auto">
+                 <div className="overflow-x-auto min-h-[400px]">
                    <table className="w-full text-left">
                      <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                       <tr><th className="p-5">案件號/日期</th><th className="p-5">院所</th><th className="p-5">描述/回覆摘要</th><th className="p-5">建立/負責人</th><th className="p-5 text-center">進度</th></tr>
+                       <tr>
+                         <SortHeader label="案件號/日期" sortKey="receiveTime" />
+                         <SortHeader label="院所" sortKey="instName" />
+                         <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
+                         <SortHeader label="建立/負責人" sortKey="receiver" />
+                         <SortHeader label="進度" sortKey="progress" align="center" />
+                       </tr>
                      </thead>
                      <tbody className="divide-y text-sm font-medium">
-                       {tickets.filter(t=> (t.ticketId||'').includes(searchTerm) || (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.receiver||'').includes(searchTerm)).map(t=>(
-                         <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                           <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
-                           <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                           <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
-                           <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
-                           <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
-                         </tr>
-                       ))}
+                       {filteredAndSortedHistory.length === 0 ? (
+                         <tr><td colSpan="5" className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
+                       ) : (
+                         filteredAndSortedHistory.map(t=>(
+                           <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                             <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                             <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
+                             <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
+                             <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
+                             <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                           </tr>
+                         ))
+                       )}
                      </tbody>
                    </table>
                  </div>
@@ -1077,6 +1257,15 @@ export default function App() {
                 </form>
                 {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 animate-pulse' : 'text-green-600'}`}>{pwdChangeMsg}</p>}
               </div>
+
+              {/* 罐頭文字維護區 (管理員與一般使用者可見) */}
+              {currentUser.role !== ROLES.VIEWER && (
+                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
+                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><MessageSquare size={20} className="mr-2 text-indigo-600"/> 罐頭文字維護</h3>
+                  <p className="text-xs text-slate-500 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」右側面板中。</p>
+                  <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
+                </div>
+              )}
 
               {/* 以下功能僅管理員可見 */}
               {currentUser.role === ROLES.ADMIN && (
