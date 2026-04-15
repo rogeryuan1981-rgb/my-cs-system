@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.5.2 (正式版)";
+const APP_VERSION = "v1.5.3 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -87,13 +87,13 @@ const getInitialForm = (username = '') => ({
   replies: []
 });
 
-// 格式化回覆歷史軌跡
+// 格式化回覆歷史軌跡 (修改為只換一行)
 const formatRepliesHistory = (replies, fallbackContent) => {
   if (replies && replies.length > 0) {
     return replies.map(r => {
       const timeStr = new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
       return `${r.content} (${r.user} ${timeStr})`;
-    }).join('\n\n');
+    }).join('\n');
   }
   return fallbackContent || '';
 };
@@ -1294,19 +1294,19 @@ export default function App() {
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <h2 className="text-3xl font-black text-slate-900 tracking-tight">進階統計區</h2>
               
-              {/* 原本三個重要數據復原，並改為靠右排版 */}
+              {/* 修改：頂部數據置左、文字上移放大 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
-                  <div className="text-slate-500 text-lg md:text-xl font-bold mb-2 text-right">總件數</div>
-                  <div className="text-5xl font-black text-slate-900 leading-none text-right">{dashboardStats.total}</div>
+                <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
+                  <div className="text-5xl md:text-6xl font-black text-slate-900 leading-none text-right">{dashboardStats.total}</div>
                 </div>
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
-                  <div className="text-slate-500 text-lg md:text-xl font-bold mb-2 text-right">待處理件數</div>
-                  <div className="text-5xl font-black text-red-500 leading-none text-right">{dashboardStats.pending}</div>
+                <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xl md:text-2xl font-black text-left mb-6">待處理件數</div>
+                  <div className="text-5xl md:text-6xl font-black text-red-500 leading-none text-right">{dashboardStats.pending}</div>
                 </div>
-                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
-                  <div className="text-slate-500 text-lg md:text-xl font-bold mb-2 text-right">完成率</div>
-                  <div className="text-5xl font-black text-blue-600 leading-none text-right">{dashboardStats.completionRate}%</div>
+                <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
+                  <div className="text-5xl md:text-6xl font-black text-blue-600 leading-none text-right">{dashboardStats.completionRate}%</div>
                 </div>
               </div>
 
