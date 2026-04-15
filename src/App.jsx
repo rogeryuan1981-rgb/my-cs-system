@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.5.1 (正式版)";
+const APP_VERSION = "v1.5.2 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -86,6 +86,26 @@ const getInitialForm = (username = '') => ({
   assignee: '',
   replies: []
 });
+
+// 格式化回覆歷史軌跡
+const formatRepliesHistory = (replies, fallbackContent) => {
+  if (replies && replies.length > 0) {
+    return replies.map(r => {
+      const timeStr = new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      return `${r.content} (${r.user} ${timeStr})`;
+    }).join('\n\n');
+  }
+  return fallbackContent || '';
+};
+
+// 取得最新一筆回覆內容
+const getLatestReply = (replies, fallbackContent) => {
+  if (replies && replies.length > 0) {
+    return replies[replies.length - 1].content;
+  }
+  return fallbackContent || '';
+};
+
 
 // --- Components ---
 
@@ -620,24 +640,28 @@ export default function App() {
       return;
     }
 
-    const exportData = filteredAndSortedHistory.map(t => ({
-      '案件號': t.ticketId || '',
-      '接收時間': new Date(t.receiveTime).toLocaleString(),
-      '反映管道': t.channel || '',
-      // 加入 \u200B (Zero-width space) 強制轉為文字，避免 Excel 開啟時去除首碼 0
-      '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '',
-      '院所名稱': t.instName || '',
-      '醫療層級': t.instLevel || '',
-      '提問人資訊': t.questioner || '',
-      '業務類別': t.category || '',
-      '案件狀態': t.status || '',
-      '處理進度': t.progress || '',
-      '建檔人': t.receiver || '',
-      '指定處理人': t.assignee || '',
-      '詳細問題描述': t.extraInfo || '',
-      '回覆內容': t.replyContent || '',
-      '結案時間': t.closeTime ? new Date(t.closeTime).toLocaleString() : ''
-    }));
+    const exportData = filteredAndSortedHistory.map(t => {
+      const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
+
+      return {
+        '案件號': t.ticketId || '',
+        '接收時間': new Date(t.receiveTime).toLocaleString(),
+        '反映管道': t.channel || '',
+        // 加入 \u200B (Zero-width space) 強制轉為文字，避免 Excel 開啟時去除首碼 0
+        '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '',
+        '院所名稱': t.instName || '',
+        '醫療層級': t.instLevel || '',
+        '提問人資訊': t.questioner || '',
+        '業務類別': t.category || '',
+        '案件狀態': t.status || '',
+        '處理進度': t.progress || '',
+        '建檔人': t.receiver || '',
+        '指定處理人': t.assignee || '',
+        '詳細問題描述': t.extraInfo || '',
+        '回覆內容(完整紀錄)': fullHistoryStr || '',
+        '結案時間': t.closeTime ? new Date(t.closeTime).toLocaleString() : ''
+      };
+    });
 
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new();
@@ -1129,7 +1153,7 @@ export default function App() {
                                <div key={i} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
                                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
                                  <div>
-                                   <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString()}</span></div>
+                                   <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
                                    <div className="text-sm text-slate-600 leading-relaxed">{r.content}</div>
                                  </div>
                                </div>
@@ -1233,26 +1257,30 @@ export default function App() {
                        {filteredAndSortedHistory.length === 0 ? (
                          <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
                        ) : (
-                         filteredAndSortedHistory.map(t=>(
-                           <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                             <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
-                             <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                             <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
-                             <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
-                             <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
-                             {currentUser.role === ROLES.ADMIN && (
-                               <td className="p-5 text-center">
-                                 <button 
-                                   onClick={() => handleDeleteTicket(t.id, t.ticketId)} 
-                                   className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" 
-                                   title="刪除此筆紀錄"
-                                 >
-                                   <Trash2 size={16}/>
-                                 </button>
-                               </td>
-                             )}
-                           </tr>
-                         ))
+                         filteredAndSortedHistory.map(t => {
+                           const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
+                           const latestReplyStr = getLatestReply(t.replies, t.replyContent);
+                           return (
+                             <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                               <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
+                               <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={fullHistoryStr || '尚無回覆紀錄'}>答: {latestReplyStr || '-'}</div></td>
+                               <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
+                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                               {currentUser.role === ROLES.ADMIN && (
+                                 <td className="p-5 text-center">
+                                   <button 
+                                     onClick={() => handleDeleteTicket(t.id, t.ticketId)} 
+                                     className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" 
+                                     title="刪除此筆紀錄"
+                                   >
+                                     <Trash2 size={16}/>
+                                   </button>
+                                 </td>
+                               )}
+                             </tr>
+                           )
+                         })
                        )}
                      </tbody>
                    </table>
