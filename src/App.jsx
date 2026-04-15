@@ -131,13 +131,14 @@ const LineChart = ({ data, labels }) => {
 // 2. 主應用程式
 export default function App() {
   // Auth State
-  const [dbUsers, setDbUsers] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [firebaseUser, setFirebaseUser] = useState(null); // Firebase 底層權限
+  const [dbUsers, setDbUsers] = useState([]); // 自訂用戶清單
+  const [currentUser, setCurrentUser] = useState(null); // 當前登入用戶
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [authError, setAuthError] = useState('');
   
   // App State
-  const [activeTab, setActiveTab] = useState('form'); // form, list, maintenance, dashboard, settings
+  const [activeTab, setActiveTab] = useState('form'); 
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
@@ -168,7 +169,7 @@ export default function App() {
   const [formData, setFormData] = useState(getInitialForm());
   const [isLookingUp, setIsLookingUp] = useState(false);
 
-  // --- Initialization ---
+  // --- Initialization (第一層：確保獲得存取權限) ---
   useEffect(() => {
     if (!document.getElementById('xlsx-script')) {
       const script = document.createElement('script');
@@ -177,24 +178,41 @@ export default function App() {
       document.body.appendChild(script);
     }
 
-    // 啟動匿名登入以獲取 Firestore 權限
-    signInAnonymously(auth).catch(e => console.error("Firebase Auth Error:", e));
+    const initAuth = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Firebase Auth Error:", error);
+      }
+    };
+    initAuth();
 
-    // 監聽使用者清單
+    const unsubscribeAuth = onAuthStateChanged(auth, (fUser) => {
+      setFirebaseUser(fUser);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // --- Data Fetching (第二層：驗證成功後抓取資料) ---
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    // 1. 監聽使用者清單
     const unsubscribeUsers = onSnapshot(query(collection(db, 'cs_users')), (snapshot) => {
       const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDbUsers(usersList);
       setLoading(false);
     });
 
-    // 監聽案件紀錄
+    // 2. 監聽案件紀錄
     const unsubscribeTickets = onSnapshot(query(collection(db, 'cs_records')), (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       records.sort((a, b) => new Date(b.receiveTime) - new Date(a.receiveTime));
       setTickets(records);
     });
 
-    // 監聽院所資料
+    // 3. 監聽院所資料
     const unsubscribeInst = onSnapshot(query(collection(db, 'mohw_institutions')), (snapshot) => {
       let instList = [];
       const map = {};
@@ -216,8 +234,12 @@ export default function App() {
       setInstMap(map);
     });
 
-    return () => { unsubscribeUsers(); unsubscribeTickets(); unsubscribeInst(); };
-  }, []);
+    return () => { 
+      unsubscribeUsers(); 
+      unsubscribeTickets(); 
+      unsubscribeInst(); 
+    };
+  }, [firebaseUser]);
 
   // --- Auth Handlers ---
   const handleLogin = (e) => {
@@ -243,6 +265,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
       setAuthError('管理員建立成功，請點擊登入');
+      setLoginForm({ username: '', password: '' });
     } catch (e) { setAuthError('建立失敗'); }
   };
 
@@ -615,13 +638,13 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option>電話</option><option>LINE</option></select></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option>電話</option><option>LINE</option></select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對)</label>
-                      <input type="text" name="instCode" value={formData.instCode} onChange={handleChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
+                      <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
                     </div>
                     <div className="md:col-span-2">
                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
@@ -636,15 +659,15 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{STATUS_OPTIONS.map(s=><option key={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{STATUS_OPTIONS.map(s=><option key={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
                     
                     {/* 指派功能：只有待處理可見 */}
                     {formData.progress === '待處理' ? (
                       <div className="animate-in zoom-in-95 duration-200">
                         <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                        <select name="assignee" value={formData.assignee} onChange={handleChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
+                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
                            <option value="">-- 未指定 --</option>
                            {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
@@ -652,8 +675,8 @@ export default function App() {
                     ) : <div></div>}
                   </div>
                   <div className="space-y-6">
-                    <textarea name="extraInfo" value={formData.extraInfo} onChange={handleChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="詳細問題描述..."></textarea>
-                    <textarea name="replyContent" value={formData.replyContent} onChange={handleChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆 (選填)..."></textarea>
+                    <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="詳細問題描述..."></textarea>
+                    <textarea name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆 (選填)..."></textarea>
                   </div>
                 </div>
 
