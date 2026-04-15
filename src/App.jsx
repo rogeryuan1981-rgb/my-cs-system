@@ -16,12 +16,12 @@ const APP_VERSION = "v1.3.0 (正式版)";
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   // ⚠️ 如果不在 Vercel 整合環境，請在此替換您的金鑰
-  apiKey: "您的_API_KEY",
-  authDomain: "您的專案ID.firebaseapp.com",
-  projectId: "您的專案ID",
-  storageBucket: "您的專案ID.appspot.com",
-  messagingSenderId: "您的發送者ID",
-  appId: "您的APP_ID"
+  apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
+  authDomain: "customerservice-1f9c0.firebaseapp.com",
+  projectId: "customerservice-1f9c0",
+  storageBucket: "customerservice-1f9c0.firebasestorage.app",
+  messagingSenderId: "34677415846",
+  appId: "1:34677415846:web:880d8fafafbb66ad6fb967"
 };
 
 const app = initializeApp(firebaseConfig);
