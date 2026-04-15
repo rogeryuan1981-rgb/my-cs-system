@@ -17,12 +17,12 @@ const APP_VERSION = "v1.5.0 (正式版)";
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   // ⚠️ 如果不在 Vercel 整合環境，請在此替換您的金鑰
-  apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
-  authDomain: "customerservice-1f9c0.firebaseapp.com",
-  projectId: "customerservice-1f9c0",
-  storageBucket: "customerservice-1f9c0.firebasestorage.app",
-  messagingSenderId: "34677415846",
-  appId: "1:34677415846:web:880d8fafafbb66ad6fb967"
+  apiKey: "您的_API_KEY",
+  authDomain: "您的專案ID.firebaseapp.com",
+  projectId: "您的專案ID",
+  storageBucket: "您的專案ID.appspot.com",
+  messagingSenderId: "您的發送者ID",
+  appId: "您的APP_ID"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -145,7 +145,11 @@ const CannedMessagesModal = ({ messages, onClose }) => {
     try {
       document.execCommand('copy');
       setCopyId(idx);
-      setTimeout(() => setCopyId(null), 2000);
+      // 縮短顯示成功圖示的時間，然後自動關閉視窗
+      setTimeout(() => {
+        setCopyId(null);
+        onClose();
+      }, 500); 
     } catch (err) {
       console.error('Copy failed', err);
     }
@@ -167,7 +171,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
               key={idx} 
               className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-300 hover:shadow-md transition-all group relative cursor-pointer" 
               onClick={() => handleCopy(m, idx)}
-              title="點擊複製"
+              title="點擊複製並關閉"
             >
               <p className="text-sm text-slate-600 line-clamp-4 leading-relaxed pr-6">{m}</p>
               <button className="absolute top-2 right-2 p-1.5 bg-white rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600">
@@ -180,7 +184,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
           )}
         </div>
         <div className="p-4 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-500 font-bold text-center shrink-0 flex items-center justify-center">
-          <CheckCircle size={14} className="mr-1 text-green-500"/> 點擊卡片即可複製，請自行貼入答覆框中
+          <CheckCircle size={14} className="mr-1 text-green-500"/> 點擊卡片即可複製並自動關閉視窗，請自行貼入答覆框中
         </div>
       </div>
     </div>
