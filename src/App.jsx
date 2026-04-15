@@ -399,6 +399,9 @@ export default function App() {
 
   // --- Maintenance Handlers ---
   const maintainTicketsList = useMemo(() => {
+    // 💣 修正點：加入 currentUser 防呆判斷，防止尚未登入就計算清單導致 null 崩潰
+    if (!currentUser) return [];
+
     return tickets.filter(t => {
       const matchSearch = maintainSearchTerm ? 
         ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
