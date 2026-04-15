@@ -5,7 +5,7 @@ import {
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -54,6 +54,7 @@ const getLastDayOfMonth = () => {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
+  // 取得當月的最後一天
   const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
   return `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
 };
@@ -66,7 +67,7 @@ const getToday = () => {
   return `${y}-${m}-${day}`;
 };
 
-// 初始表單不再帶入寫死的選項，完全由 State 動態決定
+// 表單初始狀態完全淨空，稍後由資料庫讀取後動態帶入
 const getInitialForm = (username = '') => ({
   receiveTime: getFormatDate(),
   callEndTime: '',
@@ -202,7 +203,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
 
-  // Dropdown States (Strictly Data-Driven)
+  // Dropdown States (100% Data-Driven)
   const [channels, setChannels] = useState([]);
   const [categories, setCategories] = useState([]);
   const [statuses, setStatuses] = useState([]);
@@ -214,14 +215,14 @@ export default function App() {
   const [formData, setFormData] = useState(getInitialForm());
   const [isLookingUp, setIsLookingUp] = useState(false);
 
-  // 當動態選單讀取完成後，自動為新增表單帶入預設首選項 (如果尚未選擇)
+  // 當動態選單讀取完成後，自動為新增表單帶入預設首選項
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
       channel: prev.channel || (channels[0] || ''),
       category: prev.category || (categories[0] || ''),
       status: prev.status || (statuses[0] || ''),
-      progress: prev.progress || (progresses[0] || '待處理')
+      progress: prev.progress || (progresses[0] || '')
     }));
   }, [channels, categories, statuses, progresses]);
 
@@ -341,14 +342,15 @@ export default function App() {
         setProgresses(data.progresses || []);
         setCannedMessages(data.cannedMessages || []);
       } else {
-        // 若為空資料庫，給予一組基礎預設值防呆
-        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
+        // 如果還沒有設定檔，建立預設值防呆
+        const defaultSettings = {
           channels: ["電話", "LINE"],
           categories: ["慢防-成人預防保健", "其他"],
           statuses: ["詢問步驟", "其他"],
           progresses: ["待處理", "處理中", "待回覆", "結案"],
           cannedMessages: ["請提供更詳細的相關資訊以便查詢"]
-        });
+        };
+        setDoc(buildDocPath('cs_settings', 'dropdowns'), defaultSettings);
       }
     });
 
@@ -453,6 +455,7 @@ export default function App() {
     let newFormData = { ...formData, [name]: value };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
+    // 若是結案，清空指派
     if (name === 'progress' && value === '結案') newFormData.assignee = '';
     setFormData(newFormData);
   };
@@ -508,7 +511,7 @@ export default function App() {
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       
-      // 送出後維持目前選單最新狀態
+      // 送出後維持目前動態選單預設值
       setFormData(prev => ({
         ...getInitialForm(currentUser.username),
         channel: channels.includes(prev.channel) ? prev.channel : (channels[0] || ''),
@@ -586,6 +589,44 @@ export default function App() {
     } catch (error) {
       alert("更新失敗：" + error.message);
     }
+  };
+
+  // --- Export Excel Handler ---
+  const handleExportExcel = () => {
+    if (!window.XLSX) {
+      alert("Excel 模組尚未載入完成，請稍後再試。");
+      return;
+    }
+    if (filteredAndSortedHistory.length === 0) {
+      alert("目前沒有資料可以匯出。");
+      return;
+    }
+
+    const exportData = filteredAndSortedHistory.map(t => ({
+      '案件號': t.ticketId || '',
+      '接收時間': new Date(t.receiveTime).toLocaleString(),
+      '反映管道': t.channel || '',
+      // 加入 \u200B (Zero-width space) 強制轉為文字，避免 Excel 開啟時去除首碼 0
+      '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '',
+      '院所名稱': t.instName || '',
+      '醫療層級': t.instLevel || '',
+      '提問人資訊': t.questioner || '',
+      '業務類別': t.category || '',
+      '案件狀態': t.status || '',
+      '處理進度': t.progress || '',
+      '建檔人': t.receiver || '',
+      '指定處理人': t.assignee || '',
+      '詳細問題描述': t.extraInfo || '',
+      '回覆內容': t.replyContent || '',
+      '結案時間': t.closeTime ? new Date(t.closeTime).toLocaleString() : ''
+    }));
+
+    const ws = window.XLSX.utils.json_to_sheet(exportData);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "歷史查詢結果");
+    
+    const fileName = `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`;
+    window.XLSX.writeFile(wb, fileName);
   };
 
   // --- Dynamic Dropdown Handlers (Settings) ---
@@ -776,7 +817,7 @@ export default function App() {
   // --- Analytics Data Generation ---
   const dashboardStats = useMemo(() => {
     const total = tickets.length;
-    const pending = tickets.filter(t => t.progress !== '結案').length; // 計算所有未結案為待處理 (與使用者期望可能相符)
+    const pending = tickets.filter(t => t.progress !== '結案').length; // 未結案皆視為待處理
     const resolved = tickets.filter(t => t.progress === '結案').length;
     const completionRate = total ? Math.round((resolved/total)*100) : 0;
     
@@ -1126,8 +1167,17 @@ export default function App() {
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                  <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">歷史查詢區</h2>
                  
-                 {/* 進階複合查詢篩選器 */}
+                 {/* 進階複合查詢篩選器與匯出按鈕 */}
                  <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
+                   {/* 匯出 Excel 按鈕 */}
+                   <button 
+                     onClick={handleExportExcel}
+                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm shrink-0"
+                   >
+                     <Download size={16} />
+                     <span>匯出 Excel</span>
+                   </button>
+
                    {/* Date Filter */}
                    <div className="flex items-center space-x-2 bg-white px-3 py-2.5 border border-slate-200 rounded-2xl shadow-sm shrink-0">
                      <Calendar size={16} className="text-slate-400"/>
