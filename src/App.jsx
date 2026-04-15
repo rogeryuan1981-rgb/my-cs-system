@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.5.3 (正式版)";
+const APP_VERSION = "v1.6.0 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -54,7 +54,6 @@ const getLastDayOfMonth = () => {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
-  // 取得當月的最後一天
   const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
   return `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
 };
@@ -165,7 +164,6 @@ const CannedMessagesModal = ({ messages, onClose }) => {
     try {
       document.execCommand('copy');
       setCopyId(idx);
-      // 縮短顯示成功圖示的時間，然後自動關閉視窗
       setTimeout(() => {
         setCopyId(null);
         onClose();
@@ -234,6 +232,9 @@ export default function App() {
   const [progresses, setProgresses] = useState([]);
   const [cannedMessages, setCannedMessages] = useState([]);
   const [showCannedModal, setShowCannedModal] = useState(false);
+
+  // History Import State
+  const [isImportingHistory, setIsImportingHistory] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState(getInitialForm());
@@ -629,7 +630,7 @@ export default function App() {
     }
   };
 
-  // --- Export Excel Handler ---
+  // --- Export / Import Excel Handler ---
   const handleExportExcel = () => {
     if (!window.XLSX) {
       alert("Excel 模組尚未載入完成，請稍後再試。");
@@ -645,7 +646,7 @@ export default function App() {
 
       return {
         '案件號': t.ticketId || '',
-        '接收時間': new Date(t.receiveTime).toLocaleString(),
+        '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
         '反映管道': t.channel || '',
         // 加入 \u200B (Zero-width space) 強制轉為文字，避免 Excel 開啟時去除首碼 0
         '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '',
@@ -659,7 +660,7 @@ export default function App() {
         '指定處理人': t.assignee || '',
         '詳細問題描述': t.extraInfo || '',
         '回覆內容(完整紀錄)': fullHistoryStr || '',
-        '結案時間': t.closeTime ? new Date(t.closeTime).toLocaleString() : ''
+        '結案時間(YYYY-MM-DD HH:mm)': t.closeTime ? t.closeTime.replace('T', ' ') : ''
       };
     });
 
@@ -669,6 +670,104 @@ export default function App() {
     
     const fileName = `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`;
     window.XLSX.writeFile(wb, fileName);
+  };
+
+  const handleDownloadTemplate = () => {
+    if (!window.XLSX) return alert("Excel 模組尚未載入完成，請稍後再試。");
+    const headers = [
+      '案件號', '接收時間(YYYY-MM-DD HH:mm)', '反映管道', '院所代碼', '院所名稱', 
+      '醫療層級', '提問人資訊', '業務類別', '案件狀態', '處理進度', 
+      '建檔人', '指定處理人', '詳細問題描述', '回覆內容(完整紀錄)', '結案時間(YYYY-MM-DD HH:mm)'
+    ];
+    const ws = window.XLSX.utils.aoa_to_sheet([headers]);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "匯入範本");
+    window.XLSX.writeFile(wb, "歷史紀錄匯入範本.xlsx");
+  };
+
+  const handleImportHistoryExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !window.XLSX) return;
+    if (currentUser?.role !== ROLES.ADMIN) return alert("無權限執行此操作");
+
+    setIsImportingHistory(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = window.XLSX.read(data, { type: 'array' });
+        const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        
+        let added = 0;
+        let batch = writeBatch(db);
+        let count = 0;
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+
+        for (const row of jsonData) {
+          const ticketId = row['案件號'] ? String(row['案件號']).trim() : '歷史資料匯入';
+          
+          let rTime = getFormatDate();
+          if (row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間']) {
+             const parsedTime = new Date(row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間']);
+             if(!isNaN(parsedTime)) rTime = getFormatDate(parsedTime);
+          }
+
+          let cTime = '';
+          if (row['結案時間(YYYY-MM-DD HH:mm)'] || row['結案時間']) {
+             const parsedTime = new Date(row['結案時間(YYYY-MM-DD HH:mm)'] || row['結案時間']);
+             if(!isNaN(parsedTime)) cTime = getFormatDate(parsedTime);
+          }
+
+          const recordData = {
+            ticketId: ticketId,
+            receiveTime: rTime,
+            channel: String(row['反映管道'] || ''),
+            instCode: String(row['院所代碼'] || '').replace('\u200B', ''), 
+            instName: String(row['院所名稱'] || ''),
+            instLevel: String(row['醫療層級'] || ''),
+            questioner: String(row['提問人資訊'] || ''),
+            category: String(row['業務類別'] || ''),
+            status: String(row['案件狀態'] || ''),
+            progress: String(row['處理進度'] || '結案'),
+            receiver: String(row['建檔人'] || ''),
+            assignee: String(row['指定處理人'] || ''),
+            extraInfo: String(row['詳細問題描述'] || ''),
+            replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || ''),
+            closeTime: cTime,
+            replies: [], 
+            createdAt: new Date().toISOString(),
+            isImported: true
+          };
+
+          const docRef = baseDbPath.length 
+              ? doc(collection(db, ...baseDbPath, 'cs_records')) 
+              : doc(collection(db, 'cs_records'));
+          
+          batch.set(docRef, recordData);
+          count++;
+          added++;
+
+          if (count === 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+
+        if (count > 0) {
+          await batch.commit();
+        }
+
+        alert(`成功匯入 ${added} 筆歷史紀錄！`);
+      } catch (error) {
+        console.error("Import Error: ", error);
+        alert("匯入失敗，請確認檔案格式是否符合範本。");
+      } finally {
+        setIsImportingHistory(false);
+        e.target.value = null;
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   // --- Dynamic Dropdown Handlers (Settings) ---
@@ -1209,34 +1308,66 @@ export default function App() {
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                  <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">歷史查詢區</h2>
                  
-                 {/* 進階複合查詢篩選器與匯出按鈕 */}
-                 <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
-                   {/* 匯出 Excel 按鈕 */}
+                 {/* 匯出與匯入 Excel 按鈕區 */}
+                 <div className="flex items-center space-x-2 shrink-0">
                    <button 
                      onClick={handleExportExcel}
-                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm shrink-0"
+                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm"
                    >
                      <Download size={16} />
-                     <span>匯出 Excel</span>
+                     <span className="hidden md:inline">匯出 Excel</span>
                    </button>
 
-                   {/* Date Filter */}
-                   <div className="flex items-center space-x-2 bg-white px-3 py-2.5 border border-slate-200 rounded-2xl shadow-sm shrink-0">
-                     <Calendar size={16} className="text-slate-400"/>
-                     <input type="date" value={historyStartDate} onChange={e=>setHistoryStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
-                     <span className="text-slate-300 text-xs">至</span>
-                     <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
-                   </div>
-                   {/* Progress Filter */}
-                   <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white px-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm font-bold text-sm text-slate-700 outline-none shrink-0">
-                     <option value="全部">全部進度</option>
-                     {progresses.map(p=><option key={p} value={p}>{p}</option>)}
-                   </select>
-                   {/* Keyword Filter */}
-                   <div className="relative flex-1 xl:w-72">
-                     <Search size={18} className="absolute left-4 top-3 text-slate-400"/>
-                     <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
-                   </div>
+                   {currentUser.role === ROLES.ADMIN && (
+                     <>
+                       <div className="relative">
+                         <input 
+                           type="file" 
+                           accept=".xlsx, .xls, .csv" 
+                           onChange={handleImportHistoryExcel}
+                           disabled={isImportingHistory}
+                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" 
+                           title="匯入歷史紀錄"
+                         />
+                         <button 
+                           disabled={isImportingHistory}
+                           className="flex items-center justify-center space-x-2 bg-indigo-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-indigo-700 transition-colors font-bold text-sm disabled:bg-indigo-400"
+                         >
+                           {isImportingHistory ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Upload size={16} />}
+                           <span className="hidden md:inline">{isImportingHistory ? '匯入中' : '匯入歷史'}</span>
+                         </button>
+                       </div>
+                       <button 
+                         onClick={handleDownloadTemplate}
+                         className="flex items-center justify-center space-x-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-2xl shadow-sm hover:bg-slate-200 transition-colors font-bold text-sm border border-slate-200"
+                         title="下載匯入格式範本"
+                       >
+                         <FileText size={16} />
+                         <span className="hidden md:inline">範本下載</span>
+                       </button>
+                     </>
+                   )}
+                 </div>
+               </div>
+
+               {/* 進階複合查詢篩選器 */}
+               <div className="flex flex-col md:flex-row w-full gap-3">
+                 {/* Date Filter */}
+                 <div className="flex items-center space-x-2 bg-white px-3 py-2.5 border border-slate-200 rounded-2xl shadow-sm shrink-0">
+                   <Calendar size={16} className="text-slate-400"/>
+                   <input type="date" value={historyStartDate} onChange={e=>setHistoryStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
+                   <span className="text-slate-300 text-xs">至</span>
+                   <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
+                 </div>
+                 {/* Progress Filter */}
+                 <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white px-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm font-bold text-sm text-slate-700 outline-none shrink-0">
+                   <option value="全部">全部進度</option>
+                   {progresses.map(p=><option key={p} value={p}>{p}</option>)}
+                 </select>
+                 {/* Keyword Filter */}
+                 <div className="relative flex-1">
+                   <Search size={18} className="absolute left-4 top-3 text-slate-400"/>
+                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
                  </div>
                </div>
                
