@@ -4,42 +4,44 @@ import {
   Phone, MessageCircle, Clock, Save, FileText, BarChart3, 
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
-  Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar
+  Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.2.0 (正式版)";
+const APP_VERSION = "v1.3.0 (正式版)";
 
-// --- Firebase Initialization (正式上線版) ---
-// ⚠️ 請務必將以下欄位替換成您在 Firebase Console 取得的專屬內容！
-const firebaseConfig = {
-  apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
-  authDomain: "customerservice-1f9c0.firebaseapp.com",
-  projectId: "customerservice-1f9c0",
-  storageBucket: "customerservice-1f9c0.firebasestorage.app",
-  messagingSenderId: "34677415846",
-  appId: "1:34677415846:web:880d8fafafbb66ad6fb967"
+// --- Firebase Initialization ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  // ⚠️ 如果不在 Vercel 整合環境，請在此替換您的金鑰
+  apiKey: "您的_API_KEY",
+  authDomain: "您的專案ID.firebaseapp.com",
+  projectId: "您的專案ID",
+  storageBucket: "您的專案ID.appspot.com",
+  messagingSenderId: "您的發送者ID",
+  appId: "您的APP_ID"
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- Constants ---
-const CATEGORIES = [
+// --- Constants (Defaults) ---
+const DEFAULT_CATEGORIES = [
   "慢防-成人預防保健", "慢防-BC肝炎檢查", "婦幼-兒童預防保健", 
   "婦幼-兒童發展篩檢", "癌防-大腸癌篩檢", "癌防-胃幽門螺旋桿菌服務", 
   "癌防-乳房攝影", "癌防-子宮頸抹片檢查", "其他", "其他(業務外)"
 ];
 
-const STATUS_OPTIONS = [
+const DEFAULT_STATUS_OPTIONS = [
   "系統本身異常/問題", "詢問步驟", "詢問推播內容", 
   "開通帳號權限", "詢問服務資格", "核扣問題", "其他"
 ];
 
+const DEFAULT_CHANNELS = ["電話", "LINE"];
 const PROGRESS_OPTIONS = ["待處理", "處理中", "待回覆", "結案"];
 
 const ROLES = {
@@ -63,23 +65,23 @@ const getToday = () => {
   return new Date().toISOString().slice(0, 10);
 };
 
-const getInitialForm = (username = '') => ({
+const getInitialForm = (username = '', channels = DEFAULT_CHANNELS, categories = DEFAULT_CATEGORIES, statuses = DEFAULT_STATUS_OPTIONS) => ({
   receiveTime: getFormatDate(),
   callEndTime: '',
-  channel: '電話',
+  channel: channels[0] || '電話',
   receiver: username,
   instCode: '',
   instName: '',
   instLevel: '',
-  category: '其他',
-  status: '詢問步驟',
+  category: categories[0] || '其他',
+  status: statuses[0] || '詢問步驟',
   extraInfo: '',
   questioner: '',
   replyContent: '',
   closeTime: '',
   progress: '待處理',
   assignee: '',
-  replies: [] // { time, user, content }
+  replies: []
 });
 
 // --- Components ---
@@ -87,7 +89,7 @@ const getInitialForm = (username = '') => ({
 // 1. 純原生 SVG 折線圖組件
 const LineChart = ({ data, labels }) => {
   if (data.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
-  const maxVal = Math.max(...data, 10); // 確保至少有高度
+  const maxVal = Math.max(...data, 10);
   const height = 200;
   const width = 600;
   const paddingX = 40;
@@ -102,7 +104,6 @@ const LineChart = ({ data, labels }) => {
   return (
     <div className="w-full overflow-x-auto relative">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48 md:h-64 drop-shadow-sm">
-        {/* Grid lines */}
         {[0, 0.5, 1].map(ratio => {
           const y = height - paddingY - ratio * (height - paddingY * 2);
           return (
@@ -112,9 +113,7 @@ const LineChart = ({ data, labels }) => {
             </g>
           );
         })}
-        {/* Line */}
         <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Points & Labels */}
         {data.map((val, i) => {
           const x = paddingX + (i * ((width - paddingX * 2) / (data.length - 1 || 1)));
           const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
@@ -134,9 +133,9 @@ const LineChart = ({ data, labels }) => {
 // 2. 主應用程式
 export default function App() {
   // Auth State
-  const [firebaseUser, setFirebaseUser] = useState(null); // Firebase 底層權限
-  const [dbUsers, setDbUsers] = useState([]); // 自訂用戶清單
-  const [currentUser, setCurrentUser] = useState(null); // 當前登入用戶
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [dbUsers, setDbUsers] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [authError, setAuthError] = useState('');
   
@@ -146,6 +145,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Dropdown States (Dynamic Settings)
+  const [channels, setChannels] = useState(DEFAULT_CHANNELS);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [statuses, setStatuses] = useState(DEFAULT_STATUS_OPTIONS);
 
   // Dashboard State
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
@@ -175,7 +179,7 @@ export default function App() {
   const [formData, setFormData] = useState(getInitialForm());
   const [isLookingUp, setIsLookingUp] = useState(false);
 
-  // --- Initialization (第一層：確保獲得存取權限) ---
+  // --- Initialization ---
   useEffect(() => {
     if (!document.getElementById('xlsx-script')) {
       const script = document.createElement('script');
@@ -186,7 +190,11 @@ export default function App() {
 
     const initAuth = async () => {
       try {
-        await signInAnonymously(auth);
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
       } catch (error) {
         console.error("Firebase Auth Error:", error);
       }
@@ -200,26 +208,33 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // --- Data Fetching (第二層：驗證成功後抓取資料) ---
+  // --- Data Fetching ---
   useEffect(() => {
     if (!firebaseUser) return;
 
+    const baseDbPath = typeof __app_id !== 'undefined' 
+      ? ['artifacts', appId, 'public', 'data'] 
+      : []; // 本地測試相容
+
+    const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
+    const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
+
     // 1. 監聽使用者清單
-    const unsubscribeUsers = onSnapshot(query(collection(db, 'cs_users')), (snapshot) => {
+    const unsubscribeUsers = onSnapshot(query(buildPath('cs_users')), (snapshot) => {
       const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDbUsers(usersList);
       setLoading(false);
     });
 
     // 2. 監聽案件紀錄
-    const unsubscribeTickets = onSnapshot(query(collection(db, 'cs_records')), (snapshot) => {
+    const unsubscribeTickets = onSnapshot(query(buildPath('cs_records')), (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       records.sort((a, b) => new Date(b.receiveTime) - new Date(a.receiveTime));
       setTickets(records);
     });
 
     // 3. 監聽院所資料
-    const unsubscribeInst = onSnapshot(query(collection(db, 'mohw_institutions')), (snapshot) => {
+    const unsubscribeInst = onSnapshot(query(buildPath('mohw_institutions')), (snapshot) => {
       let instList = [];
       const map = {};
       snapshot.docs.forEach(doc => {
@@ -240,10 +255,28 @@ export default function App() {
       setInstMap(map);
     });
 
+    // 4. 監聽下拉選單動態設定
+    const unsubscribeSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.channels) setChannels(data.channels);
+        if (data.categories) setCategories(data.categories);
+        if (data.statuses) setStatuses(data.statuses);
+      } else {
+        // 如果還沒有設定檔，主動建立預設值
+        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
+          channels: DEFAULT_CHANNELS,
+          categories: DEFAULT_CATEGORIES,
+          statuses: DEFAULT_STATUS_OPTIONS
+        });
+      }
+    });
+
     return () => { 
       unsubscribeUsers(); 
       unsubscribeTickets(); 
       unsubscribeInst(); 
+      unsubscribeSettings();
     };
   }, [firebaseUser]);
 
@@ -253,7 +286,7 @@ export default function App() {
     const user = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
     if (user) {
       setCurrentUser(user);
-      setFormData(getInitialForm(user.username));
+      setFormData(getInitialForm(user.username, channels, categories, statuses));
       setAuthError('');
     } else {
       setAuthError('帳號或密碼錯誤');
@@ -264,7 +297,8 @@ export default function App() {
     e.preventDefault();
     if (dbUsers.length > 0) return;
     try {
-      await addDoc(collection(db, 'cs_users'), {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), {
         username: loginForm.username,
         password: loginForm.password,
         role: ROLES.ADMIN,
@@ -288,7 +322,8 @@ export default function App() {
       alert('帳號名稱已存在'); return;
     }
     try {
-      await addDoc(collection(db, 'cs_users'), { ...newUser, createdAt: new Date().toISOString() });
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { ...newUser, createdAt: new Date().toISOString() });
       setNewUser({ username: '', password: '', role: ROLES.USER });
     } catch(e) { console.error(e); }
   };
@@ -296,7 +331,8 @@ export default function App() {
   const handleDeleteUser = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (window.confirm('確定要刪除此使用者嗎？')) {
-      await deleteDoc(doc(db, 'cs_users', id));
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
     }
   };
 
@@ -307,7 +343,8 @@ export default function App() {
       return;
     }
     try {
-      await updateDoc(doc(db, 'cs_users', currentUser.id), { password: pwdChangeForm.newPwd });
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', currentUser.id) : doc(db, 'cs_users', currentUser.id), { password: pwdChangeForm.newPwd });
       setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。');
       setPwdChangeForm({ newPwd: '', confirmPwd: '' });
       setTimeout(() => setPwdChangeMsg(''), 5000);
@@ -321,7 +358,8 @@ export default function App() {
     const newPwd = window.prompt(`請輸入要為用戶「${username}」設定的新密碼：\n(設定後請將此密碼轉交給該用戶)`);
     if (newPwd) {
       try {
-        await updateDoc(doc(db, 'cs_users', id), { password: newPwd.trim() });
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { password: newPwd.trim() });
         alert(`✅ 用戶「${username}」的密碼已成功重置為：${newPwd.trim()}`);
       } catch (e) {
         alert('密碼重置失敗：' + e.message);
@@ -364,7 +402,6 @@ export default function App() {
     try {
       setSubmitStatus({ type: 'loading', msg: '儲存中...' });
       
-      // 自動生成案件號碼 YYYYMMDD00000
       const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const todayTickets = tickets.filter(t => t.ticketId && t.ticketId.startsWith(todayStr));
       let maxSeq = 0;
@@ -374,7 +411,6 @@ export default function App() {
       });
       const newTicketId = todayStr + String(maxSeq + 1).padStart(5, '0');
 
-      // 構建第一筆回覆軌跡 (如果有的話)
       const initialReplies = formData.replyContent ? [{
         time: getFormatDate(),
         user: currentUser.username,
@@ -388,9 +424,11 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
 
-      await addDoc(collection(db, 'cs_records'), submissionData);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
+      
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
-      setFormData(getInitialForm(currentUser.username));
+      setFormData(getInitialForm(currentUser.username, channels, categories, statuses));
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
     } catch (error) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗。' });
@@ -399,7 +437,6 @@ export default function App() {
 
   // --- Maintenance Handlers ---
   const maintainTicketsList = useMemo(() => {
-    // 💣 修正點：加入 currentUser 防呆判斷，防止尚未登入就計算清單導致 null 崩潰
     if (!currentUser) return [];
 
     return tickets.filter(t => {
@@ -407,8 +444,8 @@ export default function App() {
         ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
       
       if (currentUser.role === ROLES.ADMIN) {
-        if (maintainSearchTerm) return matchSearch; // 管理員搜尋時可查全部(含結案)
-        return t.progress !== '結案'; // 預設只顯示未結案
+        if (maintainSearchTerm) return matchSearch; 
+        return t.progress !== '結案'; 
       } else {
         const isMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
         const isUnresolved = t.progress !== '結案';
@@ -434,21 +471,18 @@ export default function App() {
     try {
       const updates = { progress: maintainForm.progress };
       
-      // 處理進度連帶更新
       if (maintainForm.progress === '結案' && maintainModal.progress !== '結案') {
         updates.closeTime = getFormatDate();
       } else if (maintainForm.progress !== '結案' && maintainModal.closeTime) {
         updates.closeTime = '';
       }
 
-      // 處理指派人 (只要不是結案，就能變更或保留指派人)
       if (maintainForm.progress !== '結案') {
         updates.assignee = maintainForm.assignee;
       } else {
-        updates.assignee = ''; // 結案清空指派
+        updates.assignee = ''; 
       }
 
-      // 處理新回覆追加
       if (maintainForm.newReply.trim()) {
         const newReplyObj = {
           time: getFormatDate(),
@@ -456,15 +490,54 @@ export default function App() {
           content: maintainForm.newReply.trim()
         };
         updates.replies = [...(maintainModal.replies || []), newReplyObj];
-        // 更新當前顯示的最新回覆欄位以利清單檢視
         updates.replyContent = maintainForm.newReply.trim();
       }
 
-      await updateDoc(doc(db, 'cs_records', maintainModal.id), updates);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), updates);
       setMaintainModal(null);
     } catch (error) {
       alert("更新失敗：" + error.message);
     }
+  };
+
+  // --- Dynamic Dropdown Handlers (Settings) ---
+  const DropdownManager = ({ title, dbKey, items }) => {
+    const [newItem, setNewItem] = useState('');
+    const handleAdd = async (e) => {
+      e.preventDefault();
+      if (!newItem.trim() || items.includes(newItem.trim())) return;
+      const newArray = [...items, newItem.trim()];
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+      setNewItem('');
+    };
+    const handleRemove = async (itemToRemove) => {
+      if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？這不會影響已存在的歷史紀錄，但後續無法再選擇此項目。`)) return;
+      const newArray = items.filter(i => i !== itemToRemove);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+    };
+
+    return (
+      <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100 flex flex-col h-full">
+        <h4 className="font-bold text-sm mb-4 text-slate-700">{title}</h4>
+        <form onSubmit={handleAdd} className="flex mb-4 gap-2">
+          <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
+          <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-sm"><Plus size={18}/></button>
+        </form>
+        <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
+          {items.map(item => (
+            <li key={item} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm">
+              <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
+              <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
   };
 
   // --- Inst Management Handlers ---
@@ -473,7 +546,8 @@ export default function App() {
     if (currentUser?.role !== ROLES.ADMIN && currentUser?.role !== ROLES.USER) return;
     const paddedCode = newInst.code.trim().padStart(10, '0');
     try {
-      await addDoc(collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
       setNewInst({ code: '', name: '', level: '診所' });
       setInstSubmitMsg('單筆新增成功！'); setTimeout(() => setInstSubmitMsg(''), 3000);
     } catch (e) { console.error(e); }
@@ -481,7 +555,8 @@ export default function App() {
 
   const handleDeleteInst = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    await deleteDoc(doc(db, 'mohw_institutions', id));
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
   };
 
   const handleClearAllInsts = async () => {
@@ -490,7 +565,10 @@ export default function App() {
     setIsImporting(true);
     try {
       const batch = writeBatch(db);
-      institutions.forEach(inst => batch.delete(doc(db, 'mohw_institutions', inst.id)));
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      institutions.forEach(inst => {
+        batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id));
+      });
       await batch.commit();
     } catch (e) { console.error(e); }
     finally { setIsImporting(false); }
@@ -520,9 +598,12 @@ export default function App() {
           if (currentChunk.length >= 4000) { chunks.push(currentChunk); currentChunk = []; }
         }
         if (currentChunk.length > 0) chunks.push(currentChunk);
+        
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         for (const chunkData of chunks) {
           const batch = writeBatch(db);
-          batch.set(doc(collection(db, 'mohw_institutions')), { isChunk: true, payload: JSON.stringify(chunkData) });
+          const docRef = baseDbPath.length ? doc(collection(db, ...baseDbPath, 'mohw_institutions')) : doc(collection(db, 'mohw_institutions'));
+          batch.set(docRef, { isChunk: true, payload: JSON.stringify(chunkData) });
           await batch.commit();
         }
       } catch (error) {}
@@ -537,13 +618,11 @@ export default function App() {
 
   // --- Analytics Data Generation ---
   const dashboardStats = useMemo(() => {
-    // 基礎數據 (Dashboard Top 3 Stats)
     const total = tickets.length;
     const pending = tickets.filter(t => t.progress === '待處理').length;
     const resolved = tickets.filter(t => t.progress === '結案').length;
     const completionRate = total ? Math.round((resolved/total)*100) : 0;
     
-    // 區間過濾 (長條圖用)
     const startDateObj = new Date(dashStartDate);
     const endDateObj = new Date(dashEndDate);
     endDateObj.setHours(23, 59, 59, 999);
@@ -554,12 +633,15 @@ export default function App() {
     });
 
     const categoryData = {};
-    CATEGORIES.forEach(c => categoryData[c] = 0); // Initialize
+    categories.forEach(c => categoryData[c] = 0); // Initialize dynamically
     rangeTickets.forEach(t => {
-      categoryData[t.category] = (categoryData[t.category] || 0) + 1;
+      if (categories.includes(t.category)) {
+        categoryData[t.category] = (categoryData[t.category] || 0) + 1;
+      } else {
+        categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
+      }
     });
 
-    // 近半年趨勢推算 (線型圖用)
     const monthLabels = [];
     for(let i=5; i>=0; i--) {
       const d = new Date();
@@ -576,7 +658,7 @@ export default function App() {
     });
 
     return { total, pending, resolved, completionRate, categoryData, trendDataArray, monthLabels };
-  }, [tickets, dashStartDate, dashEndDate, trendCategory]);
+  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories]);
 
   // --- Render Login Screen ---
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
@@ -585,7 +667,6 @@ export default function App() {
     const isFirstTime = dbUsers.length === 0;
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 relative overflow-hidden">
-        {/* Background Decoration */}
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
 
@@ -596,7 +677,7 @@ export default function App() {
             </div>
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">系統存取驗證</h2>
             <p className="text-slate-400 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
-            <div className="mt-2 text-[10px] text-slate-300 font-mono font-bold tracking-widest">版本號: {APP_VERSION}</div>
+            <div className="mt-2 text-[10px] text-slate-400 font-mono font-bold tracking-widest">{APP_VERSION}</div>
           </div>
 
           <form onSubmit={isFirstTime ? handleCreateFirstAdmin : handleLogin} className="space-y-6">
@@ -708,7 +789,7 @@ export default function App() {
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option>電話</option><option>LINE</option></select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
@@ -728,8 +809,8 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{STATUS_OPTIONS.map(s=><option key={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c}>{c}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s}>{s}</option>)}</select></div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
                     
                     {/* 指派功能：只要不是結案即可指派 */}
@@ -907,15 +988,15 @@ export default function App() {
               {/* 原本三個重要數據復原，並改為靠右排版 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
-                  <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2 text-right">總件數</div>
+                  <div className="text-slate-500 text-lg md:text-xl font-bold mb-2 text-right">總件數</div>
                   <div className="text-5xl font-black text-slate-900 leading-none text-right">{dashboardStats.total}</div>
                 </div>
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
-                  <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2 text-right">待處理件數</div>
+                  <div className="text-slate-500 text-lg md:text-xl font-bold mb-2 text-right">待處理件數</div>
                   <div className="text-5xl font-black text-red-500 leading-none text-right">{dashboardStats.pending}</div>
                 </div>
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
-                  <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2 text-right">完成率</div>
+                  <div className="text-slate-500 text-lg md:text-xl font-bold mb-2 text-right">完成率</div>
                   <div className="text-5xl font-black text-blue-600 leading-none text-right">{dashboardStats.completionRate}%</div>
                 </div>
               </div>
@@ -965,7 +1046,7 @@ export default function App() {
                   </div>
                   <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="全類別">-- 綜合全類別 --</option>
-                    {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                    {categories.map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 
@@ -1000,6 +1081,16 @@ export default function App() {
               {/* 以下功能僅管理員可見 */}
               {currentUser.role === ROLES.ADMIN && (
                 <>
+                  {/* 表單下拉選單維護 */}
+                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Tags size={20} className="mr-2 text-indigo-600"/> 表單下拉選單維護</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      <DropdownManager title="反映管道" dbKey="channels" items={channels} />
+                      <DropdownManager title="業務類別" dbKey="categories" items={categories} />
+                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
+                    </div>
+                  </div>
+
                   <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Shield size={20} className="mr-2 text-indigo-600"/> 使用者與權限管理</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
