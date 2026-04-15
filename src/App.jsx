@@ -602,11 +602,11 @@ export default function App() {
           </div>
         </div>
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          <NavButton id="form" icon={Plus} label="新增紀錄" />
-          <NavButton id="list" icon={List} label="歷史查詢" />
+          <NavButton id="form" icon={Plus} label="新增紀錄區" />
           <NavButton id="maintenance" icon={Edit} label="紀錄維護區" />
-          <NavButton id="dashboard" icon={LayoutDashboard} label="進階統計" />
-          <NavButton id="settings" icon={Settings} label="系統設定" />
+          <NavButton id="list" icon={List} label="歷史查詢區" />
+          <NavButton id="dashboard" icon={LayoutDashboard} label="進階統計區" />
+          <NavButton id="settings" icon={Settings} label="系統設定區" />
         </nav>
         <div className="p-4 border-t border-slate-100">
           <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">登出系統</button>
@@ -622,7 +622,7 @@ export default function App() {
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <div className="mb-8 flex justify-between items-end">
                 <div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">建立新案件</h2>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">新增紀錄區</h2>
                   <p className="text-sm text-slate-400 mt-2">以 <span className="font-bold text-blue-600">{currentUser.username}</span> 身份登錄。</p>
                 </div>
               </div>
@@ -688,39 +688,6 @@ export default function App() {
                 </div>
               </form>
             </div>
-          )}
-
-          {/* TAB 2: LIST */}
-          {activeTab === 'list' && (
-             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
-               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                 <h2 className="text-3xl font-black text-slate-900 tracking-tight">歷史查詢</h2>
-                 <div className="relative w-full md:w-80">
-                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
-                   <input type="text" placeholder="搜尋院所、內容或建立者..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
-                 </div>
-               </div>
-               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-                 <div className="overflow-x-auto">
-                   <table className="w-full text-left">
-                     <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                       <tr><th className="p-5">日期/管道</th><th className="p-5">院所</th><th className="p-5">描述/回覆摘要</th><th className="p-5">建立/負責人</th><th className="p-5 text-center">進度</th></tr>
-                     </thead>
-                     <tbody className="divide-y text-sm font-medium">
-                       {tickets.filter(t=> (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.receiver||'').includes(searchTerm)).map(t=>(
-                         <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                           <td className="p-5"><div className="font-black text-slate-800">{new Date(t.receiveTime).toLocaleDateString()}</div><div className="text-[10px] text-slate-400 mt-1">{t.channel}</div></td>
-                           <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                           <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
-                           <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
-                           <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
-                         </tr>
-                       ))}
-                     </tbody>
-                   </table>
-                 </div>
-               </div>
-             </div>
           )}
 
           {/* TAB 3: MAINTENANCE (紀錄維護區) */}
@@ -816,14 +783,47 @@ export default function App() {
              </div>
           )}
 
+          {/* TAB 2: LIST (Moved below MAINTENANCE) */}
+          {activeTab === 'list' && (
+             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
+               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                 <h2 className="text-3xl font-black text-slate-900 tracking-tight">歷史查詢區</h2>
+                 <div className="relative w-full md:w-80">
+                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
+                   <input type="text" placeholder="搜尋院所、內容或建立者..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                 </div>
+               </div>
+               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left">
+                     <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                       <tr><th className="p-5">日期/管道</th><th className="p-5">院所</th><th className="p-5">描述/回覆摘要</th><th className="p-5">建立/負責人</th><th className="p-5 text-center">進度</th></tr>
+                     </thead>
+                     <tbody className="divide-y text-sm font-medium">
+                       {tickets.filter(t=> (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.receiver||'').includes(searchTerm)).map(t=>(
+                         <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                           <td className="p-5"><div className="font-black text-slate-800">{new Date(t.receiveTime).toLocaleDateString()}</div><div className="text-[10px] text-slate-400 mt-1">{t.channel}</div></td>
+                           <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
+                           <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
+                           <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
+                           <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+             </div>
+          )}
+
           {/* TAB 4: DASHBOARD (統計報表) */}
           {activeTab === 'dashboard' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">進階統計分析</h2>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">進階統計區</h2>
               
-              {/* 圖表區 1: 長條圖 (自訂區間) */}
+              {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                   <div>
                     <h3 className="text-xl font-black text-slate-800">服務類別分佈</h3>
                     <p className="text-xs text-slate-400 mt-1 font-medium">區間數據獨立計算，不受其他圖表影響</p>
@@ -836,18 +836,21 @@ export default function App() {
                   </div>
                 </div>
                 
-                {/* CSS 長條圖實作 */}
-                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-4">
+                {/* 垂直長條圖實作與直書標籤 */}
+                <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
                   {Object.entries(dashboardStats.categoryData).sort((a,b)=>b[1]-a[1]).map(([cat, count]) => {
                     const maxVal = Math.max(...Object.values(dashboardStats.categoryData), 1);
+                    const heightPct = (count / maxVal) * 100;
                     return (
-                      <div key={cat} className="group">
-                        <div className="flex justify-between text-xs font-bold mb-1.5">
-                          <span className="text-slate-600 group-hover:text-blue-600 transition-colors">{cat}</span>
-                          <span className="text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">{count} 件</span>
+                      <div key={cat} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative">
+                        <div className="absolute -top-10 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold transition-all transform translate-y-2 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 shadow-sm">
+                          {count} 件
                         </div>
-                        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                          <div className="bg-indigo-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${(count / maxVal) * 100}%` }}></div>
+                        <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative">
+                          <div className="w-full bg-indigo-500 rounded-t-full transition-all duration-1000 ease-out" style={{ height: `${heightPct}%` }}></div>
+                        </div>
+                        <div className="text-[12px] font-bold text-slate-500 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] group-hover:text-blue-600 transition-colors tracking-widest cursor-default select-none">
+                          {cat}
                         </div>
                       </div>
                     );
@@ -878,7 +881,7 @@ export default function App() {
           {/* TAB 5: SETTINGS (含帳號管理) */}
           {activeTab === 'settings' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">系統設定與維護</h2>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">系統設定區</h2>
 
               {/* 使用者管理 (僅 Admin) */}
               {currentUser.role === ROLES.ADMIN && (
