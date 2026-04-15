@@ -162,8 +162,10 @@ export default function App() {
   const [showInstList, setShowInstList] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
-  // User Management State (For Admins)
+  // User Management & Password State
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER });
+  const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
+  const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
   // Form State
   const [formData, setFormData] = useState(getInitialForm());
@@ -291,6 +293,35 @@ export default function App() {
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (window.confirm('確定要刪除此使用者嗎？')) {
       await deleteDoc(doc(db, 'cs_users', id));
+    }
+  };
+
+  const handleChangeOwnPassword = async (e) => {
+    e.preventDefault();
+    if (pwdChangeForm.newPwd !== pwdChangeForm.confirmPwd) {
+      setPwdChangeMsg('❌ 兩次輸入的密碼不一致，請重新輸入！');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'cs_users', currentUser.id), { password: pwdChangeForm.newPwd });
+      setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。');
+      setPwdChangeForm({ newPwd: '', confirmPwd: '' });
+      setTimeout(() => setPwdChangeMsg(''), 5000);
+    } catch (e) {
+      setPwdChangeMsg('❌ 密碼更新失敗：' + e.message);
+    }
+  };
+
+  const handleResetUserPassword = async (id, username) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    const newPwd = window.prompt(`請輸入要為用戶「${username}」設定的新密碼：\n(設定後請將此密碼轉交給該用戶)`);
+    if (newPwd) {
+      try {
+        await updateDoc(doc(db, 'cs_users', id), { password: newPwd.trim() });
+        alert(`✅ 用戶「${username}」的密碼已成功重置為：${newPwd.trim()}`);
+      } catch (e) {
+        alert('密碼重置失敗：' + e.message);
+      }
     }
   };
 
@@ -836,14 +867,14 @@ export default function App() {
                   </div>
                 </div>
                 
-                {/* 垂直長條圖實作與直書標籤 */}
+                {/* 垂直長條圖實作與直書標籤 (已修改為直接顯示數字) */}
                 <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
                   {Object.entries(dashboardStats.categoryData).sort((a,b)=>b[1]-a[1]).map(([cat, count]) => {
                     const maxVal = Math.max(...Object.values(dashboardStats.categoryData), 1);
                     const heightPct = (count / maxVal) * 100;
                     return (
                       <div key={cat} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative">
-                        <div className="absolute -top-10 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold transition-all transform translate-y-2 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 whitespace-nowrap z-10 shadow-sm">
+                        <div className="absolute -top-8 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm">
                           {count} 件
                         </div>
                         <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative">
@@ -878,98 +909,120 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 5: SETTINGS (含帳號管理) */}
+          {/* TAB 5: SETTINGS (系統設定區) */}
           {activeTab === 'settings' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <h2 className="text-3xl font-black text-slate-900 tracking-tight">系統設定區</h2>
 
-              {/* 使用者管理 (僅 Admin) */}
-              {currentUser.role === ROLES.ADMIN && (
-                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
-                  <h3 className="font-black text-lg mb-6 flex items-center"><Shield size={20} className="mr-2 text-indigo-600"/> 使用者與權限管理</h3>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* 新增使用者 */}
-                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                      <h4 className="font-bold text-sm mb-4">建立新用戶</h4>
-                      <form onSubmit={handleAddUser} className="space-y-4">
-                        <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-medium outline-none"/>
-                        <input type="password" required placeholder="設定密碼" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-medium outline-none"/>
-                        <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none">
-                          <option value={ROLES.USER}>{ROLES.USER} (可新增/維護紀錄)</option>
-                          <option value={ROLES.VIEWER}>{ROLES.VIEWER} (僅能看不可改)</option>
-                          <option value={ROLES.ADMIN}>{ROLES.ADMIN} (系統全權限)</option>
-                        </select>
-                        <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700">新增用戶</button>
-                      </form>
-                    </div>
-                    {/* 使用者清單 */}
-                    <div className="overflow-auto border border-slate-200 rounded-2xl bg-white max-h-64">
-                      <table className="w-full text-left">
-                        <thead className="bg-slate-100 sticky top-0 text-[10px] font-black uppercase text-slate-500">
-                          <tr><th className="p-4">帳號</th><th className="p-4">權限</th><th className="p-4 text-center">刪除</th></tr>
-                        </thead>
-                        <tbody className="divide-y text-sm font-medium">
-                          {dbUsers.map(u => (
-                            <tr key={u.id}>
-                              <td className="p-4">{u.username}</td>
-                              <td className="p-4"><span className="bg-slate-100 px-2 py-1 rounded text-xs">{u.role}</span></td>
-                              <td className="p-4 text-center">
-                                {u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+              {/* 個人密碼修改區 (所有角色可見) */}
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Lock size={20} className="mr-2 text-indigo-600"/> 修改個人登入密碼</h3>
+                <form onSubmit={handleChangeOwnPassword} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block mb-2">新密碼</label>
+                    <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
                   </div>
-                </div>
-              )}
-
-              {/* 院所維護區 */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="space-y-8">
-                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                    <h3 className="font-black mb-6 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600"/> 單筆新增院所</h3>
-                    <form onSubmit={handleAddInst} className="space-y-4">
-                      <input type="text" placeholder="代碼" value={newInst.code} onChange={e=>setNewInst({...newInst, code:e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 font-medium focus:ring-2 outline-none"/>
-                      <input type="text" placeholder="名稱" value={newInst.name} onChange={e=>setNewInst({...newInst, name:e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 font-medium focus:ring-2 outline-none"/>
-                      <button type="submit" disabled={currentUser.role === ROLES.VIEWER} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black disabled:bg-slate-300">單筆存入</button>
-                    </form>
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 block mb-2">確認新密碼</label>
+                    <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
                   </div>
-                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                    <h3 className="font-black mb-2 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Upload size={18} className="mr-2 text-green-600"/> 批次匯入 (Excel)</h3>
-                    <p className="text-[10px] text-slate-400 mb-6 font-bold">自動擷取 B 欄、D 欄、H 欄</p>
-                    <div className="relative">
-                      <input type="file" onChange={handleFileUpload} disabled={isImporting || currentUser.role === ROLES.VIEWER} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"/>
-                      <button disabled={isImporting || currentUser.role === ROLES.VIEWER} className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center hover:bg-green-700 disabled:bg-slate-300">
-                        {isImporting ? <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div> : <Upload size={18} className="mr-2"/>} 開始匯入
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <div className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-200 shadow-sm h-[700px] flex flex-col">
-                  <div className="p-6 bg-slate-50/50 border-b flex justify-between items-center px-8">
-                    <h3 className="font-black text-sm text-slate-800 uppercase tracking-widest">雲端院所對照表 ({institutions.length.toLocaleString()} 筆)</h3>
-                    {currentUser.role === ROLES.ADMIN && institutions.length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
-                  </div>
-                  <div className="flex-1 overflow-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead className="bg-white sticky top-0 border-b text-[10px] text-slate-400 font-black uppercase tracking-widest">
-                        <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
-                      </thead>
-                      <tbody className="divide-y text-xs font-medium">
-                        {filteredInsts.slice(0, 100).map(i=>(
-                          <tr key={i.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-5 font-mono text-slate-500">{i.code}</td>
-                            <td className="p-5 text-slate-800 font-bold">{i.name}</td>
-                            <td className="p-5 text-center">{currentUser.role === ROLES.ADMIN && <button onClick={()=>handleDeleteInst(i.id)} className="text-slate-200 hover:text-red-500"><Trash2 size={16}/></button>}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                  <button type="submit" className="py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95">更新密碼</button>
+                </form>
+                {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 animate-pulse' : 'text-green-600'}`}>{pwdChangeMsg}</p>}
               </div>
+
+              {/* 以下功能僅管理員可見 */}
+              {currentUser.role === ROLES.ADMIN && (
+                <>
+                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Shield size={20} className="mr-2 text-indigo-600"/> 使用者與權限管理</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* 新增使用者 */}
+                      <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
+                        <h4 className="font-bold text-sm mb-4">建立新用戶</h4>
+                        <form onSubmit={handleAddUser} className="space-y-4">
+                          <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3.5 border border-slate-200 rounded-xl font-medium outline-none"/>
+                          <input type="password" required placeholder="設定初始密碼" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3.5 border border-slate-200 rounded-xl font-medium outline-none"/>
+                          <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-3.5 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none">
+                            <option value={ROLES.USER}>{ROLES.USER} (可新增/維護紀錄)</option>
+                            <option value={ROLES.VIEWER}>{ROLES.VIEWER} (僅能看不可改)</option>
+                            <option value={ROLES.ADMIN}>{ROLES.ADMIN} (系統全權限)</option>
+                          </select>
+                          <button type="submit" className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 shadow-md">新增用戶</button>
+                        </form>
+                      </div>
+                      {/* 使用者清單 */}
+                      <div className="overflow-auto border border-slate-200 rounded-[1.5rem] bg-white h-[320px]">
+                        <table className="w-full text-left">
+                          <thead className="bg-slate-100 sticky top-0 text-[10px] font-black uppercase text-slate-500 tracking-widest z-10">
+                            <tr><th className="p-4">帳號</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
+                          </thead>
+                          <tbody className="divide-y text-sm font-medium">
+                            {dbUsers.map(u => (
+                              <tr key={u.id} className="hover:bg-slate-50">
+                                <td className="p-4">{u.username}</td>
+                                <td className="p-4"><span className="bg-slate-100 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
+                                <td className="p-4 text-center">
+                                  <button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 hover:text-indigo-800 font-bold text-xs bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors">重置</button>
+                                </td>
+                                <td className="p-4 text-center">
+                                  {u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 院所維護區 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="space-y-8">
+                      <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                        <h3 className="font-black mb-6 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600"/> 單筆新增院所</h3>
+                        <form onSubmit={handleAddInst} className="space-y-4">
+                          <input type="text" placeholder="代碼" value={newInst.code} onChange={e=>setNewInst({...newInst, code:e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 font-medium focus:ring-2 outline-none"/>
+                          <input type="text" placeholder="名稱" value={newInst.name} onChange={e=>setNewInst({...newInst, name:e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 font-medium focus:ring-2 outline-none"/>
+                          <button type="submit" className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black transition-colors">單筆存入</button>
+                        </form>
+                      </div>
+                      <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                        <h3 className="font-black mb-2 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Upload size={18} className="mr-2 text-green-600"/> 批次匯入 (Excel)</h3>
+                        <p className="text-[10px] text-slate-400 mb-6 font-bold">自動擷取 B 欄、D 欄、H 欄</p>
+                        <div className="relative">
+                          <input type="file" onChange={handleFileUpload} disabled={isImporting} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"/>
+                          <button disabled={isImporting} className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center hover:bg-green-700 disabled:bg-slate-300 transition-colors">
+                            {isImporting ? <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div> : <Upload size={18} className="mr-2"/>} 開始匯入
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-200 shadow-sm h-[700px] flex flex-col">
+                      <div className="p-6 bg-slate-50/50 border-b flex justify-between items-center px-8">
+                        <h3 className="font-black text-sm text-slate-800 uppercase tracking-widest">雲端院所對照表 ({institutions.length.toLocaleString()} 筆)</h3>
+                        {institutions.length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
+                      </div>
+                      <div className="flex-1 overflow-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-white sticky top-0 border-b text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                            <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
+                          </thead>
+                          <tbody className="divide-y text-xs font-medium">
+                            {filteredInsts.slice(0, 100).map(i=>(
+                              <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-5 font-mono text-slate-500">{i.code}</td>
+                                <td className="p-5 text-slate-800 font-bold">{i.name}</td>
+                                <td className="p-5 text-center"><button onClick={()=>handleDeleteInst(i.id)} className="text-slate-200 hover:text-red-500"><Trash2 size={16}/></button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
