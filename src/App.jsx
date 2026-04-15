@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.5.0 (正式版)";
+const APP_VERSION = "v1.5.1 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -592,6 +592,20 @@ export default function App() {
       setMaintainModal(null);
     } catch (error) {
       alert("更新失敗：" + error.message);
+    }
+  };
+
+  // --- History Delete Handler (Admin Only) ---
+  const handleDeleteTicket = async (id, ticketId) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (window.confirm(`【警告】確定要刪除案件「${ticketId}」嗎？此操作無法復原。`)) {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', id) : doc(db, 'cs_records', id));
+      } catch (error) {
+        console.error("Error deleting ticket:", error);
+        alert("刪除失敗：" + error.message);
+      }
     }
   };
 
@@ -1212,11 +1226,12 @@ export default function App() {
                          <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
                          <SortHeader label="建立/負責人" sortKey="receiver" />
                          <SortHeader label="進度" sortKey="progress" align="center" />
+                         {currentUser.role === ROLES.ADMIN && <th className="p-5 text-center">操作</th>}
                        </tr>
                      </thead>
                      <tbody className="divide-y text-sm font-medium">
                        {filteredAndSortedHistory.length === 0 ? (
-                         <tr><td colSpan="5" className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
+                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
                        ) : (
                          filteredAndSortedHistory.map(t=>(
                            <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1225,6 +1240,17 @@ export default function App() {
                              <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
                              <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
                              <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                             {currentUser.role === ROLES.ADMIN && (
+                               <td className="p-5 text-center">
+                                 <button 
+                                   onClick={() => handleDeleteTicket(t.id, t.ticketId)} 
+                                   className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" 
+                                   title="刪除此筆紀錄"
+                                 >
+                                   <Trash2 size={16}/>
+                                 </button>
+                               </td>
+                             )}
                            </tr>
                          ))
                        )}
