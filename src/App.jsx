@@ -10,6 +10,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
+// --- System Variables ---
+const APP_VERSION = "v1.2.0 (正式版)";
+
 // --- Firebase Initialization (正式上線版) ---
 // ⚠️ 請務必將以下欄位替換成您在 Firebase Console 取得的專屬內容！
 const firebaseConfig = {
@@ -150,6 +153,7 @@ export default function App() {
   const [trendCategory, setTrendCategory] = useState('全類別');
 
   // Maintenance State
+  const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainModal, setMaintainModal] = useState(null);
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '' });
 
@@ -331,8 +335,8 @@ export default function App() {
     let newFormData = { ...formData, [name]: value };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
-    // 若不是待處理，清空指派
-    if (name === 'progress' && value !== '待處理') newFormData.assignee = '';
+    // 若是結案，清空指派
+    if (name === 'progress' && value === '結案') newFormData.assignee = '';
     setFormData(newFormData);
   };
 
@@ -360,6 +364,16 @@ export default function App() {
     try {
       setSubmitStatus({ type: 'loading', msg: '儲存中...' });
       
+      // 自動生成案件號碼 YYYYMMDD00000
+      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const todayTickets = tickets.filter(t => t.ticketId && t.ticketId.startsWith(todayStr));
+      let maxSeq = 0;
+      todayTickets.forEach(t => {
+        const seq = parseInt(t.ticketId.slice(8), 10);
+        if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+      });
+      const newTicketId = todayStr + String(maxSeq + 1).padStart(5, '0');
+
       // 構建第一筆回覆軌跡 (如果有的話)
       const initialReplies = formData.replyContent ? [{
         time: getFormatDate(),
@@ -369,20 +383,38 @@ export default function App() {
 
       const submissionData = {
         ...formData,
+        ticketId: newTicketId,
         replies: initialReplies,
         createdAt: new Date().toISOString()
       };
 
       await addDoc(collection(db, 'cs_records'), submissionData);
-      setSubmitStatus({ type: 'success', msg: '紀錄已成功儲存！' });
+      setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       setFormData(getInitialForm(currentUser.username));
-      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 3000);
+      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
     } catch (error) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗。' });
     }
   };
 
   // --- Maintenance Handlers ---
+  const maintainTicketsList = useMemo(() => {
+    return tickets.filter(t => {
+      const matchSearch = maintainSearchTerm ? 
+        ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
+      
+      if (currentUser.role === ROLES.ADMIN) {
+        if (maintainSearchTerm) return matchSearch; // 管理員搜尋時可查全部(含結案)
+        return t.progress !== '結案'; // 預設只顯示未結案
+      } else {
+        const isMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
+        const isUnresolved = t.progress !== '結案';
+        if (maintainSearchTerm) return isMine && isUnresolved && matchSearch;
+        return isMine && isUnresolved;
+      }
+    });
+  }, [tickets, currentUser, maintainSearchTerm]);
+
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
     setMaintainForm({
@@ -406,11 +438,11 @@ export default function App() {
         updates.closeTime = '';
       }
 
-      // 處理指派人 (只有待處理狀態能保留或變更指派人)
-      if (maintainForm.progress === '待處理') {
+      // 處理指派人 (只要不是結案，就能變更或保留指派人)
+      if (maintainForm.progress !== '結案') {
         updates.assignee = maintainForm.assignee;
       } else {
-        updates.assignee = '';
+        updates.assignee = ''; // 結案清空指派
       }
 
       // 處理新回覆追加
@@ -502,9 +534,11 @@ export default function App() {
 
   // --- Analytics Data Generation ---
   const dashboardStats = useMemo(() => {
-    // 基礎數據
+    // 基礎數據 (Dashboard Top 3 Stats)
     const total = tickets.length;
+    const pending = tickets.filter(t => t.progress === '待處理').length;
     const resolved = tickets.filter(t => t.progress === '結案').length;
+    const completionRate = total ? Math.round((resolved/total)*100) : 0;
     
     // 區間過濾 (長條圖用)
     const startDateObj = new Date(dashStartDate);
@@ -538,7 +572,7 @@ export default function App() {
       }).length;
     });
 
-    return { total, resolved, categoryData, trendDataArray, monthLabels };
+    return { total, pending, resolved, completionRate, categoryData, trendDataArray, monthLabels };
   }, [tickets, dashStartDate, dashEndDate, trendCategory]);
 
   // --- Render Login Screen ---
@@ -552,13 +586,14 @@ export default function App() {
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
 
-        <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl z-10 w-full max-w-md border border-slate-100">
+        <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl z-10 w-full max-w-md border border-slate-100 flex flex-col relative">
           <div className="text-center mb-10">
             <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
               <Shield size={32} className="text-white"/>
             </div>
             <h2 className="text-2xl font-black text-slate-800 tracking-tight">系統存取驗證</h2>
             <p className="text-slate-400 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
+            <div className="mt-2 text-[10px] text-slate-300 font-mono font-bold tracking-widest">版本號: {APP_VERSION}</div>
           </div>
 
           <form onSubmit={isFirstTime ? handleCreateFirstAdmin : handleLogin} className="space-y-6">
@@ -694,8 +729,8 @@ export default function App() {
                     <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{STATUS_OPTIONS.map(s=><option key={s}>{s}</option>)}</select></div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
                     
-                    {/* 指派功能：只有待處理可見 */}
-                    {formData.progress === '待處理' ? (
+                    {/* 指派功能：只要不是結案即可指派 */}
+                    {formData.progress !== '結案' ? (
                       <div className="animate-in zoom-in-95 duration-200">
                         <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
                         <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
@@ -724,25 +759,36 @@ export default function App() {
           {/* TAB 3: MAINTENANCE (紀錄維護區) */}
           {activeTab === 'maintenance' && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 relative">
-               <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">紀錄維護區</h2>
-               <p className="text-sm text-slate-500 mb-6">點擊案件進行後續追蹤、指派轉移與新增答覆。所有異動皆會記錄操作人員。</p>
+               <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-2 gap-4">
+                 <div>
+                   <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">紀錄維護區</h2>
+                   <p className="text-sm text-slate-500">
+                     {currentUser.role === ROLES.ADMIN ? '管理員可查詢案件號以維護「已結案」紀錄。' : '僅顯示您負責或建檔的未結案紀錄。'}
+                   </p>
+                 </div>
+                 <div className="relative w-full md:w-80">
+                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
+                   <input type="text" placeholder="輸入案件號碼查詢..." value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                 </div>
+               </div>
                
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {tickets.filter(t => t.progress !== '結案').map(t => (
-                    <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all group">
-                      <div className="flex justify-between items-start mb-4">
-                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span>
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                  {maintainTicketsList.map(t => (
+                    <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all group flex flex-col h-full relative">
+                      <div className="absolute top-4 right-6 text-[10px] font-mono text-slate-300">#{t.ticketId || t.id.slice(0,8)}</div>
+                      <div className="flex justify-between items-start mb-4 mt-2">
+                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span>
                          <span className="text-xs font-bold text-slate-400">{new Date(t.receiveTime).toLocaleDateString()}</span>
                       </div>
                       <h4 className="font-bold text-lg text-slate-800 mb-1">{t.instName || '無特定院所'}</h4>
-                      <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10">{t.extraInfo}</p>
+                      <p className="text-sm text-slate-500 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
                       <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-xs font-bold">
                         <span className="text-slate-400 flex items-center"><User size={14} className="mr-1"/> {t.receiver} 建檔</span>
                         {t.assignee && <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">負責: {t.assignee}</span>}
                       </div>
                     </div>
                   ))}
-                  {tickets.filter(t => t.progress !== '結案').length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold text-lg">目前沒有需要維護的案件 🎉</div>}
+                  {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
                </div>
 
                {/* 維護互動彈窗 */}
@@ -756,7 +802,10 @@ export default function App() {
                      <div className="p-8 overflow-y-auto flex-1 space-y-6">
                        {/* 原始內容 (唯讀) */}
                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                         <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
+                         <div className="flex justify-between">
+                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
+                           <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
+                         </div>
                          <p className="text-sm text-slate-700">{maintainModal.extraInfo || '(無)'}</p>
                        </div>
                        
@@ -787,8 +836,8 @@ export default function App() {
                                {PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}
                              </select>
                            </div>
-                           {/* 變更指定用戶 (僅在待處理時可用) */}
-                           {maintainForm.progress === '待處理' ? (
+                           {/* 變更指定用戶 (只要不是結案即可用) */}
+                           {maintainForm.progress !== '結案' ? (
                              <div>
                                <label className="text-xs font-black text-red-600 mb-2 block">指派後續處理人</label>
                                <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 border-2 border-red-200 rounded-xl font-bold text-red-700 outline-none">
@@ -814,26 +863,26 @@ export default function App() {
              </div>
           )}
 
-          {/* TAB 2: LIST (Moved below MAINTENANCE) */}
+          {/* TAB 2: LIST (歷史查詢區 Moved below MAINTENANCE) */}
           {activeTab === 'list' && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">歷史查詢區</h2>
                  <div className="relative w-full md:w-80">
                    <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
-                   <input type="text" placeholder="搜尋院所、內容或建立者..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
                  </div>
                </div>
                <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                  <div className="overflow-x-auto">
                    <table className="w-full text-left">
                      <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                       <tr><th className="p-5">日期/管道</th><th className="p-5">院所</th><th className="p-5">描述/回覆摘要</th><th className="p-5">建立/負責人</th><th className="p-5 text-center">進度</th></tr>
+                       <tr><th className="p-5">案件號/日期</th><th className="p-5">院所</th><th className="p-5">描述/回覆摘要</th><th className="p-5">建立/負責人</th><th className="p-5 text-center">進度</th></tr>
                      </thead>
                      <tbody className="divide-y text-sm font-medium">
-                       {tickets.filter(t=> (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.receiver||'').includes(searchTerm)).map(t=>(
+                       {tickets.filter(t=> (t.ticketId||'').includes(searchTerm) || (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.receiver||'').includes(searchTerm)).map(t=>(
                          <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                           <td className="p-5"><div className="font-black text-slate-800">{new Date(t.receiveTime).toLocaleDateString()}</div><div className="text-[10px] text-slate-400 mt-1">{t.channel}</div></td>
+                           <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
                            <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
                            <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={t.replyContent}>答: {t.replyContent || '-'}</div></td>
                            <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
@@ -852,6 +901,22 @@ export default function App() {
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <h2 className="text-3xl font-black text-slate-900 tracking-tight">進階統計區</h2>
               
+              {/* 原本三個重要數據復原，並改為靠右排版 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
+                  <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2 text-right">總件數</div>
+                  <div className="text-5xl font-black text-slate-900 leading-none text-right">{dashboardStats.total}</div>
+                </div>
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
+                  <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2 text-right">待處理件數</div>
+                  <div className="text-5xl font-black text-red-500 leading-none text-right">{dashboardStats.pending}</div>
+                </div>
+                <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-center">
+                  <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2 text-right">完成率</div>
+                  <div className="text-5xl font-black text-blue-600 leading-none text-right">{dashboardStats.completionRate}%</div>
+                </div>
+              </div>
+
               {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
@@ -867,7 +932,6 @@ export default function App() {
                   </div>
                 </div>
                 
-                {/* 垂直長條圖實作與直書標籤 (已修改為直接顯示數字) */}
                 <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
                   {Object.entries(dashboardStats.categoryData).sort((a,b)=>b[1]-a[1]).map(([cat, count]) => {
                     const maxVal = Math.max(...Object.values(dashboardStats.categoryData), 1);
@@ -902,7 +966,6 @@ export default function App() {
                   </select>
                 </div>
                 
-                {/* 原生 SVG 線型圖 */}
                 <LineChart data={dashboardStats.trendDataArray} labels={dashboardStats.monthLabels.map(m => m.replace('-','/'))} />
               </div>
 
