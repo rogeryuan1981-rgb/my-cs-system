@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.4.0 (正式版)";
+const APP_VERSION = "v1.5.0 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -30,58 +30,58 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- Constants (Defaults) ---
-const DEFAULT_CATEGORIES = [
-  "慢防-成人預防保健", "慢防-BC肝炎檢查", "婦幼-兒童預防保健", 
-  "婦幼-兒童發展篩檢", "癌防-大腸癌篩檢", "癌防-胃幽門螺旋桿菌服務", 
-  "癌防-乳房攝影", "癌防-子宮頸抹片檢查", "其他", "其他(業務外)"
-];
-
-const DEFAULT_STATUS_OPTIONS = [
-  "系統本身異常/問題", "詢問步驟", "詢問推播內容", 
-  "開通帳號權限", "詢問服務資格", "核扣問題", "其他"
-];
-
-const DEFAULT_CHANNELS = ["電話", "LINE"];
-const PROGRESS_OPTIONS = ["待處理", "處理中", "待回覆", "結案"];
-const DEFAULT_CANNED_MESSAGES = ["請提供更詳細的相關資訊以便查詢", "目前已由相關單位接手處理中", "此案件已協助處理完畢"];
-
+// --- Constants ---
 const ROLES = {
   ADMIN: "後台管理者",
   USER: "一般使用者",
   VIEWER: "紀錄檢視者"
 };
 
-// --- Utility Functions ---
+// --- Utility Functions (Timezone Safe) ---
 const getFormatDate = (date = new Date()) => {
   const tzOffset = (new Date()).getTimezoneOffset() * 60000;
   return (new Date(date - tzOffset)).toISOString().slice(0, 16);
 };
 
 const getFirstDayOfMonth = () => {
-  const date = new Date();
-  return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
+};
+
+const getLastDayOfMonth = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
+  return `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
 };
 
 const getToday = () => {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
-const getInitialForm = (username = '', channels = DEFAULT_CHANNELS, categories = DEFAULT_CATEGORIES, statuses = DEFAULT_STATUS_OPTIONS) => ({
+// 初始表單不再帶入寫死的選項，完全由 State 動態決定
+const getInitialForm = (username = '') => ({
   receiveTime: getFormatDate(),
   callEndTime: '',
-  channel: channels[0] || '電話',
+  channel: '',
   receiver: username,
   instCode: '',
   instName: '',
   instLevel: '',
-  category: categories[0] || '其他',
-  status: statuses[0] || '詢問步驟',
+  category: '',
+  status: '',
   extraInfo: '',
   questioner: '',
   replyContent: '',
   closeTime: '',
-  progress: '待處理',
+  progress: '',
   assignee: '',
   replies: []
 });
@@ -132,8 +132,8 @@ const LineChart = ({ data, labels }) => {
   );
 };
 
-// 2. 罐頭文字側邊欄組件
-const CannedMessagesPanel = ({ messages }) => {
+// 2. 罐頭文字彈出式視窗組件
+const CannedMessagesModal = ({ messages, onClose }) => {
   const [copyId, setCopyId] = useState(null);
 
   const handleCopy = (text, idx) => {
@@ -152,29 +152,36 @@ const CannedMessagesPanel = ({ messages }) => {
   };
 
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 sticky top-6 flex flex-col h-full max-h-[800px]">
-      <h3 className="font-black text-slate-800 mb-4 flex items-center shrink-0">
-        <MessageSquare size={18} className="mr-2 text-blue-600"/> 罐頭回覆
-      </h3>
-      <div className="space-y-3 overflow-y-auto pr-2 flex-1">
-        {messages.map((m, idx) => (
-          <div 
-            key={idx} 
-            className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-300 hover:shadow-md transition-all group relative cursor-pointer" 
-            onClick={() => handleCopy(m, idx)}
-            title="點擊複製"
-          >
-            <p className="text-sm text-slate-600 line-clamp-4 leading-relaxed">{m}</p>
-            <button className="absolute top-2 right-2 p-1.5 bg-white rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600">
-              {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-            </button>
-          </div>
-        ))}
-        {(!messages || messages.length === 0) && (
-          <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
-        )}
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+          <h3 className="font-black text-lg flex items-center text-slate-800">
+            <MessageSquare size={20} className="mr-2 text-blue-600"/> 選擇罐頭回覆
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
+        </div>
+        <div className="p-6 space-y-3 overflow-y-auto flex-1">
+          {messages.map((m, idx) => (
+            <div 
+              key={idx} 
+              className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-300 hover:shadow-md transition-all group relative cursor-pointer" 
+              onClick={() => handleCopy(m, idx)}
+              title="點擊複製"
+            >
+              <p className="text-sm text-slate-600 line-clamp-4 leading-relaxed pr-6">{m}</p>
+              <button className="absolute top-2 right-2 p-1.5 bg-white rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600">
+                {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+              </button>
+            </div>
+          ))}
+          {(!messages || messages.length === 0) && (
+            <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
+          )}
+        </div>
+        <div className="p-4 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-500 font-bold text-center shrink-0 flex items-center justify-center">
+          <CheckCircle size={14} className="mr-1 text-green-500"/> 點擊卡片即可複製，請自行貼入答覆框中
+        </div>
       </div>
-      <div className="shrink-0 pt-4 mt-2 border-t border-slate-100 text-[10px] text-slate-400 text-center">點擊卡片即可快速複製文字</div>
     </div>
   );
 };
@@ -195,22 +202,39 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
 
-  // Dropdown States (Dynamic Settings)
-  const [channels, setChannels] = useState(DEFAULT_CHANNELS);
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [statuses, setStatuses] = useState(DEFAULT_STATUS_OPTIONS);
-  const [cannedMessages, setCannedMessages] = useState(DEFAULT_CANNED_MESSAGES);
+  // Dropdown States (Strictly Data-Driven)
+  const [channels, setChannels] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [statuses, setStatuses] = useState([]);
+  const [progresses, setProgresses] = useState([]);
+  const [cannedMessages, setCannedMessages] = useState([]);
+  const [showCannedModal, setShowCannedModal] = useState(false);
+
+  // Form State
+  const [formData, setFormData] = useState(getInitialForm());
+  const [isLookingUp, setIsLookingUp] = useState(false);
+
+  // 當動態選單讀取完成後，自動為新增表單帶入預設首選項 (如果尚未選擇)
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      channel: prev.channel || (channels[0] || ''),
+      category: prev.category || (categories[0] || ''),
+      status: prev.status || (statuses[0] || ''),
+      progress: prev.progress || (progresses[0] || '待處理')
+    }));
+  }, [channels, categories, statuses, progresses]);
 
   // History State
   const [searchTerm, setSearchTerm] = useState('');
-  const [historyStartDate, setHistoryStartDate] = useState('');
-  const [historyEndDate, setHistoryEndDate] = useState('');
+  const [historyStartDate, setHistoryStartDate] = useState(getFirstDayOfMonth());
+  const [historyEndDate, setHistoryEndDate] = useState(getLastDayOfMonth());
   const [historyProgress, setHistoryProgress] = useState('全部');
   const [sortConfig, setSortConfig] = useState({ key: 'receiveTime', direction: 'desc' });
 
   // Dashboard State
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
-  const [dashEndDate, setDashEndDate] = useState(getToday());
+  const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
   const [trendCategory, setTrendCategory] = useState('全類別');
 
   // Maintenance State
@@ -231,10 +255,6 @@ export default function App() {
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
-
-  // Form State
-  const [formData, setFormData] = useState(getInitialForm());
-  const [isLookingUp, setIsLookingUp] = useState(false);
 
   // --- Initialization ---
   useEffect(() => {
@@ -271,7 +291,7 @@ export default function App() {
 
     const baseDbPath = typeof __app_id !== 'undefined' 
       ? ['artifacts', appId, 'public', 'data'] 
-      : []; // 本地測試相容
+      : []; 
 
     const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
     const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
@@ -286,7 +306,7 @@ export default function App() {
     // 2. 監聽案件紀錄
     const unsubscribeTickets = onSnapshot(query(buildPath('cs_records')), (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTickets(records); // 排序改由前端動態處理
+      setTickets(records); 
     });
 
     // 3. 監聽院所資料
@@ -315,17 +335,19 @@ export default function App() {
     const unsubscribeSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data.channels) setChannels(data.channels);
-        if (data.categories) setCategories(data.categories);
-        if (data.statuses) setStatuses(data.statuses);
-        if (data.cannedMessages) setCannedMessages(data.cannedMessages);
+        setChannels(data.channels || []);
+        setCategories(data.categories || []);
+        setStatuses(data.statuses || []);
+        setProgresses(data.progresses || []);
+        setCannedMessages(data.cannedMessages || []);
       } else {
-        // 如果還沒有設定檔，主動建立預設值
+        // 若為空資料庫，給予一組基礎預設值防呆
         setDoc(buildDocPath('cs_settings', 'dropdowns'), {
-          channels: DEFAULT_CHANNELS,
-          categories: DEFAULT_CATEGORIES,
-          statuses: DEFAULT_STATUS_OPTIONS,
-          cannedMessages: DEFAULT_CANNED_MESSAGES
+          channels: ["電話", "LINE"],
+          categories: ["慢防-成人預防保健", "其他"],
+          statuses: ["詢問步驟", "其他"],
+          progresses: ["待處理", "處理中", "待回覆", "結案"],
+          cannedMessages: ["請提供更詳細的相關資訊以便查詢"]
         });
       }
     });
@@ -344,7 +366,7 @@ export default function App() {
     const user = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
     if (user) {
       setCurrentUser(user);
-      setFormData(getInitialForm(user.username, channels, categories, statuses));
+      setFormData(getInitialForm(user.username));
       setAuthError('');
     } else {
       setAuthError('帳號或密碼錯誤');
@@ -431,7 +453,6 @@ export default function App() {
     let newFormData = { ...formData, [name]: value };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
-    // 若是結案，清空指派
     if (name === 'progress' && value === '結案') newFormData.assignee = '';
     setFormData(newFormData);
   };
@@ -486,7 +507,15 @@ export default function App() {
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
-      setFormData(getInitialForm(currentUser.username, channels, categories, statuses));
+      
+      // 送出後維持目前選單最新狀態
+      setFormData(prev => ({
+        ...getInitialForm(currentUser.username),
+        channel: channels.includes(prev.channel) ? prev.channel : (channels[0] || ''),
+        category: categories.includes(prev.category) ? prev.category : (categories[0] || ''),
+        status: statuses.includes(prev.status) ? prev.status : (statuses[0] || ''),
+        progress: progresses.includes(prev.progress) ? prev.progress : (progresses[0] || '待處理')
+      }));
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
     } catch (error) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗。' });
@@ -747,13 +776,12 @@ export default function App() {
   // --- Analytics Data Generation ---
   const dashboardStats = useMemo(() => {
     const total = tickets.length;
-    const pending = tickets.filter(t => t.progress === '待處理').length;
+    const pending = tickets.filter(t => t.progress !== '結案').length; // 計算所有未結案為待處理 (與使用者期望可能相符)
     const resolved = tickets.filter(t => t.progress === '結案').length;
     const completionRate = total ? Math.round((resolved/total)*100) : 0;
     
-    const startDateObj = new Date(dashStartDate);
-    const endDateObj = new Date(dashEndDate);
-    endDateObj.setHours(23, 59, 59, 999);
+    const startDateObj = new Date(`${dashStartDate}T00:00:00`);
+    const endDateObj = new Date(`${dashEndDate}T23:59:59.999`);
     
     const rangeTickets = tickets.filter(t => {
       const tDate = new Date(t.receiveTime);
@@ -912,70 +940,71 @@ export default function App() {
                 </div>
               )}
 
-              {/* Layout for Form and Canned Messages */}
-              <div className="flex flex-col xl:flex-row gap-8 items-start">
-                
-                {/* Main Form Area */}
-                <form onSubmit={handleSubmit} className="flex-1 w-full space-y-8">
-                  <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                    <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                      <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                      <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c}>{c}</option>)}</select></div>
-                      <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
-                      
-                      <div className="md:col-span-1">
-                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對)</label>
-                        <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
-                        <div className="flex space-x-4">
-                          <input type="text" name="instName" value={formData.instName} readOnly className="w-2/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-bold outline-none" placeholder="名稱"/>
-                          <input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" placeholder="層級"/>
-                        </div>
+              {/* Main Form Area */}
+              <form onSubmit={handleSubmit} className="space-y-8">
+                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                  <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
+                    
+                    <div className="md:col-span-1">
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對)</label>
+                      <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
+                      <div className="flex space-x-4">
+                        <input type="text" name="instName" value={formData.instName} readOnly className="w-2/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-bold outline-none" placeholder="名稱"/>
+                        <input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" placeholder="層級"/>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                    <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                      <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c}>{c}</option>)}</select></div>
-                      <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s}>{s}</option>)}</select></div>
-                      <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}</select></div>
-                      
-                      {/* 指派功能：只要不是結案即可指派 */}
-                      {formData.progress !== '結案' ? (
-                        <div className="animate-in zoom-in-95 duration-200">
-                          <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                          <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
-                             <option value="">-- 未指定 --</option>
-                             {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
-                          </select>
-                        </div>
-                      ) : <div></div>}
-                    </div>
-                    <div className="space-y-6">
+                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                  <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{progresses.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+                    
+                    {/* 指派功能：只要不是結案即可指派 */}
+                    {formData.progress !== '結案' ? (
+                      <div className="animate-in zoom-in-95 duration-200">
+                        <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
+                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
+                           <option value="">-- 未指定 --</option>
+                           {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                        </select>
+                      </div>
+                    ) : <div></div>}
+                  </div>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="text-xs font-bold mb-2 block text-slate-700">詳細問題描述</label>
                       <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="詳細問題描述..."></textarea>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-end mb-2">
+                        <label className="text-xs font-bold block text-slate-700">給予的初步答覆 (選填)</label>
+                        <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 flex items-center bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                          <MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字
+                        </button>
+                      </div>
                       <textarea id="replyContent" name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆 (選填)..."></textarea>
                     </div>
                   </div>
-
-                  <div className="flex justify-end pt-4 pb-12">
-                    <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:scale-95'}`}>
-                      {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
-                      {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
-                    </button>
-                  </div>
-                </form>
-
-                {/* Right Side: Canned Messages */}
-                <div className="w-full xl:w-80 shrink-0 h-full">
-                   <CannedMessagesPanel messages={cannedMessages} />
                 </div>
 
-              </div>
+                <div className="flex justify-end pt-4 pb-12">
+                  <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:scale-95'}`}>
+                    {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
+                    {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
@@ -1014,81 +1043,73 @@ export default function App() {
                   {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
                </div>
 
-               {/* 維護互動彈窗 - 放大版型以容納罐頭文字 */}
+               {/* 維護互動彈窗 */}
                {maintainModal && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                      <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                        <h3 className="font-black text-lg flex items-center"><Edit size={20} className="mr-2 text-blue-600"/> 案件維護 - {maintainModal.instName}</h3>
                        <button onClick={() => setMaintainModal(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
                      </div>
-                     
-                     {/* Modal Body with Flex Layout */}
-                     <div className="flex-1 flex flex-col xl:flex-row overflow-hidden min-h-[400px]">
+                     <div className="p-8 overflow-y-auto flex-1 space-y-6">
+                       {/* 原始內容 (唯讀) */}
+                       <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                         <div className="flex justify-between">
+                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
+                           <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
+                         </div>
+                         <p className="text-sm text-slate-700">{maintainModal.extraInfo || '(無)'}</p>
+                       </div>
                        
-                       {/* Left Side: Form Details */}
-                       <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                         {/* 原始內容 (唯讀) */}
-                         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                           <div className="flex justify-between">
-                             <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
-                             <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
-                           </div>
-                           <p className="text-sm text-slate-700">{maintainModal.extraInfo || '(無)'}</p>
-                         </div>
-                         
-                         {/* 歷史答覆軌跡 (唯讀) */}
-                         <div>
-                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
-                           {maintainModal.replies && maintainModal.replies.length > 0 ? (
-                             <div className="space-y-4">
-                               {maintainModal.replies.map((r, i) => (
-                                 <div key={i} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
-                                   <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
-                                   <div>
-                                     <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString()}</span></div>
-                                     <div className="text-sm text-slate-600 leading-relaxed">{r.content}</div>
-                                   </div>
+                       {/* 歷史答覆軌跡 (唯讀) */}
+                       <div>
+                         <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
+                         {maintainModal.replies && maintainModal.replies.length > 0 ? (
+                           <div className="space-y-4">
+                             {maintainModal.replies.map((r, i) => (
+                               <div key={i} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
+                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
+                                 <div>
+                                   <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString()}</span></div>
+                                   <div className="text-sm text-slate-600 leading-relaxed">{r.content}</div>
                                  </div>
-                               ))}
-                             </div>
-                           ) : <div className="text-sm text-slate-400 italic">尚無任何答覆紀錄</div>}
-                         </div>
+                               </div>
+                             ))}
+                           </div>
+                         ) : <div className="text-sm text-slate-400 italic">尚無任何答覆紀錄</div>}
+                       </div>
 
-                         {/* 維護表單 */}
-                         <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100">
-                           <div className="grid grid-cols-2 gap-4">
+                       {/* 維護表單 */}
+                       <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100">
+                         <div className="grid grid-cols-2 gap-4">
+                           <div>
+                             <label className="text-xs font-black text-slate-800 mb-2 block">更新進度</label>
+                             <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 font-bold outline-none">
+                               {progresses.map(p=><option key={p} value={p}>{p}</option>)}
+                             </select>
+                           </div>
+                           {/* 變更指定用戶 (只要不是結案即可用) */}
+                           {maintainForm.progress !== '結案' ? (
                              <div>
-                               <label className="text-xs font-black text-slate-800 mb-2 block">更新進度</label>
-                               <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 font-bold outline-none">
-                                 {PROGRESS_OPTIONS.map(p=><option key={p}>{p}</option>)}
+                               <label className="text-xs font-black text-red-600 mb-2 block">指派後續處理人</label>
+                               <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 border-2 border-red-200 rounded-xl font-bold text-red-700 outline-none">
+                                 <option value="">-- 未指定 --</option>
+                                 {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
                                </select>
                              </div>
-                             {/* 變更指定用戶 (只要不是結案即可用) */}
-                             {maintainForm.progress !== '結案' ? (
-                               <div>
-                                 <label className="text-xs font-black text-red-600 mb-2 block">指派後續處理人</label>
-                                 <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 border-2 border-red-200 rounded-xl font-bold text-red-700 outline-none">
-                                   <option value="">-- 未指定 --</option>
-                                   {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
-                                 </select>
-                               </div>
-                             ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50"/></div>}
+                           ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50"/></div>}
+                         </div>
+                         <div>
+                           <div className="flex justify-between items-end mb-2">
+                             <label className="text-xs font-black text-slate-800 block">追加新答覆 / 註記</label>
+                             <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 flex items-center bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                               <MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字
+                             </button>
                            </div>
-                           <div>
-                             <label className="text-xs font-black text-slate-800 mb-2 block">追加新答覆 / 註記</label>
-                             <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 border border-slate-200 rounded-2xl bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入新的答覆，或從右側點擊罐頭文字貼上..."></textarea>
-                           </div>
-                         </form>
-                       </div>
-
-                       {/* Right Side: Canned Messages in Modal */}
-                       <div className="w-full xl:w-80 border-t xl:border-t-0 xl:border-l border-slate-100 bg-slate-50/50 p-6 overflow-y-auto shrink-0">
-                         <CannedMessagesPanel messages={cannedMessages} />
-                       </div>
-
+                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 border border-slate-200 rounded-2xl bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入新的答覆，或點擊上方按鈕複製罐頭文字貼上..."></textarea>
+                         </div>
+                       </form>
                      </div>
-
                      <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
                        <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl mr-4 transition-colors">取消</button>
                        <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
@@ -1117,7 +1138,7 @@ export default function App() {
                    {/* Progress Filter */}
                    <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white px-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm font-bold text-sm text-slate-700 outline-none shrink-0">
                      <option value="全部">全部進度</option>
-                     {PROGRESS_OPTIONS.map(p=><option key={p} value={p}>{p}</option>)}
+                     {progresses.map(p=><option key={p} value={p}>{p}</option>)}
                    </select>
                    {/* Keyword Filter */}
                    <div className="relative flex-1 xl:w-72">
@@ -1262,7 +1283,7 @@ export default function App() {
               {currentUser.role !== ROLES.VIEWER && (
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><MessageSquare size={20} className="mr-2 text-indigo-600"/> 罐頭文字維護</h3>
-                  <p className="text-xs text-slate-500 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」右側面板中。</p>
+                  <p className="text-xs text-slate-500 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
                   <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
                 </div>
               )}
@@ -1270,16 +1291,6 @@ export default function App() {
               {/* 以下功能僅管理員可見 */}
               {currentUser.role === ROLES.ADMIN && (
                 <>
-                  {/* 表單下拉選單維護 */}
-                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
-                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Tags size={20} className="mr-2 text-indigo-600"/> 表單下拉選單維護</h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      <DropdownManager title="反映管道" dbKey="channels" items={channels} />
-                      <DropdownManager title="業務類別" dbKey="categories" items={categories} />
-                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
-                    </div>
-                  </div>
-
                   <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Shield size={20} className="mr-2 text-indigo-600"/> 使用者與權限管理</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1323,7 +1334,7 @@ export default function App() {
                   </div>
 
                   {/* 院所維護區 */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
                     <div className="space-y-8">
                       <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
                         <h3 className="font-black mb-6 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600"/> 單筆新增院所</h3>
@@ -1367,10 +1378,25 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* 表單下拉選單維護 (移至最下方) */}
+                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800"><Tags size={20} className="mr-2 text-indigo-600"/> 表單下拉選單維護</h3>
+                    <p className="text-xs text-slate-500 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500"/> 注意：系統預設以「結案」兩字作為完成率計算標準，建議保留此選項。</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+                      <DropdownManager title="反映管道" dbKey="channels" items={channels} />
+                      <DropdownManager title="業務類別" dbKey="categories" items={categories} />
+                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
+                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} />
+                    </div>
+                  </div>
                 </>
               )}
             </div>
           )}
+
+          {/* Render Canned Modal in Root */}
+          {showCannedModal && <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />}
         </div>
       </div>
     </div>
