@@ -5,8 +5,8 @@ import {
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers, GripVertical,
-  ClipboardCheck, Eye, Moon, Sun
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download,
+  Moon, Sun
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -15,14 +15,12 @@ import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, up
 // --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
 if (typeof window !== 'undefined') {
   window.tailwind = window.tailwind || {};
-  window.tailwind.config = {
-    ...window.tailwind.config,
-    darkMode: 'class',
-  };
+  window.tailwind.config = window.tailwind.config || {};
+  window.tailwind.config.darkMode = 'class';
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.1.2 (大類別搜尋連動修復版)";
+const APP_VERSION = "v2.2.1 (高對比與防潰版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -117,9 +115,21 @@ const getLatestReply = (replies, fallbackContent) => {
 
 // --- Sub-Components (避免 React 巢狀渲染導致白畫面崩潰) ---
 
+// 0. 大頭貼共用模組
+const UserAvatar = ({ username, photoURL, className = "w-8 h-8 text-xs" }) => {
+  if (photoURL) {
+    return <img src={photoURL} alt={username} className={`rounded-full object-cover shadow-sm border border-slate-200 dark:border-slate-600 ${className}`} />;
+  }
+  return (
+    <div className={`rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 shadow-sm border border-blue-200 dark:border-blue-800 ${className}`}>
+      {username ? username.charAt(0).toUpperCase() : '?'}
+    </div>
+  );
+};
+
 // 1. 純原生 SVG 折線圖組件
 const LineChart = ({ data, labels, isDarkMode }) => {
-  if (!Array.isArray(data) || data.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
+  if (!Array.isArray(data) || data.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
   const maxVal = Math.max(...data, 10);
   const height = 200;
   const width = 600;
@@ -212,7 +222,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
             </div>
           ))}
           {safeMessages.length === 0 && (
-            <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
           )}
         </div>
         <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 font-bold text-center shrink-0 flex items-center justify-center">
@@ -298,7 +308,7 @@ const DropdownManager = ({ title, dbKey, items }) => {
           >
             <div className="flex items-center flex-1 overflow-hidden">
               <div className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 mr-2 p-1" title="按住拖曳排序">
-                <GripVertical size={16} />
+                <ArrowUpDown size={16} />
               </div>
               <span className="text-slate-700 dark:text-slate-200 font-medium truncate" title={item}>{item}</span>
             </div>
@@ -337,7 +347,7 @@ const CategoryMappingManager = ({ categories, mapping }) => {
     <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h4 className="font-black text-slate-800 dark:text-slate-100 flex items-center"><Layers size={18} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 大類別歸屬設定</h4>
+          <h4 className="font-black text-slate-800 dark:text-slate-100 flex items-center"><Database size={18} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 大類別歸屬設定</h4>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
         </div>
         <button onClick={handleSaveMapping} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-transform active:scale-95">儲存大類別設定</button>
@@ -458,6 +468,7 @@ export default function App() {
 
   // Maintenance State
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
+  const [maintainSortOrder, setMaintainSortOrder] = useState('asc'); // 維護區排序設定 (舊到新或新到舊)
   const [maintainModal, setMaintainModal] = useState(null);
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
 
@@ -473,6 +484,17 @@ export default function App() {
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
+
+  // User Map (For Avatars mapping)
+  const userMap = useMemo(() => {
+    const map = {};
+    dbUsers.forEach(u => {
+      map[u.username] = u;
+    });
+    return map;
+  }, [dbUsers]);
+
+  const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
   // --- Initialization ---
   useEffect(() => {
@@ -675,6 +697,58 @@ export default function App() {
     }
   };
 
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file || !activeUser) return;
+    
+    if (!file.type.startsWith('image/')) {
+      alert('請上傳圖片檔案！');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 150;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        // 壓縮成 jpeg 以節省空間 (品質 0.8)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+        try {
+          const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+          const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+          await updateDoc(docRef, { photoURL: dataUrl });
+          alert('個人圖像更新成功！');
+        } catch (error) {
+          console.error('Update avatar failed:', error);
+          alert('圖像更新失敗，請稍後再試。');
+        }
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = null; // 重置 input 狀態
+  };
+
   // --- Ticket Handlers ---
   const handleFormChange = (e) => {
     const { name, value } = e.target;
@@ -787,7 +861,7 @@ export default function App() {
   const maintainTicketsList = useMemo(() => {
     if (!currentUser) return [];
 
-    return tickets.filter(t => {
+    let result = tickets.filter(t => {
       const matchSearch = maintainSearchTerm ? 
         ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
       
@@ -801,7 +875,16 @@ export default function App() {
         return isMine && isUnresolved;
       }
     });
-  }, [tickets, currentUser, maintainSearchTerm]);
+
+    // Apply Sorting for Maintenance View
+    result.sort((a, b) => {
+       const timeA = new Date(a.receiveTime).getTime();
+       const timeB = new Date(b.receiveTime).getTime();
+       return maintainSortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+    });
+
+    return result;
+  }, [tickets, currentUser, maintainSearchTerm, maintainSortOrder]);
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
@@ -1316,12 +1399,12 @@ export default function App() {
     const isActive = sortConfig.key === sortKey;
     return (
       <th 
-        className={`p-5 cursor-pointer hover:bg-slate-100 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'}`}
+        className={`p-5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'}`}
         onClick={() => handleSort(sortKey)}
       >
         <div className={`flex items-center ${align === 'center' ? 'justify-center' : 'justify-start'} group`}>
           {label}
-          <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600' : 'text-slate-300 group-hover:text-slate-400'}`}>
+          <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'}`}>
             {isActive ? (
               sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>
             ) : (
@@ -1390,7 +1473,7 @@ export default function App() {
   }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping]);
 
   // --- Render Login Screen ---
-  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
+  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
 
   if (!currentUser) {
     const isFirstTime = dbUsers.length === 0;
@@ -1408,51 +1491,51 @@ export default function App() {
     });
 
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50 relative overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900 relative overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 dark:bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400 dark:bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
 
-        <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl z-10 w-full max-w-md border border-slate-100 flex flex-col relative">
+        <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl z-10 w-full max-w-md border border-slate-100 dark:border-slate-700 flex flex-col relative">
           <div className="text-center mb-10">
-            <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
+            <div className="bg-blue-600 dark:bg-blue-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 dark:shadow-none">
               <Shield size={32} className="text-white"/>
             </div>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight">系統存取驗證</h2>
-            <p className="text-slate-400 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
-            <div className="mt-2 text-[10px] text-slate-400 font-mono font-bold tracking-widest">{APP_VERSION}</div>
+            <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">系統存取驗證</h2>
+            <p className="text-slate-400 dark:text-slate-400 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
+            <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold tracking-widest">{APP_VERSION}</div>
           </div>
 
           <form onSubmit={isFirstTime ? handleCreateFirstAdmin : handleLogin} className="space-y-6">
             {isFirstTime ? (
               <>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">建立管理員帳號</label>
-                  <input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"/>
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">建立管理員帳號</label>
+                  <input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500"/>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">設定密碼</label>
-                  <input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"/>
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">設定密碼</label>
+                  <input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500"/>
                 </div>
               </>
             ) : (
               <>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">帳號</label>
-                  <select required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-700">
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">帳號</label>
+                  <select required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold">
                     <option value="" disabled>請選擇使用者...</option>
                     {sortedLoginUsers.map(u => <option key={u.id} value={u.username}>{u.username} ({u.role})</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">密碼</label>
-                  <input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"/>
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">密碼</label>
+                  <input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500"/>
                 </div>
               </>
             )}
             
-            {authError && <p className="text-sm text-red-500 font-bold text-center animate-pulse">{authError}</p>}
+            {authError && <p className="text-sm text-red-500 dark:text-red-400 font-bold text-center animate-pulse">{authError}</p>}
             
-            <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95 flex justify-center items-center">
+            <button type="submit" className="w-full py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg shadow-blue-200 dark:shadow-none active:scale-95 flex justify-center items-center">
               {isFirstTime ? '初始化資料庫' : <><Lock size={16} className="mr-2"/> 登入系統</>}
             </button>
           </form>
@@ -1467,8 +1550,8 @@ export default function App() {
       onClick={() => setActiveTab(id)}
       className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${
         activeTab === id 
-          ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500' 
-          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100'
+          ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' 
+          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
       }`}
     >
       <Icon size={20} />
@@ -1480,23 +1563,21 @@ export default function App() {
     <div className={isDarkMode ? 'dark' : ''}>
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       {/* Sidebar */}
-      <div className="w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col hidden md:flex transition-colors duration-300">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center space-x-3 mb-2">
+      <div className="w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col hidden md:flex transition-colors duration-300 relative z-20">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center space-x-3 mb-2 shrink-0">
           <div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div>
           <h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">客服中心</h1>
         </div>
-        <div className="px-6 py-4 flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 font-black border border-slate-200 dark:border-slate-600">
-            {currentUser.username.charAt(0).toUpperCase()}
-          </div>
+        <div className="px-6 py-4 flex items-center space-x-3 shrink-0">
+          <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm" />
           <div>
-            <div className="font-bold text-sm dark:text-slate-200">{currentUser.username}</div>
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{currentUser.role}</div>
+            <div className="font-bold text-sm dark:text-slate-200">{activeUser.username}</div>
+            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div>
           </div>
         </div>
 
         {/* 深色模式切換開關 */}
-        <div className="px-6 pb-2">
+        <div className="px-6 pb-2 shrink-0">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
             className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
@@ -1526,18 +1607,18 @@ export default function App() {
           
           {/* Admin Only Audit Tab */}
           {currentUser.role === ROLES.ADMIN && (
-             renderNavButton('audit', ClipboardCheck, '申請與日誌區')
+             renderNavButton('audit', CheckCircle, '申請與日誌區')
           )}
           
           {renderNavButton('settings', Settings, '系統設定區')}
         </nav>
-        <div className="p-4 border-t border-slate-100 dark:border-slate-700">
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0">
           <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 relative transition-colors duration-300">
+      <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 relative transition-colors duration-300 z-10">
         <div className="p-4 md:p-8 lg:p-10 max-w-[1400px] mx-auto">
           
           {/* TAB 1: FORM */}
@@ -1562,16 +1643,16 @@ export default function App() {
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light] dark:[color-scheme:dark]"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
-                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label>
                       <input type="text" name="instCode" required pattern="^(\d{10}|999)$" title="請輸入 10 碼數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/>
                     </div>
                     <div className="md:col-span-2">
-                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">院所名稱與層級</label>
+                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所名稱與層級</label>
                       <div className="flex space-x-4">
                         <input 
                           type="text" 
@@ -1650,9 +1731,19 @@ export default function App() {
                      {currentUser.role === ROLES.ADMIN ? '管理員可查詢案件號以維護「已結案」紀錄。' : '僅顯示您負責或建檔的未結案紀錄。'}
                    </p>
                  </div>
-                 <div className="relative w-full md:w-80">
-                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400 dark:text-slate-500"/>
-                   <input type="text" placeholder="輸入案件號碼查詢..." value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                   <select 
+                     value={maintainSortOrder} 
+                     onChange={(e) => setMaintainSortOrder(e.target.value)}
+                     className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm px-4 py-3 font-bold text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500"
+                   >
+                     <option value="asc">排序: 舊到新</option>
+                     <option value="desc">排序: 新到舊</option>
+                   </select>
+                   <div className="relative w-full sm:w-80">
+                     <Search size={18} className="absolute left-4 top-3.5 text-slate-400 dark:text-slate-500"/>
+                     <input type="text" placeholder="輸入案件號碼查詢..." value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                   </div>
                  </div>
                </div>
                
@@ -1667,8 +1758,16 @@ export default function App() {
                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
                       <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
-                        <span className="text-slate-400 dark:text-slate-500 flex items-center"><User size={14} className="mr-1"/> {t.receiver} 建檔</span>
-                        {t.assignee && <span className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg">負責: {t.assignee}</span>}
+                        <div className="flex items-center text-slate-400 dark:text-slate-500">
+                          <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
+                          <span>建檔</span>
+                        </div>
+                        {t.assignee && (
+                          <div className="flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg">
+                            <UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[6px] mr-1.5" />
+                            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">負責</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1687,7 +1786,7 @@ export default function App() {
                        {/* 問題描述 (開放編輯) */}
                        <div className="bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
                          <div className="flex justify-between mb-2">
-                           <div className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">問題描述 (可修改)</div>
+                           <div className="text-xs font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest">問題描述 (可修改)</div>
                            <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
                          </div>
                          <textarea 
@@ -1700,20 +1799,30 @@ export default function App() {
                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">提示：修改此處內容將會自動產生修改日誌，供管理員查核。</p>
                        </div>
                        
-                       {/* 歷史答覆軌跡 (唯讀) */}
+                       {/* 歷史答覆軌跡 (支援匯入資料回退顯示) */}
                        <div>
-                         <div className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
+                         <div className="text-xs font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
                          {maintainModal.replies && maintainModal.replies.length > 0 ? (
                            <div className="space-y-4">
                              {maintainModal.replies.map((r, i) => (
                                <div key={i} className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
-                                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
+                                 <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-8 h-8 text-xs shrink-0" />
                                  <div>
                                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
                                    <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
                                  </div>
                                </div>
                              ))}
+                           </div>
+                         ) : maintainModal.replyContent ? (
+                           <div className="relative flex items-start justify-end w-full pl-8 mb-6">
+                             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                               <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                               <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
+                                 <Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄
+                               </div>
+                               <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{maintainModal.replyContent}</div>
+                             </div>
                            </div>
                          ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic">尚無任何答覆紀錄</div>}
                        </div>
@@ -1848,7 +1957,7 @@ export default function App() {
                <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                  <div className="overflow-x-auto min-h-[400px]">
                    <table className="w-full text-left">
-                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest">
                        <tr>
                          {currentUser.role === ROLES.ADMIN && (
                            <th className="p-5 text-center w-12">
@@ -1867,6 +1976,7 @@ export default function App() {
                              />
                            </th>
                          )}
+                         <th className="p-5 text-center w-12">序號</th>
                          {renderSortHeader('案件號/日期', 'receiveTime')}
                          {renderSortHeader('院所', 'instName')}
                          {renderSortHeader('描述/回覆摘要', 'extraInfo')}
@@ -1876,9 +1986,9 @@ export default function App() {
                      </thead>
                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                        {filteredAndSortedHistory.length === 0 ? (
-                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
+                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
                        ) : (
-                         filteredAndSortedHistory.map(t => {
+                         filteredAndSortedHistory.map((t, index) => {
                            const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
@@ -1899,15 +2009,16 @@ export default function App() {
                                    />
                                  </td>
                                )}
+                               <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
                                <td className="p-5">
                                  <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">
-                                   {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
+                                   {t.ticketId || '-'} <Search size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
                                  </div>
-                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                                 <div className="text-[10px] text-slate-400 dark:text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
                                </td>
                                <td className="p-5">
                                  <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
-                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
+                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-400 mt-1">{t.instCode}</div>
                                </td>
                                <td className="p-5 max-w-[250px] relative group/tooltip">
                                   <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
@@ -1923,8 +2034,16 @@ export default function App() {
                                   )}
                                </td>
                                <td className="p-5">
-                                 <div className="text-slate-800 dark:text-slate-200">{t.receiver}</div>
-                                 {t.assignee && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}
+                                 <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
+                                   <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" />
+                                   <span>{t.receiver}</span>
+                                 </div>
+                                 {t.assignee && (
+                                   <div className="flex items-center space-x-1.5 mt-2">
+                                     <UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" />
+                                     <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div>
+                                   </div>
+                                 )}
                                </td>
                                <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
                              </tr>
@@ -1950,19 +2069,24 @@ export default function App() {
                      <div className="p-8 overflow-y-auto flex-1 space-y-8">
                        {/* 區塊 1: 基本資料 */}
                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">建檔人</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.receiver}</div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">當前進度</div>
-                           <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">建檔人</div>
+                            <div className="flex items-center text-sm font-bold text-slate-700 dark:text-slate-200 mt-1">
+                               <UserAvatar username={viewModalTicket.receiver} photoURL={userMap[viewModalTicket.receiver]?.photoURL} className="w-5 h-5 text-[10px] mr-1.5" />
+                               {viewModalTicket.receiver}
+                            </div>
+                         </div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
+                           <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
                              {viewModalTicket.progress}
                            </span>
                          </div>
                        </div>
                        
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
                        </div>
 
                        {/* 區塊 2: 完整對話紀錄 */}
@@ -1980,16 +2104,31 @@ export default function App() {
                              </div>
                            </div>
 
-                           {/* 歷史答覆 */}
-                           {(Array.isArray(viewModalTicket.replies)?viewModalTicket.replies:[]).map((r, i) => (
-                             <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
+                           {/* 歷史答覆 (支援歷史匯入顯示) */}
+                           {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
+                             viewModalTicket.replies.map((r, i) => (
+                               <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
+                                 <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                                   <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                                   <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
+                                     <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
+                                     客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                   </div>
+                                   <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                 </div>
+                               </div>
+                             ))
+                           ) : viewModalTicket.replyContent ? (
+                             <div className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
                                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
                                  <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                 <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 客服人員：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                 <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                 <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
+                                   <Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄
+                                 </div>
+                                 <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
                                </div>
                              </div>
-                           ))}
+                           ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
 
                            {/* 結案標記 */}
                            {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
@@ -2053,7 +2192,7 @@ export default function App() {
                <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                  <div className="overflow-x-auto min-h-[400px] max-h-[700px]">
                    <table className="w-full text-left">
-                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest sticky top-0 z-10">
+                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-10">
                        <tr>
                          {currentUser.role === ROLES.ADMIN && (
                            <th className="p-5 text-center w-12">
@@ -2072,6 +2211,7 @@ export default function App() {
                              />
                            </th>
                          )}
+                         <th className="p-5 text-center w-12">序號</th>
                          {renderSortHeader('案件號/日期', 'receiveTime')}
                          {renderSortHeader('院所', 'instName')}
                          {renderSortHeader('描述/回覆摘要', 'extraInfo')}
@@ -2081,9 +2221,9 @@ export default function App() {
                      </thead>
                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                        {allRecordsFiltered.length === 0 ? (
-                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
+                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
                        ) : (
-                         allRecordsFiltered.map(t => {
+                         allRecordsFiltered.map((t, index) => {
                            const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
@@ -2104,10 +2244,11 @@ export default function App() {
                                    />
                                  </td>
                                )}
-                               <td className="p-5"><div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
+                               <td className="p-5"><div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 dark:text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
                                <td className="p-5">
                                  <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
-                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
+                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-400 mt-1">{t.instCode}</div>
                                </td>
                                <td className="p-5 max-w-[250px] relative group/tooltip">
                                   <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
@@ -2123,8 +2264,16 @@ export default function App() {
                                   )}
                                </td>
                                <td className="p-5">
-                                 <div className="text-slate-800 dark:text-slate-200">{t.receiver}</div>
-                                 {t.assignee && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}
+                                 <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
+                                   <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" />
+                                   <span>{t.receiver}</span>
+                                 </div>
+                                 {t.assignee && (
+                                   <div className="flex items-center space-x-1.5 mt-2">
+                                     <UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" />
+                                     <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div>
+                                   </div>
+                                 )}
                                </td>
                                <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
                              </tr>
@@ -2167,7 +2316,9 @@ export default function App() {
                              <span className="font-bold text-red-600 dark:text-red-400 mr-2">申請原因:</span>{t.deleteRequest.reason}
                            </div>
                            <div className="flex justify-between items-center text-xs">
-                             <span className="font-bold text-slate-500 dark:text-slate-400">申請人: {t.deleteRequest.requestedBy}</span>
+                             <div className="flex items-center font-bold text-slate-500 dark:text-slate-400">
+                               申請人: <UserAvatar username={t.deleteRequest.requestedBy} photoURL={userMap[t.deleteRequest.requestedBy]?.photoURL} className="w-5 h-5 text-[8px] mx-1.5" /> {t.deleteRequest.requestedBy}
+                             </div>
                              <div className="space-x-2">
                                <button onClick={() => handleRejectDelete(t.id)} className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-lg font-bold transition-colors">退回</button>
                                <button onClick={() => handleApproveDelete(t.id, t.instName)} className="px-3 py-1.5 bg-red-600 dark:bg-red-500 text-white hover:bg-red-700 dark:hover:bg-red-600 rounded-lg font-bold shadow-sm transition-colors">核准刪除</button>
@@ -2196,15 +2347,17 @@ export default function App() {
                            </div>
                            <div className="space-y-3">
                              <div>
-                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">修改前原內容</div>
+                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-1">修改前原內容</div>
                                <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded line-through decoration-red-400 dark:decoration-red-500 border border-slate-200 dark:border-slate-700">{log.oldContent || '(空)'}</div>
                              </div>
                              <div>
-                               <div className="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-1">修改後新內容</div>
+                               <div className="text-[10px] font-black text-indigo-400 dark:text-indigo-400 uppercase tracking-widest mb-1">修改後新內容</div>
                                <div className="text-xs text-slate-800 dark:text-slate-200 bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded border border-indigo-100 dark:border-indigo-800">{log.newContent || '(空)'}</div>
                              </div>
                            </div>
-                           <div className="mt-3 text-right text-[10px] font-bold text-slate-500 dark:text-slate-400">修改人: <span className="text-indigo-600 dark:text-indigo-400">{log.user}</span></div>
+                           <div className="mt-3 flex justify-end items-center text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                             修改人: <UserAvatar username={log.user} photoURL={userMap[log.user]?.photoURL} className="w-4 h-4 text-[6px] mx-1" /> <span className="text-indigo-600 dark:text-indigo-400">{log.user}</span>
+                           </div>
                          </div>
                        ))
                      )}
@@ -2329,21 +2482,37 @@ export default function App() {
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">系統設定區</h2>
 
-              {/* 個人密碼修改區 (所有角色可見) */}
+              {/* 個人帳號與密碼修改區 (所有角色可見) */}
               <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Lock size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 修改個人登入密碼</h3>
-                <form onSubmit={handleChangeOwnPassword} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                  <div>
-                    <label className="text-xs font-bold text-slate-400 dark:text-slate-400 block mb-2">新密碼</label>
-                    <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
+                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><User size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 個人帳號設定</h3>
+                
+                <div className="flex flex-col md:flex-row gap-8 items-start">
+                  {/* 個人圖像上傳區塊 */}
+                  <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
+                    <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
+                    <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
+                      <Upload size={14} className="mr-1.5"/> 更換個人圖像
+                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                    </label>
+                    <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-400 dark:text-slate-400 block mb-2">確認新密碼</label>
-                    <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
-                  </div>
-                  <button type="submit" className="py-4 bg-indigo-600 dark:bg-indigo-500 text-white rounded-2xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95">更新密碼</button>
-                </form>
-                {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'}`}>{pwdChangeMsg}</p>}
+
+                  {/* 密碼修改區塊 */}
+                  <form onSubmit={handleChangeOwnPassword} className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">新密碼</label>
+                      <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">確認新密碼</label>
+                      <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
+                    </div>
+                    <div className="md:col-span-2">
+                      <button type="submit" className="w-full md:w-auto px-10 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-black dark:hover:bg-slate-500 transition-all shadow-lg active:scale-95">更新密碼</button>
+                      {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'}`}>{pwdChangeMsg}</p>}
+                    </div>
+                  </form>
+                </div>
               </div>
 
               {/* 罐頭文字維護區 (管理員與一般使用者可見) */}
@@ -2379,12 +2548,15 @@ export default function App() {
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
                               <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                <td className="p-4 dark:text-slate-200">{u.username}</td>
+                                <td className="p-4 flex items-center space-x-3 dark:text-slate-200">
+                                  <UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" />
+                                  <span>{u.username}</span>
+                                </td>
                                 <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
                                 <td className="p-4 text-center">
                                   <button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button>
