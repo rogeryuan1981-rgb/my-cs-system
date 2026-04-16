@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.9.1 (正式版)";
+const APP_VERSION = "v1.9.2 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -408,6 +408,14 @@ export default function App() {
     if (user) {
       setCurrentUser(user);
       setFormData(getInitialForm(user.username));
+      
+      // 根據權限決定預設顯示的頁籤
+      if (user.role === ROLES.VIEWER) {
+        setActiveTab('list');
+      } else {
+        setActiveTab('form');
+      }
+      
       setAuthError('');
     } else {
       setAuthError('帳號或密碼錯誤');
@@ -494,6 +502,7 @@ export default function App() {
     let newFormData = { ...formData, [name]: value };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
+    // 若是結案，清空指派
     if (name === 'progress' && value === '結案') newFormData.assignee = '';
     setFormData(newFormData);
   };
@@ -699,6 +708,7 @@ export default function App() {
         '案件號': t.ticketId || '',
         '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
         '反映管道': t.channel || '',
+        // 加入 \u200B (Zero-width space) 強制轉為文字，避免 Excel 開啟時去除首碼 0
         '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '',
         '院所名稱': t.instName || '',
         '醫療層級': t.instLevel || '',
@@ -1308,10 +1318,16 @@ export default function App() {
           </div>
         </div>
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          <NavButton id="form" icon={Plus} label="新增紀錄區" />
-          <NavButton id="maintenance" icon={Edit} label="紀錄維護區" />
+          {currentUser.role !== ROLES.VIEWER && (
+            <>
+              <NavButton id="form" icon={Plus} label="新增紀錄區" />
+              <NavButton id="maintenance" icon={Edit} label="紀錄維護區" />
+            </>
+          )}
           <NavButton id="list" icon={List} label="歷史查詢區" />
-          <NavButton id="all-records" icon={Database} label="紀錄資料區" />
+          {currentUser.role !== ROLES.VIEWER && (
+            <NavButton id="all-records" icon={Database} label="紀錄資料區" />
+          )}
           <NavButton id="dashboard" icon={LayoutDashboard} label="進階統計區" />
           <NavButton id="settings" icon={Settings} label="系統設定區" />
         </nav>
@@ -1325,7 +1341,7 @@ export default function App() {
         <div className="p-4 md:p-8 lg:p-10 max-w-[1400px] mx-auto">
           
           {/* TAB 1: FORM */}
-          {activeTab === 'form' && (
+          {activeTab === 'form' && currentUser.role !== ROLES.VIEWER && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <div className="mb-8 flex justify-between items-end">
                 <div>
@@ -1425,7 +1441,7 @@ export default function App() {
           )}
 
           {/* TAB 3: MAINTENANCE (紀錄維護區) */}
-          {activeTab === 'maintenance' && (
+          {activeTab === 'maintenance' && currentUser.role !== ROLES.VIEWER && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 relative">
                <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-2 gap-4">
                  <div>
@@ -1700,7 +1716,7 @@ export default function App() {
           )}
 
           {/* TAB 6: ALL RECORDS (紀錄資料區) */}
-          {activeTab === 'all-records' && (
+          {activeTab === 'all-records' && currentUser.role !== ROLES.VIEWER && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                  <div>
