@@ -22,7 +22,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.1.1 (深色模式修復版)";
+const APP_VERSION = "v2.1.2 (大類別搜尋連動修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -448,7 +448,7 @@ export default function App() {
   // 當查詢條件改變時，清空勾選項目
   useEffect(() => {
     setSelectedTickets([]);
-  }, [searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, allRecordsSearchTerm]);
+  }, [searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, allRecordsSearchTerm, categoryMapping]);
 
   // Dashboard State
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
@@ -1242,11 +1242,14 @@ export default function App() {
 
   const filteredAndSortedHistory = useMemo(() => {
     let result = tickets.filter(t => {
+      const majorCat = categoryMapping[t.category] && categoryMapping[t.category].trim() !== '' ? categoryMapping[t.category].trim() : '未歸屬大類別';
+      
       const matchSearch = searchTerm === '' || 
         (t.ticketId||'').includes(searchTerm) || 
         (t.instName||'').includes(searchTerm) || 
         (t.extraInfo||'').includes(searchTerm) || 
         (t.category||'').includes(searchTerm) || 
+        majorCat.includes(searchTerm) || 
         (t.receiver||'').includes(searchTerm);
       
       const matchProgress = historyProgress === '全部' || t.progress === historyProgress;
@@ -1275,16 +1278,19 @@ export default function App() {
     });
 
     return result;
-  }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig]);
+  }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
 
   // All Records Filtering & Sorting (紀錄資料區)
   const allRecordsFiltered = useMemo(() => {
     let result = tickets.filter(t => {
       if (!allRecordsSearchTerm) return true;
+      const majorCat = categoryMapping[t.category] && categoryMapping[t.category].trim() !== '' ? categoryMapping[t.category].trim() : '未歸屬大類別';
+
       return (t.ticketId||'').includes(allRecordsSearchTerm) || 
              (t.instName||'').includes(allRecordsSearchTerm) || 
              (t.extraInfo||'').includes(allRecordsSearchTerm) || 
              (t.category||'').includes(allRecordsSearchTerm) || 
+             majorCat.includes(allRecordsSearchTerm) || 
              (t.receiver||'').includes(allRecordsSearchTerm);
     });
 
@@ -1303,7 +1309,7 @@ export default function App() {
     });
 
     return result;
-  }, [tickets, allRecordsSearchTerm, sortConfig]);
+  }, [tickets, allRecordsSearchTerm, sortConfig, categoryMapping]);
 
   // 渲染表頭 (改為純函數避免 Hook 衝突)
   const renderSortHeader = (label, sortKey, align = 'left') => {
