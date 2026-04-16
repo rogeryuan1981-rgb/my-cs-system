@@ -13,7 +13,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v2.0.1 (簽核與連動版-修復)";
+const APP_VERSION = "v2.0.2 (表單嚴格防護版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -545,18 +545,21 @@ export default function App() {
       setSubmitStatus({ type: 'error', msg: '儲存失敗：您沒有新增權限' }); return;
     }
 
-    // --- Validation Logic ---
-    const code = formData.instCode.trim();
-    if (!code || (code !== '999' && code.length !== 10)) {
-      setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼，或填寫 999' });
+    // --- 嚴格邏輯驗證防護 ---
+    const code = formData.instCode ? formData.instCode.trim() : '';
+    if (!code || (code !== '999' && !/^\d{10}$/.test(code))) {
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼數字，或是 999' });
+      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
       return;
     }
-    if (!formData.extraInfo.trim()) {
+    if (!formData.extraInfo || !formData.extraInfo.trim()) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗：詳細問題描述不能為空' });
+      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
       return;
     }
-    if (!formData.replyContent.trim()) {
+    if (!formData.replyContent || !formData.replyContent.trim()) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗：初步答覆不能為空' });
+      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
       return;
     }
     // ------------------------
@@ -1425,7 +1428,7 @@ export default function App() {
                     
                     <div className="md:col-span-1">
                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500">*</span></label>
-                      <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
+                      <input type="text" name="instCode" required pattern="^(\d{10}|999)$" title="請輸入 10 碼數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
                     </div>
                     <div className="md:col-span-2">
                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
@@ -1473,7 +1476,7 @@ export default function App() {
                   <div className="space-y-6">
                     <div>
                       <label className="text-xs font-bold mb-2 block text-slate-700">詳細問題描述 <span className="text-red-500">*</span></label>
-                      <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="請詳細描述客戶的問題..."></textarea>
+                      <textarea name="extraInfo" required minLength="2" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="請詳細描述客戶的問題..."></textarea>
                     </div>
                     <div>
                       <div className="flex justify-between items-end mb-2">
@@ -1482,7 +1485,7 @@ export default function App() {
                           <MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字
                         </button>
                       </div>
-                      <textarea id="replyContent" name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆..."></textarea>
+                      <textarea id="replyContent" name="replyContent" required minLength="2" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆..."></textarea>
                     </div>
                   </div>
                 </div>
