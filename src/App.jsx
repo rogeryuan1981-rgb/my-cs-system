@@ -6,14 +6,14 @@ import {
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
   Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers, GripVertical,
-  ClipboardCheck, Eye
+  ClipboardCheck, Eye, Moon, Sun
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v2.0.3 (防崩潰穩定版)";
+const APP_VERSION = "v2.1.0 (深色模式支援版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -109,7 +109,7 @@ const getLatestReply = (replies, fallbackContent) => {
 // --- Sub-Components (避免 React 巢狀渲染導致白畫面崩潰) ---
 
 // 1. 純原生 SVG 折線圖組件
-const LineChart = ({ data, labels }) => {
+const LineChart = ({ data, labels, isDarkMode }) => {
   if (!Array.isArray(data) || data.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
   const maxVal = Math.max(...data, 10);
   const height = 200;
@@ -123,6 +123,10 @@ const LineChart = ({ data, labels }) => {
     return `${x},${y}`;
   }).join(' ');
 
+  const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
+  const axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8";
+  const valueTextColor = isDarkMode ? "#f8fafc" : "#1e293b";
+
   return (
     <div className="w-full overflow-x-auto relative">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48 md:h-64 drop-shadow-sm">
@@ -130,8 +134,8 @@ const LineChart = ({ data, labels }) => {
           const y = height - paddingY - ratio * (height - paddingY * 2);
           return (
             <g key={ratio}>
-              <line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke="#e2e8f0" strokeDasharray="4 4" />
-              <text x={paddingX - 10} y={y + 4} fontSize="10" fill="#94a3b8" textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              <line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
+              <text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text>
             </g>
           );
         })}
@@ -141,9 +145,9 @@ const LineChart = ({ data, labels }) => {
           const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
           return (
             <g key={i}>
-              <circle cx={x} cy={y} r="4" fill="#ffffff" stroke="#3b82f6" strokeWidth="2" className="transition-all hover:r-6" />
-              <text x={x} y={height - 5} fontSize="10" fill="#64748b" textAnchor="middle">{labels[i]}</text>
-              <text x={x} y={y - 10} fontSize="12" fill="#1e293b" textAnchor="middle" fontWeight="bold">{val}</text>
+              <circle cx={x} cy={y} r="4" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke="#3b82f6" strokeWidth="2" className="transition-all hover:r-6" />
+              <text x={x} y={height - 5} fontSize="10" fill={axisTextColor} textAnchor="middle">{labels[i]}</text>
+              <text x={x} y={y - 10} fontSize="12" fill={valueTextColor} textAnchor="middle" fontWeight="bold">{val}</text>
             </g>
           );
         })}
@@ -176,24 +180,24 @@ const CannedMessagesModal = ({ messages, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-          <h3 className="font-black text-lg flex items-center text-slate-800">
-            <MessageSquare size={20} className="mr-2 text-blue-600"/> 選擇罐頭回覆
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
+          <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
+            <MessageSquare size={20} className="mr-2 text-blue-600 dark:text-blue-400"/> 選擇罐頭回覆
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-500 dark:text-slate-400"><X size={20}/></button>
         </div>
         <div className="p-6 space-y-3 overflow-y-auto flex-1">
           {safeMessages.map((m, idx) => (
             <div 
               key={idx} 
-              className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-300 hover:shadow-md transition-all group relative cursor-pointer" 
+              className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group relative cursor-pointer" 
               onClick={() => handleCopy(m, idx)}
               title="點擊複製並關閉"
             >
-              <p className="text-sm text-slate-600 line-clamp-4 leading-relaxed pr-6">{m}</p>
-              <button className="absolute top-2 right-2 p-1.5 bg-white rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-blue-600">
+              <p className="text-sm text-slate-600 dark:text-slate-200 line-clamp-4 leading-relaxed pr-6">{m}</p>
+              <button className="absolute top-2 right-2 p-1.5 bg-white dark:bg-slate-600 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400">
                 {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
               </button>
             </div>
@@ -202,8 +206,8 @@ const CannedMessagesModal = ({ messages, onClose }) => {
             <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
           )}
         </div>
-        <div className="p-4 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-500 font-bold text-center shrink-0 flex items-center justify-center">
-          <CheckCircle size={14} className="mr-1 text-green-500"/> 點擊卡片即可複製並自動關閉視窗，請自行貼入答覆框中
+        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 font-bold text-center shrink-0 flex items-center justify-center">
+          <CheckCircle size={14} className="mr-1 text-green-500 dark:text-green-400"/> 點擊卡片即可複製並自動關閉視窗，請自行貼入答覆框中
         </div>
       </div>
     </div>
@@ -266,10 +270,10 @@ const DropdownManager = ({ title, dbKey, items }) => {
   };
 
   return (
-    <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100 flex flex-col h-full">
-      <h4 className="font-bold text-sm mb-4 text-slate-700">{title}</h4>
+    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 flex flex-col h-full">
+      <h4 className="font-bold text-sm mb-4 text-slate-700 dark:text-slate-200">{title}</h4>
       <form onSubmit={handleAdd} className="flex mb-4 gap-2 shrink-0">
-        <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
+        <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
         <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-sm"><Plus size={18}/></button>
       </form>
       <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
@@ -281,20 +285,20 @@ const DropdownManager = ({ title, dbKey, items }) => {
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, idx)}
             onDragEnd={() => setDraggedIdx(null)}
-            className={`flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm group transition-all ${draggedIdx === idx ? 'opacity-40 scale-95 shadow-none' : ''} hover:border-indigo-200`}
+            className={`flex justify-between items-center bg-white dark:bg-slate-700 p-3 rounded-xl border border-slate-100 dark:border-slate-600 shadow-sm text-sm group transition-all ${draggedIdx === idx ? 'opacity-40 scale-95 shadow-none' : ''} hover:border-indigo-200 dark:hover:border-indigo-500`}
           >
             <div className="flex items-center flex-1 overflow-hidden">
-              <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-indigo-500 mr-2 p-1" title="按住拖曳排序">
+              <div className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 mr-2 p-1" title="按住拖曳排序">
                 <GripVertical size={16} />
               </div>
-              <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium truncate" title={item}>{item}</span>
             </div>
-            <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2" title="刪除">
+            <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2" title="刪除">
               <Trash2 size={16}/>
             </button>
           </li>
         ))}
-        {safeItems.length === 0 && <div className="text-center text-xs text-slate-400 py-4">無設定項目</div>}
+        {safeItems.length === 0 && <div className="text-center text-xs text-slate-400 dark:text-slate-500 py-4">無設定項目</div>}
       </ul>
     </div>
   );
@@ -321,28 +325,28 @@ const CategoryMappingManager = ({ categories, mapping }) => {
   };
 
   return (
-    <div className="bg-slate-50 p-8 rounded-[1.5rem] border border-slate-100 mt-8">
+    <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h4 className="font-black text-slate-800 flex items-center"><Layers size={18} className="mr-2 text-indigo-600"/> 大類別歸屬設定</h4>
-          <p className="text-xs text-slate-500 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
+          <h4 className="font-black text-slate-800 dark:text-slate-100 flex items-center"><Layers size={18} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 大類別歸屬設定</h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
         </div>
         <button onClick={handleSaveMapping} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-transform active:scale-95">儲存大類別設定</button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {safeCategories.map(cat => (
-          <div key={cat} className="flex items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-             <span className="text-sm font-bold text-slate-600 w-1/2 truncate border-r border-slate-100 pr-2 mr-2" title={cat}>{cat}</span>
+          <div key={cat} className="flex items-center bg-white dark:bg-slate-700 p-3 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+             <span className="text-sm font-bold text-slate-600 dark:text-slate-300 w-1/2 truncate border-r border-slate-100 dark:border-slate-600 pr-2 mr-2" title={cat}>{cat}</span>
              <input 
                type="text" 
                value={localMap[cat] || ''} 
                onChange={e => handleMapChange(cat, e.target.value)} 
                placeholder="輸入大類別 (例:慢防組)" 
-               className="w-1/2 p-1 text-sm font-medium outline-none text-slate-800" 
+               className="w-1/2 p-1 text-sm font-medium outline-none bg-transparent text-slate-800 dark:text-slate-100 dark:placeholder-slate-500" 
              />
           </div>
         ))}
-        {safeCategories.length === 0 && <div className="text-xs text-slate-400 p-4 col-span-full text-center">請先於上方「業務類別」新增項目。</div>}
+        {safeCategories.length === 0 && <div className="text-xs text-slate-400 dark:text-slate-500 p-4 col-span-full text-center">請先於上方「業務類別」新增項目。</div>}
       </div>
     </div>
   );
@@ -353,6 +357,20 @@ const CategoryMappingManager = ({ categories, mapping }) => {
 // --- 主應用程式 App ---
 // -------------------------------------------------
 export default function App() {
+  // Theme State
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem('cs_theme') === 'dark';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('cs_theme', isDarkMode ? 'dark' : 'light');
+    }
+  }, [isDarkMode]);
+
   // Auth State
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [dbUsers, setDbUsers] = useState([]);
@@ -1415,8 +1433,8 @@ export default function App() {
       onClick={() => setActiveTab(id)}
       className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${
         activeTab === id 
-          ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' 
-          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+          ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500' 
+          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100'
       }`}
     >
       <Icon size={20} />
@@ -1425,23 +1443,41 @@ export default function App() {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-800 overflow-hidden">
+    <div className={isDarkMode ? 'dark' : ''}>
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
-        <div className="p-6 border-b border-slate-100 flex items-center space-x-3 mb-2">
-          <div className="bg-blue-600 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div>
-          <h1 className="text-xl font-black text-slate-800 tracking-tight">客服中心</h1>
+      <div className="w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col hidden md:flex transition-colors duration-300">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center space-x-3 mb-2">
+          <div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div>
+          <h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">客服中心</h1>
         </div>
         <div className="px-6 py-4 flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-blue-600 font-black border border-slate-200">
+          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-blue-600 dark:text-blue-400 font-black border border-slate-200 dark:border-slate-600">
             {currentUser.username.charAt(0).toUpperCase()}
           </div>
           <div>
-            <div className="font-bold text-sm">{currentUser.username}</div>
-            <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md inline-block mt-0.5">{currentUser.role}</div>
+            <div className="font-bold text-sm dark:text-slate-200">{currentUser.username}</div>
+            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{currentUser.role}</div>
           </div>
         </div>
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
+
+        {/* 深色模式切換開關 */}
+        <div className="px-6 pb-2">
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+          >
+            <span className="flex items-center">
+              {isDarkMode ? <Moon size={16} className="mr-2 text-indigo-400" /> : <Sun size={16} className="mr-2 text-amber-500" />}
+              {isDarkMode ? '深色模式' : '淺色模式'}
+            </span>
+            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-colors ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+              <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} />
+            </div>
+          </button>
+        </div>
+
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto border-t border-slate-100 dark:border-slate-700 mt-2 pt-4">
           {currentUser.role !== ROLES.VIEWER && (
             <>
               {renderNavButton('form', Plus, '新增紀錄區')}
@@ -1461,13 +1497,13 @@ export default function App() {
           
           {renderNavButton('settings', Settings, '系統設定區')}
         </nav>
-        <div className="p-4 border-t border-slate-100">
-          <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">登出系統</button>
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700">
+          <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto bg-slate-50 relative">
+      <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 relative transition-colors duration-300">
         <div className="p-4 md:p-8 lg:p-10 max-w-[1400px] mx-auto">
           
           {/* TAB 1: FORM */}
@@ -1475,13 +1511,13 @@ export default function App() {
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
               <div className="mb-8 flex justify-between items-end">
                 <div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">新增紀錄區</h2>
-                  <p className="text-sm text-slate-400 mt-2">以 <span className="font-bold text-blue-600">{currentUser.username}</span> 身份登錄。</p>
+                  <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">新增紀錄區</h2>
+                  <p className="text-sm text-slate-400 dark:text-slate-400 mt-2">以 <span className="font-bold text-blue-600 dark:text-blue-400">{currentUser.username}</span> 身份登錄。</p>
                 </div>
               </div>
 
               {submitStatus.msg && (
-                <div className={`p-4 rounded-2xl flex items-center space-x-3 border ${submitStatus.type === 'success' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                <div className={`p-4 rounded-2xl flex items-center space-x-3 border ${submitStatus.type === 'success' ? 'bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-400 border-green-100 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/40 text-red-700 dark:text-red-400 border-red-100 dark:border-red-800'}`}>
                   <CheckCircle size={20}/>
                   <span className="font-bold">{submitStatus.msg}</span>
                 </div>
@@ -1489,19 +1525,19 @@ export default function App() {
 
               {/* Main Form Area */}
               <form onSubmit={handleSubmit} className="space-y-8">
-                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                  <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
+                  <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500">*</span></label>
-                      <input type="text" name="instCode" required pattern="^(\d{10}|999)$" title="請輸入 10 碼數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
+                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <input type="text" name="instCode" required pattern="^(\d{10}|999)$" title="請輸入 10 碼數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/>
                     </div>
                     <div className="md:col-span-2">
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
+                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">院所名稱與層級</label>
                       <div className="flex space-x-4">
                         <input 
                           type="text" 
@@ -1509,7 +1545,7 @@ export default function App() {
                           value={formData.instName} 
                           onChange={handleFormChange} 
                           readOnly={formData.instCode !== '999'} 
-                          className={`w-2/3 p-3.5 border border-slate-200 rounded-2xl outline-none ${formData.instCode === '999' ? 'bg-white focus:ring-2 focus:ring-blue-500 text-slate-800' : 'bg-slate-50 text-slate-600 font-bold'}`} 
+                          className={`w-2/3 p-3.5 border border-slate-200 dark:border-slate-600 rounded-2xl outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 ${formData.instCode === '999' ? 'bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500' : 'bg-slate-50 dark:bg-slate-700/50 font-bold'}`} 
                           placeholder={formData.instCode === '999' ? "請自行輸入單位名稱" : "名稱"}
                         />
                         <input 
@@ -1517,7 +1553,7 @@ export default function App() {
                           name="instLevel" 
                           value={formData.instLevel} 
                           readOnly 
-                          className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" 
+                          className="w-1/3 p-3.5 border border-slate-200 dark:border-slate-600 rounded-2xl bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-bold outline-none placeholder-slate-400 dark:placeholder-slate-500" 
                           placeholder="層級"
                         />
                       </div>
@@ -1525,18 +1561,18 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-                  <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
+                  <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別 <span className="text-red-500">*</span></label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態 <span className="text-red-500">*</span></label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度 <span className="text-red-500">*</span></label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">類別 <span className="text-red-500 dark:text-red-400">*</span></label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">狀態 <span className="text-red-500 dark:text-red-400">*</span></label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
                     
                     {/* 指派功能：只要不是結案即可指派 */}
                     {formData.progress !== '結案' ? (
                       <div className="animate-in zoom-in-95 duration-200">
-                        <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
+                        <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
+                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
                            <option value="">-- 未指定 --</option>
                            {(Array.isArray(dbUsers)?dbUsers:[]).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
@@ -1545,23 +1581,23 @@ export default function App() {
                   </div>
                   <div className="space-y-6">
                     <div>
-                      <label className="text-xs font-bold mb-2 block text-slate-700">詳細問題描述 <span className="text-red-500">*</span></label>
-                      <textarea name="extraInfo" required minLength="2" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="請詳細描述客戶的問題..."></textarea>
+                      <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">詳細問題描述 <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <textarea name="extraInfo" required minLength="2" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
                     </div>
                     <div>
                       <div className="flex justify-between items-end mb-2">
-                        <label className="text-xs font-bold block text-slate-700">給予的初步答覆 <span className="text-red-500">*</span></label>
-                        <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 flex items-center bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                        <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">給予的初步答覆 <span className="text-red-500 dark:text-red-400">*</span></label>
+                        <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
                           <MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字
                         </button>
                       </div>
-                      <textarea id="replyContent" name="replyContent" required minLength="2" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆..."></textarea>
+                      <textarea id="replyContent" name="replyContent" required minLength="2" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex justify-end pt-4 pb-12">
-                  <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:scale-95'}`}>
+                  <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-1 active:scale-95'}`}>
                     {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
                     {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
                   </button>
@@ -1575,117 +1611,117 @@ export default function App() {
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 relative">
                <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-2 gap-4">
                  <div>
-                   <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-2">紀錄維護區</h2>
-                   <p className="text-sm text-slate-500">
+                   <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight mb-2">紀錄維護區</h2>
+                   <p className="text-sm text-slate-500 dark:text-slate-400">
                      {currentUser.role === ROLES.ADMIN ? '管理員可查詢案件號以維護「已結案」紀錄。' : '僅顯示您負責或建檔的未結案紀錄。'}
                    </p>
                  </div>
                  <div className="relative w-full md:w-80">
-                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400"/>
-                   <input type="text" placeholder="輸入案件號碼查詢..." value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                   <Search size={18} className="absolute left-4 top-3.5 text-slate-400 dark:text-slate-500"/>
+                   <input type="text" placeholder="輸入案件號碼查詢..." value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                  </div>
                </div>
                
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
                   {maintainTicketsList.map(t => (
-                    <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all group flex flex-col h-full relative">
-                      <div className="absolute top-4 right-6 text-[10px] font-mono text-slate-300">#{t.ticketId || t.id.slice(0,8)}</div>
+                    <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-500 transition-all group flex flex-col h-full relative">
+                      <div className="absolute top-4 right-6 text-[10px] font-mono text-slate-300 dark:text-slate-500">#{t.ticketId || t.id.slice(0,8)}</div>
                       <div className="flex justify-between items-start mb-4 mt-2">
-                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span>
-                         <span className="text-xs font-bold text-slate-400">{new Date(t.receiveTime).toLocaleDateString()}</span>
+                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span>
+                         <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{new Date(t.receiveTime).toLocaleDateString()}</span>
                       </div>
-                      <h4 className="font-bold text-lg text-slate-800 mb-1">{t.instName || '無特定院所'}</h4>
-                      <p className="text-sm text-slate-500 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
-                      <div className="pt-4 border-t border-slate-100 flex justify-between items-center text-xs font-bold">
-                        <span className="text-slate-400 flex items-center"><User size={14} className="mr-1"/> {t.receiver} 建檔</span>
-                        {t.assignee && <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">負責: {t.assignee}</span>}
+                      <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
+                      <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
+                        <span className="text-slate-400 dark:text-slate-500 flex items-center"><User size={14} className="mr-1"/> {t.receiver} 建檔</span>
+                        {t.assignee && <span className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg">負責: {t.assignee}</span>}
                       </div>
                     </div>
                   ))}
-                  {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
+                  {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 dark:text-slate-500 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
                </div>
 
                {/* 維護互動彈窗 */}
                {maintainModal && (
-                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-                       <h3 className="font-black text-lg flex items-center"><Edit size={20} className="mr-2 text-blue-600"/> 案件維護 - {maintainModal.instName}</h3>
-                       <button onClick={() => setMaintainModal(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
+                   <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                     <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
+                       <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><Edit size={20} className="mr-2 text-blue-600 dark:text-blue-400"/> 案件維護 - {maintainModal.instName}</h3>
+                       <button onClick={() => setMaintainModal(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
                      </div>
                      <div className="p-8 overflow-y-auto flex-1 space-y-6">
                        {/* 問題描述 (開放編輯) */}
-                       <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                       <div className="bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
                          <div className="flex justify-between mb-2">
-                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest">問題描述 (可修改)</div>
-                           <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
+                           <div className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">問題描述 (可修改)</div>
+                           <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
                          </div>
                          <textarea 
                            value={maintainForm.extraInfo} 
                            onChange={e => setMaintainForm({...maintainForm, extraInfo: e.target.value})} 
                            rows="3" 
-                           className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm" 
+                           className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" 
                            placeholder="修改問題描述..."
                          ></textarea>
-                         <p className="text-[10px] text-slate-400 mt-2">提示：修改此處內容將會自動產生修改日誌，供管理員查核。</p>
+                         <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">提示：修改此處內容將會自動產生修改日誌，供管理員查核。</p>
                        </div>
                        
                        {/* 歷史答覆軌跡 (唯讀) */}
                        <div>
-                         <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
+                         <div className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
                          {maintainModal.replies && maintainModal.replies.length > 0 ? (
                            <div className="space-y-4">
                              {maintainModal.replies.map((r, i) => (
-                               <div key={i} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
-                                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
+                               <div key={i} className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
+                                 <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
                                  <div>
-                                   <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                   <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                   <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                                   <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
                                  </div>
                                </div>
                              ))}
                            </div>
-                         ) : <div className="text-sm text-slate-400 italic">尚無任何答覆紀錄</div>}
+                         ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic">尚無任何答覆紀錄</div>}
                        </div>
 
                        {/* 維護表單 */}
-                       <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100">
+                       <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-700">
                          <div className="grid grid-cols-2 gap-4">
                            <div>
-                             <label className="text-xs font-black text-slate-800 mb-2 block">更新進度</label>
-                             <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 font-bold outline-none">
+                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 mb-2 block">更新進度</label>
+                             <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl focus:ring-2 font-bold outline-none">
                                {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
                              </select>
                            </div>
                            {/* 變更指定用戶 (只要不是結案即可用) */}
                            {maintainForm.progress !== '結案' ? (
                              <div>
-                               <label className="text-xs font-black text-red-600 mb-2 block">指派後續處理人</label>
-                               <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 border-2 border-red-200 rounded-xl font-bold text-red-700 outline-none">
+                               <label className="text-xs font-black text-red-600 dark:text-red-400 mb-2 block">指派後續處理人</label>
+                               <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 bg-white dark:bg-slate-700 border-2 border-red-200 dark:border-red-900/50 rounded-xl font-bold text-red-700 dark:text-red-400 outline-none">
                                  <option value="">-- 未指定 --</option>
                                  {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
                                </select>
                              </div>
-                           ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50"/></div>}
+                           ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 dark:text-slate-500 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 rounded-xl"/></div>}
                          </div>
                          <div>
                            <div className="flex justify-between items-end mb-2">
-                             <label className="text-xs font-black text-slate-800 block">追加新答覆 / 註記</label>
-                             <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 flex items-center bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">追加新答覆 / 註記</label>
+                             <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
                                <MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字
                              </button>
                            </div>
-                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 border border-slate-200 rounded-2xl bg-blue-50/30 outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入新的答覆，或點擊上方按鈕複製罐頭文字貼上..."></textarea>
+                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入新的答覆，或點擊上方按鈕複製罐頭文字貼上..."></textarea>
                          </div>
                        </form>
                      </div>
-                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between shrink-0">
-                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 font-bold hover:bg-red-50 rounded-xl transition-colors text-sm flex items-center">
+                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-between shrink-0">
+                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center">
                          <Trash2 size={16} className="mr-1" /> 申請刪除
                        </button>
                        <div>
-                         <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl mr-3 transition-colors">取消</button>
-                         <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
+                         <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消</button>
+                         <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
                        </div>
                      </div>
                    </div>
@@ -1698,7 +1734,7 @@ export default function App() {
           {activeTab === 'list' && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                 <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">歷史查詢區</h2>
+                 <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">歷史查詢區</h2>
                  
                  {/* 匯出與匯入 Excel 按鈕區 */}
                  <div className="flex items-center space-x-2 shrink-0">
@@ -1716,7 +1752,7 @@ export default function App() {
 
                    <button 
                      onClick={handleExportExcel}
-                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm shrink-0"
+                     className="flex items-center justify-center space-x-2 bg-green-600 dark:bg-green-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 dark:hover:bg-green-600 transition-colors font-bold text-sm shrink-0"
                    >
                      <Download size={16} />
                      <span className="hidden md:inline">匯出 Excel</span>
@@ -1735,7 +1771,7 @@ export default function App() {
                          />
                          <button 
                            disabled={isImportingHistory}
-                           className="flex items-center justify-center space-x-2 bg-indigo-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-indigo-700 transition-colors font-bold text-sm disabled:bg-indigo-400"
+                           className="flex items-center justify-center space-x-2 bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors font-bold text-sm disabled:bg-indigo-400 dark:disabled:bg-indigo-400"
                          >
                            {isImportingHistory ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Upload size={16} />}
                            <span className="hidden md:inline">{isImportingHistory ? '匯入中' : '匯入歷史'}</span>
@@ -1743,7 +1779,7 @@ export default function App() {
                        </div>
                        <button 
                          onClick={handleDownloadTemplate}
-                         className="flex items-center justify-center space-x-2 bg-slate-100 text-slate-600 px-4 py-2.5 rounded-2xl shadow-sm hover:bg-slate-200 transition-colors font-bold text-sm border border-slate-200"
+                         className="flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-4 py-2.5 rounded-2xl shadow-sm hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-bold text-sm border border-slate-200 dark:border-slate-600"
                          title="下載匯入格式範本"
                        >
                          <FileText size={16} />
@@ -1757,34 +1793,34 @@ export default function App() {
                {/* 進階複合查詢篩選器 */}
                <div className="flex flex-col md:flex-row w-full gap-3">
                  {/* Date Filter */}
-                 <div className="flex items-center space-x-2 bg-white px-3 py-2.5 border border-slate-200 rounded-2xl shadow-sm shrink-0">
-                   <Calendar size={16} className="text-slate-400"/>
-                   <input type="date" value={historyStartDate} onChange={e=>setHistoryStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
-                   <span className="text-slate-300 text-xs">至</span>
-                   <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer w-32"/>
+                 <div className="flex items-center space-x-2 bg-white dark:bg-slate-800 px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm shrink-0">
+                   <Calendar size={16} className="text-slate-400 dark:text-slate-500"/>
+                   <input type="date" value={historyStartDate} onChange={e=>setHistoryStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer w-32 [color-scheme:light] dark:[color-scheme:dark]"/>
+                   <span className="text-slate-300 dark:text-slate-600 text-xs">至</span>
+                   <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer w-32 [color-scheme:light] dark:[color-scheme:dark]"/>
                  </div>
                  {/* Progress Filter */}
-                 <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white px-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm font-bold text-sm text-slate-700 outline-none shrink-0">
+                 <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm font-bold text-sm text-slate-700 dark:text-slate-200 outline-none shrink-0">
                    <option value="全部">全部進度</option>
                    {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
                  </select>
                  {/* Keyword Filter */}
                  <div className="relative flex-1">
-                   <Search size={18} className="absolute left-4 top-3 text-slate-400"/>
-                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                   <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
+                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                  </div>
                </div>
                
-               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+               <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                  <div className="overflow-x-auto min-h-[400px]">
                    <table className="w-full text-left">
-                     <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
                        <tr>
                          {currentUser.role === ROLES.ADMIN && (
                            <th className="p-5 text-center w-12">
                              <input 
                                type="checkbox" 
-                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                               className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                title="全選/取消全選本頁條件下的紀錄"
                                checked={filteredAndSortedHistory.length > 0 && selectedTickets.length === filteredAndSortedHistory.length}
                                onChange={(e) => {
@@ -1804,20 +1840,20 @@ export default function App() {
                          {renderSortHeader('進度', 'progress', 'center')}
                        </tr>
                      </thead>
-                     <tbody className="divide-y text-sm font-medium">
+                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                        {filteredAndSortedHistory.length === 0 ? (
-                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
+                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
                        ) : (
                          filteredAndSortedHistory.map(t => {
                            const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
-                             <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 transition-colors cursor-pointer group">
+                             <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700">
                                {currentUser.role === ROLES.ADMIN && (
                                  <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
                                    <input 
                                      type="checkbox" 
-                                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                     className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                      checked={selectedTickets.includes(t.id)}
                                      onChange={(e) => {
                                        if (e.target.checked) {
@@ -1830,18 +1866,33 @@ export default function App() {
                                  </td>
                                )}
                                <td className="p-5">
-                                 <div className="font-black text-slate-800 font-mono text-xs group-hover:text-blue-600 transition-colors flex items-center">
+                                 <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">
                                    {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
                                  </div>
-                                 <div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
                                </td>
-                               <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                               <td className="p-5 max-w-[250px] relative">
-                                  <div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                                  <div className="truncate text-slate-400 text-xs" title={fullHistoryStr || '尚無回覆紀錄'}>答: {latestReplyStr || '-'}</div>
+                               <td className="p-5">
+                                 <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
+                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
                                </td>
-                               <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
-                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                               <td className="p-5 max-w-[250px] relative group/tooltip">
+                                  <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                                  <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                                  
+                                  {/* Hover 顯示完整歷史紀錄 */}
+                                  {fullHistoryStr && (
+                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50 w-72 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
+                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
+                                      <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
+                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-8"></div>
+                                    </div>
+                                  )}
+                               </td>
+                               <td className="p-5">
+                                 <div className="text-slate-800 dark:text-slate-200">{t.receiver}</div>
+                                 {t.assignee && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}
+                               </td>
+                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
                              </tr>
                            )
                          })
@@ -1853,55 +1904,55 @@ export default function App() {
 
                {/* View Modal (完整檢視視窗) */}
                {viewModalTicket && (
-                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewModalTicket(null)}>
-                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-                       <h3 className="font-black text-lg flex items-center text-slate-800">
-                         <FileText size={20} className="mr-2 text-indigo-600"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => setViewModalTicket(null)}>
+                   <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
+                     <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
+                       <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
+                         <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
                        </h3>
-                       <button onClick={() => setViewModalTicket(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400 hover:text-slate-700"><X size={20}/></button>
+                       <button onClick={() => setViewModalTicket(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
                      </div>
                      
                      <div className="p-8 overflow-y-auto flex-1 space-y-8">
                        {/* 區塊 1: 基本資料 */}
                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700">{viewModalTicket.channel}</div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700">{viewModalTicket.category}</div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">建檔人</div><div className="text-sm font-bold text-slate-700">{viewModalTicket.receiver}</div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
-                           <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase ${viewModalTicket.progress==='結案'?'bg-green-100 text-green-700':viewModalTicket.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">建檔人</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.receiver}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">當前進度</div>
+                           <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
                              {viewModalTicket.progress}
                            </span>
                          </div>
                        </div>
                        
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800">{viewModalTicket.instName} <span className="text-slate-400 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800">{viewModalTicket.questioner || '未提供'}</div></div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
                        </div>
 
                        {/* 區塊 2: 完整對話紀錄 */}
                        <div>
-                         <h4 className="font-black text-sm text-slate-800 mb-4 flex items-center border-b border-slate-100 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500"/> 對話軌跡與處理紀錄</h4>
+                         <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
                          
-                         <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+                         <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
                            
                            {/* 使用者提問 */}
                            <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
-                             <div className="bg-white border border-slate-200 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
-                               <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white border-2 border-slate-200 rotate-45 transform"></div>
-                               <div className="text-xs font-bold text-slate-800 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400"/> 客戶問題 <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                               <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
+                             <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
+                               <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
+                               <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                               <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
                              </div>
                            </div>
 
                            {/* 歷史答覆 */}
                            {(Array.isArray(viewModalTicket.replies)?viewModalTicket.replies:[]).map((r, i) => (
                              <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                               <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                 <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 border-2 border-blue-100 rotate-45 transform"></div>
-                                 <div className="text-xs font-bold text-blue-800 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500"/> 客服人員：{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                 <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                               <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                                 <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                                 <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 客服人員：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                                 <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
                                </div>
                              </div>
                            ))}
@@ -1909,7 +1960,7 @@ export default function App() {
                            {/* 結案標記 */}
                            {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
                              <div className="relative flex items-center justify-center pt-4">
-                               <div className="bg-green-100 text-green-700 text-xs font-black px-4 py-2 rounded-full border border-green-200 shadow-sm flex items-center">
+                               <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center">
                                  <CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案
                                </div>
                              </div>
@@ -1918,8 +1969,8 @@ export default function App() {
                          </div>
                        </div>
                      </div>
-                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
-                       <button onClick={()=>setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 text-white font-black rounded-xl hover:bg-slate-900 transition-colors shadow-lg shadow-slate-200">關閉檢視</button>
+                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
+                       <button onClick={()=>setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 dark:bg-slate-600 text-white font-black rounded-xl hover:bg-slate-900 dark:hover:bg-slate-500 transition-colors shadow-lg shadow-slate-200 dark:shadow-none">關閉檢視</button>
                      </div>
                    </div>
                  </div>
@@ -1932,8 +1983,8 @@ export default function App() {
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                  <div>
-                   <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">紀錄資料區</h2>
-                   <p className="text-sm text-slate-500 mt-2">顯示資料庫中所有原始紀錄（不過濾任何條件），方便檢視與批次操作。</p>
+                   <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
+                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">顯示資料庫中所有原始紀錄（不過濾任何條件），方便檢視與批次操作。</p>
                  </div>
                  
                  <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
@@ -1951,7 +2002,7 @@ export default function App() {
                    {/* 匯出 Excel 按鈕 */}
                    <button 
                      onClick={handleExportExcel}
-                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm shrink-0"
+                     className="flex items-center justify-center space-x-2 bg-green-600 dark:bg-green-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 dark:hover:bg-green-600 transition-colors font-bold text-sm shrink-0"
                    >
                      <Download size={16} />
                      <span className="hidden md:inline">匯出全部</span>
@@ -1959,22 +2010,22 @@ export default function App() {
 
                    {/* Keyword Filter (All Records) */}
                    <div className="relative flex-1 xl:w-72">
-                     <Search size={18} className="absolute left-4 top-3 text-slate-400"/>
-                     <input type="text" placeholder="關鍵字搜尋..." value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                     <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
+                     <input type="text" placeholder="關鍵字搜尋..." value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                    </div>
                  </div>
                </div>
                
-               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+               <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                  <div className="overflow-x-auto min-h-[400px] max-h-[700px]">
                    <table className="w-full text-left">
-                     <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest sticky top-0 z-10">
                        <tr>
                          {currentUser.role === ROLES.ADMIN && (
                            <th className="p-5 text-center w-12">
                              <input 
                                type="checkbox" 
-                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                               className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                title="全選/取消全選本頁條件下的紀錄"
                                checked={allRecordsFiltered.length > 0 && selectedTickets.length === allRecordsFiltered.length}
                                onChange={(e) => {
@@ -1994,20 +2045,20 @@ export default function App() {
                          {renderSortHeader('進度', 'progress', 'center')}
                        </tr>
                      </thead>
-                     <tbody className="divide-y text-sm font-medium">
+                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                        {allRecordsFiltered.length === 0 ? (
-                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
+                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
                        ) : (
                          allRecordsFiltered.map(t => {
                            const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
-                             <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                             <tr key={t.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700">
                                {currentUser.role === ROLES.ADMIN && (
                                  <td className="p-5 text-center">
                                    <input 
                                      type="checkbox" 
-                                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                     className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
                                      checked={selectedTickets.includes(t.id)}
                                      onChange={(e) => {
                                        if (e.target.checked) {
@@ -2019,23 +2070,29 @@ export default function App() {
                                    />
                                  </td>
                                )}
-                               <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
-                               <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                               <td className="p-5 max-w-[250px] relative group">
-                                  <div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                                  <div className="truncate text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                               <td className="p-5"><div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5">
+                                 <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
+                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
+                               </td>
+                               <td className="p-5 max-w-[250px] relative group/tooltip">
+                                  <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                                  <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
                                   
                                   {/* Hover 顯示完整歷史紀錄 */}
                                   {fullHistoryStr && (
-                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72 p-4 bg-slate-800 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 pb-2">完整回覆紀錄</div>
-                                      <div className="whitespace-pre-wrap leading-relaxed">{fullHistoryStr}</div>
-                                      <div className="absolute w-3 h-3 bg-slate-800 transform rotate-45 -bottom-1.5 left-8"></div>
+                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50 w-72 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
+                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
+                                      <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
+                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-8"></div>
                                     </div>
                                   )}
                                </td>
-                               <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
-                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                               <td className="p-5">
+                                 <div className="text-slate-800 dark:text-slate-200">{t.receiver}</div>
+                                 {t.assignee && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}
+                               </td>
+                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
                              </tr>
                            )
                          })
@@ -2051,35 +2108,35 @@ export default function App() {
           {activeTab === 'audit' && currentUser.role === ROLES.ADMIN && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
                <div>
-                 <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">申請與日誌區</h2>
-                 <p className="text-sm text-slate-500 mt-2">供管理員簽核刪除申請，以及查閱全系統的問題描述修改紀錄。</p>
+                 <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">申請與日誌區</h2>
+                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">供管理員簽核刪除申請，以及查閱全系統的問題描述修改紀錄。</p>
                </div>
                
                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                  {/* 刪除申請區塊 */}
-                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col max-h-[800px]">
-                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800">
-                     <AlertCircle size={20} className="mr-2 text-red-600"/> 待處理刪除申請
-                     {pendingDeleteRequests.length > 0 && <span className="ml-3 bg-red-100 text-red-600 px-2.5 py-0.5 rounded-full text-xs font-bold">{pendingDeleteRequests.length} 件</span>}
+                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col max-h-[800px]">
+                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100">
+                     <AlertCircle size={20} className="mr-2 text-red-600 dark:text-red-400"/> 待處理刪除申請
+                     {pendingDeleteRequests.length > 0 && <span className="ml-3 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2.5 py-0.5 rounded-full text-xs font-bold">{pendingDeleteRequests.length} 件</span>}
                    </h3>
                    <div className="flex-1 overflow-y-auto pr-2 space-y-4">
                      {pendingDeleteRequests.length === 0 ? (
-                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 bg-slate-50 rounded-2xl">目前無待簽核的刪除申請。</div>
+                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 rounded-2xl">目前無待簽核的刪除申請。</div>
                      ) : (
                        pendingDeleteRequests.map(t => (
-                         <div key={t.id} className="bg-red-50/50 border border-red-100 p-5 rounded-2xl shadow-sm">
+                         <div key={t.id} className="bg-red-50/50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 p-5 rounded-2xl shadow-sm">
                            <div className="flex justify-between items-start mb-2">
-                             <div className="font-black text-slate-800 text-sm">#{t.ticketId} - {t.instName}</div>
-                             <div className="text-[10px] text-slate-500 font-mono">{t.deleteRequest.requestTime}</div>
+                             <div className="font-black text-slate-800 dark:text-slate-200 text-sm">#{t.ticketId} - {t.instName}</div>
+                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{t.deleteRequest.requestTime}</div>
                            </div>
-                           <div className="text-sm text-slate-700 mb-4 bg-white p-3 rounded-lg border border-slate-200">
-                             <span className="font-bold text-red-600 mr-2">申請原因:</span>{t.deleteRequest.reason}
+                           <div className="text-sm text-slate-700 dark:text-slate-300 mb-4 bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                             <span className="font-bold text-red-600 dark:text-red-400 mr-2">申請原因:</span>{t.deleteRequest.reason}
                            </div>
                            <div className="flex justify-between items-center text-xs">
-                             <span className="font-bold text-slate-500">申請人: {t.deleteRequest.requestedBy}</span>
+                             <span className="font-bold text-slate-500 dark:text-slate-400">申請人: {t.deleteRequest.requestedBy}</span>
                              <div className="space-x-2">
-                               <button onClick={() => handleRejectDelete(t.id)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-lg font-bold transition-colors">退回</button>
-                               <button onClick={() => handleApproveDelete(t.id, t.instName)} className="px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg font-bold shadow-sm transition-colors">核准刪除</button>
+                               <button onClick={() => handleRejectDelete(t.id)} className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-lg font-bold transition-colors">退回</button>
+                               <button onClick={() => handleApproveDelete(t.id, t.instName)} className="px-3 py-1.5 bg-red-600 dark:bg-red-500 text-white hover:bg-red-700 dark:hover:bg-red-600 rounded-lg font-bold shadow-sm transition-colors">核准刪除</button>
                              </div>
                            </div>
                          </div>
@@ -2089,31 +2146,31 @@ export default function App() {
                  </div>
 
                  {/* 修改日誌區塊 */}
-                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col max-h-[800px]">
-                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800">
-                     <FileText size={20} className="mr-2 text-indigo-600"/> 原始內容修改日誌
+                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col max-h-[800px]">
+                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100">
+                     <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 原始內容修改日誌
                    </h3>
                    <div className="flex-1 overflow-y-auto pr-2 space-y-4">
                      {allEditLogs.length === 0 ? (
-                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 bg-slate-50 rounded-2xl">尚無任何修改紀錄。</div>
+                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 rounded-2xl">尚無任何修改紀錄。</div>
                      ) : (
                        allEditLogs.map((log, idx) => (
-                         <div key={idx} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl shadow-sm">
-                           <div className="flex justify-between items-center mb-3 border-b border-slate-200 pb-2">
-                             <div className="font-black text-indigo-800 text-xs">#{log.ticketId} - {log.instName}</div>
-                             <div className="text-[10px] text-slate-500 font-mono">{log.time}</div>
+                         <div key={idx} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl shadow-sm">
+                           <div className="flex justify-between items-center mb-3 border-b border-slate-200 dark:border-slate-600 pb-2">
+                             <div className="font-black text-indigo-800 dark:text-indigo-300 text-xs">#{log.ticketId} - {log.instName}</div>
+                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{log.time}</div>
                            </div>
                            <div className="space-y-3">
                              <div>
-                               <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">修改前原內容</div>
-                               <div className="text-xs text-slate-500 bg-slate-100 p-2 rounded line-through decoration-red-400">{log.oldContent || '(空)'}</div>
+                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">修改前原內容</div>
+                               <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded line-through decoration-red-400 dark:decoration-red-500 border border-slate-200 dark:border-slate-700">{log.oldContent || '(空)'}</div>
                              </div>
                              <div>
-                               <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">修改後新內容</div>
-                               <div className="text-xs text-slate-800 bg-indigo-50 p-2 rounded border border-indigo-100">{log.newContent || '(空)'}</div>
+                               <div className="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-1">修改後新內容</div>
+                               <div className="text-xs text-slate-800 dark:text-slate-200 bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded border border-indigo-100 dark:border-indigo-800">{log.newContent || '(空)'}</div>
                              </div>
                            </div>
-                           <div className="mt-3 text-right text-[10px] font-bold text-slate-500">修改人: <span className="text-indigo-600">{log.user}</span></div>
+                           <div className="mt-3 text-right text-[10px] font-bold text-slate-500 dark:text-slate-400">修改人: <span className="text-indigo-600 dark:text-indigo-400">{log.user}</span></div>
                          </div>
                        ))
                      )}
@@ -2126,57 +2183,57 @@ export default function App() {
           {/* TAB 4: DASHBOARD (統計報表) */}
           {activeTab === 'dashboard' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">進階統計區</h2>
+              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">進階統計區</h2>
               
               {/* 修改：頂部數據置左、文字上移放大 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
-                  <div className="text-5xl md:text-6xl font-black text-slate-900 leading-none text-right">{dashboardStats.total}</div>
+                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
+                  <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
                 </div>
-                <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 text-xl md:text-2xl font-black text-left mb-6">待處理件數</div>
-                  <div className="text-5xl md:text-6xl font-black text-red-500 leading-none text-right">{dashboardStats.pending}</div>
+                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">待處理件數</div>
+                  <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right">{dashboardStats.pending}</div>
                 </div>
-                <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
-                  <div className="text-5xl md:text-6xl font-black text-blue-600 leading-none text-right">{dashboardStats.completionRate}%</div>
+                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
+                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
+                  <div className="text-5xl md:text-6xl font-black text-blue-600 dark:text-blue-400 leading-none text-right">{dashboardStats.completionRate}%</div>
                 </div>
               </div>
 
               {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
-              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <div>
                     <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800">服務類別分佈</h3>
-                      <div className="flex bg-slate-100 p-1 rounded-lg">
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務類別分佈</h3>
+                      <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
                         <button 
                           onClick={() => setCategoryViewMode('detail')}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
                         >
                           細項類別
                         </button>
                         <button 
                           onClick={() => setCategoryViewMode('major')}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
                         >
                           大類別彙整
                         </button>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2 font-medium">點擊長條圖可直接跳轉至歷史查詢區檢視該分類資料</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 font-medium">點擊長條圖可直接跳轉至歷史查詢區檢視該分類資料</p>
                   </div>
-                  <div className="flex items-center space-x-2 bg-slate-50 p-2 rounded-2xl border border-slate-100">
-                    <Calendar size={16} className="text-slate-400 ml-2"/>
-                    <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer"/>
-                    <span className="text-slate-300">~</span>
-                    <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 outline-none cursor-pointer mr-2"/>
+                  <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
+                    <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                    <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                    <span className="text-slate-300 dark:text-slate-500">~</span>
+                    <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
                   </div>
                 </div>
                 
                 {categoryViewMode === 'major' && Object.keys(dashboardStats.aggregatedCategoryData).length === 0 ? (
-                  <div className="h-[320px] flex items-center justify-center text-slate-400 font-bold text-sm bg-slate-50 rounded-2xl mt-4">
+                  <div className="h-[320px] flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm bg-slate-50 dark:bg-slate-700/30 rounded-2xl mt-4">
                     目前無大類別資料，請至「系統設定區」進行歸屬設定。
                   </div>
                 ) : (
@@ -2187,8 +2244,8 @@ export default function App() {
                         const currentData = categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData;
                         const maxVal = Math.max(...Object.values(currentData), 1);
                         const heightPct = (count / maxVal) * 100;
-                        const barColorClass = categoryViewMode === 'detail' ? 'bg-indigo-500' : 'bg-blue-500';
-                        const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600' : 'group-hover:text-blue-600';
+                        const barColorClass = categoryViewMode === 'detail' ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-blue-500 dark:bg-blue-400';
+                        const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'group-hover:text-blue-600 dark:group-hover:text-blue-400';
                         
                         return (
                           <div 
@@ -2197,13 +2254,13 @@ export default function App() {
                             title="點擊查看此分類歷史紀錄"
                             className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500 cursor-pointer"
                           >
-                            <div className="absolute -top-8 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">
+                            <div className="absolute -top-8 text-slate-900 dark:text-slate-800 bg-slate-100 dark:bg-slate-200 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">
                               {count} 件
                             </div>
-                            <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner">
+                            <div className="w-10 bg-slate-100 dark:bg-slate-700 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner">
                               <div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div>
                             </div>
-                            <div className={`text-[12px] font-bold text-slate-500 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>
+                            <div className={`text-[12px] font-bold text-slate-500 dark:text-slate-400 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>
                               {cat}
                             </div>
                           </div>
@@ -2215,19 +2272,19 @@ export default function App() {
               </div>
 
               {/* 圖表區 2: 線型圖 (月趨勢) */}
-              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div className="flex justify-between items-center mb-8">
                   <div>
-                    <h3 className="text-xl font-black text-slate-800">近半年趨勢走勢圖</h3>
-                    <p className="text-xs text-slate-400 mt-1 font-medium">觀測各類別每月份案件數量波動</p>
+                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">近半年趨勢走勢圖</h3>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 font-medium">觀測各類別每月份案件數量波動</p>
                   </div>
-                  <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="全類別">-- 綜合全類別 --</option>
                     {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 
-                <LineChart data={dashboardStats.trendDataArray} labels={dashboardStats.monthLabels.map(m => m.replace('-','/'))} />
+                <LineChart data={dashboardStats.trendDataArray} labels={dashboardStats.monthLabels.map(m => m.replace('-','/'))} isDarkMode={isDarkMode} />
               </div>
 
             </div>
@@ -2236,30 +2293,30 @@ export default function App() {
           {/* TAB 5: SETTINGS (系統設定區) */}
           {activeTab === 'settings' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">系統設定區</h2>
+              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">系統設定區</h2>
 
               {/* 個人密碼修改區 (所有角色可見) */}
-              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Lock size={20} className="mr-2 text-indigo-600"/> 修改個人登入密碼</h3>
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Lock size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 修改個人登入密碼</h3>
                 <form onSubmit={handleChangeOwnPassword} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
                   <div>
-                    <label className="text-xs font-bold text-slate-400 block mb-2">新密碼</label>
-                    <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-400 block mb-2">新密碼</label>
+                    <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-400 block mb-2">確認新密碼</label>
-                    <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
+                    <label className="text-xs font-bold text-slate-400 dark:text-slate-400 block mb-2">確認新密碼</label>
+                    <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
                   </div>
-                  <button type="submit" className="py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95">更新密碼</button>
+                  <button type="submit" className="py-4 bg-indigo-600 dark:bg-indigo-500 text-white rounded-2xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200 dark:shadow-none active:scale-95">更新密碼</button>
                 </form>
-                {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 animate-pulse' : 'text-green-600'}`}>{pwdChangeMsg}</p>}
+                {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'}`}>{pwdChangeMsg}</p>}
               </div>
 
               {/* 罐頭文字維護區 (管理員與一般使用者可見) */}
               {currentUser.role !== ROLES.VIEWER && (
-                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
-                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><MessageSquare size={20} className="mr-2 text-indigo-600"/> 罐頭文字維護</h3>
-                  <p className="text-xs text-slate-500 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
                   <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
                 </div>
               )}
@@ -2267,39 +2324,39 @@ export default function App() {
               {/* 以下功能僅管理員可見 */}
               {currentUser.role === ROLES.ADMIN && (
                 <>
-                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mb-8">
-                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800"><Shield size={20} className="mr-2 text-indigo-600"/> 使用者與權限管理</h3>
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與權限管理</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       {/* 新增使用者 */}
-                      <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
-                        <h4 className="font-bold text-sm mb-4">建立新用戶</h4>
+                      <div className="bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
+                        <h4 className="font-bold text-sm mb-4 dark:text-slate-200">建立新用戶</h4>
                         <form onSubmit={handleAddUser} className="space-y-4">
-                          <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3.5 border border-slate-200 rounded-xl font-medium outline-none"/>
-                          <input type="password" required placeholder="設定初始密碼" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3.5 border border-slate-200 rounded-xl font-medium outline-none"/>
-                          <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-3.5 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none">
+                          <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
+                          <input type="password" required placeholder="設定初始密碼" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
+                          <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold outline-none">
                             <option value={ROLES.USER}>{ROLES.USER} (可新增/維護紀錄)</option>
                             <option value={ROLES.VIEWER}>{ROLES.VIEWER} (僅能看不可改)</option>
                             <option value={ROLES.ADMIN}>{ROLES.ADMIN} (系統全權限)</option>
                           </select>
-                          <button type="submit" className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 shadow-md">新增用戶</button>
+                          <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
                         </form>
                       </div>
                       {/* 使用者清單 */}
-                      <div className="overflow-auto border border-slate-200 rounded-[1.5rem] bg-white h-[320px]">
+                      <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
-                          <thead className="bg-slate-100 sticky top-0 text-[10px] font-black uppercase text-slate-500 tracking-widest z-10">
+                          <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
                             <tr><th className="p-4">帳號</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
-                          <tbody className="divide-y text-sm font-medium">
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
-                              <tr key={u.id} className="hover:bg-slate-50">
-                                <td className="p-4">{u.username}</td>
-                                <td className="p-4"><span className="bg-slate-100 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
+                              <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                <td className="p-4 dark:text-slate-200">{u.username}</td>
+                                <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
                                 <td className="p-4 text-center">
-                                  <button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 hover:text-indigo-800 font-bold text-xs bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors">重置</button>
+                                  <button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button>
                                 </td>
                                 <td className="p-4 text-center">
-                                  {u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}
+                                  {u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}
                                 </td>
                               </tr>
                             ))}
@@ -2312,41 +2369,41 @@ export default function App() {
                   {/* 院所維護區 */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
                     <div className="space-y-8">
-                      <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                        <h3 className="font-black mb-6 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600"/> 單筆新增院所</h3>
+                      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <h3 className="font-black mb-6 text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600 dark:text-blue-400"/> 單筆新增院所</h3>
                         <form onSubmit={handleAddInst} className="space-y-4">
-                          <input type="text" placeholder="代碼" value={newInst.code} onChange={e=>setNewInst({...newInst, code:e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 font-medium focus:ring-2 outline-none"/>
-                          <input type="text" placeholder="名稱" value={newInst.name} onChange={e=>setNewInst({...newInst, name:e.target.value})} className="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 font-medium focus:ring-2 outline-none"/>
-                          <button type="submit" className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black transition-colors">單筆存入</button>
+                          <input type="text" placeholder="代碼" value={newInst.code} onChange={e=>setNewInst({...newInst, code:e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-2xl font-medium focus:ring-2 outline-none"/>
+                          <input type="text" placeholder="名稱" value={newInst.name} onChange={e=>setNewInst({...newInst, name:e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-2xl font-medium focus:ring-2 outline-none"/>
+                          <button type="submit" className="w-full py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black dark:hover:bg-slate-500 transition-colors">單筆存入</button>
                         </form>
                       </div>
-                      <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                        <h3 className="font-black mb-2 text-sm text-slate-800 uppercase tracking-widest flex items-center"><Upload size={18} className="mr-2 text-green-600"/> 批次匯入 (Excel)</h3>
-                        <p className="text-[10px] text-slate-400 mb-6 font-bold">自動擷取 B 欄、D 欄、H 欄</p>
+                      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <h3 className="font-black mb-2 text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest flex items-center"><Upload size={18} className="mr-2 text-green-600 dark:text-green-400"/> 批次匯入 (Excel)</h3>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-6 font-bold">自動擷取 B 欄、D 欄、H 欄</p>
                         <div className="relative">
                           <input type="file" onChange={handleFileUpload} disabled={isImporting} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"/>
-                          <button disabled={isImporting} className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center hover:bg-green-700 disabled:bg-slate-300 transition-colors">
+                          <button disabled={isImporting} className="w-full py-4 bg-green-600 dark:bg-green-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-slate-300 dark:disabled:bg-slate-600 transition-colors">
                             {isImporting ? <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div> : <Upload size={18} className="mr-2"/>} 開始匯入
                           </button>
                         </div>
                       </div>
                     </div>
-                    <div className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-200 shadow-sm h-[700px] flex flex-col">
-                      <div className="p-6 bg-slate-50/50 border-b flex justify-between items-center px-8">
-                        <h3 className="font-black text-sm text-slate-800 uppercase tracking-widest">雲端院所對照表 ({(Array.isArray(institutions)?institutions:[]).length.toLocaleString()} 筆)</h3>
+                    <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm h-[700px] flex flex-col">
+                      <div className="p-6 bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center px-8">
+                        <h3 className="font-black text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest">雲端院所對照表 ({(Array.isArray(institutions)?institutions:[]).length.toLocaleString()} 筆)</h3>
                         {(Array.isArray(institutions)?institutions:[]).length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
                       </div>
                       <div className="flex-1 overflow-auto">
                         <table className="w-full text-left border-collapse">
-                          <thead className="bg-white sticky top-0 border-b text-[10px] text-slate-400 font-black uppercase tracking-widest">
+                          <thead className="bg-white dark:bg-slate-800 sticky top-0 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
                             <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
                           </thead>
-                          <tbody className="divide-y text-xs font-medium">
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-xs font-medium">
                             {(Array.isArray(filteredInsts)?filteredInsts:[]).slice(0, 100).map(i=>(
-                              <tr key={i.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="p-5 font-mono text-slate-500">{i.code}</td>
-                                <td className="p-5 text-slate-800 font-bold">{i.name}</td>
-                                <td className="p-5 text-center"><button onClick={()=>handleDeleteInst(i.id)} className="text-slate-200 hover:text-red-500"><Trash2 size={16}/></button></td>
+                              <tr key={i.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                <td className="p-5 font-mono text-slate-500 dark:text-slate-400">{i.code}</td>
+                                <td className="p-5 text-slate-800 dark:text-slate-200 font-bold">{i.name}</td>
+                                <td className="p-5 text-center"><button onClick={()=>handleDeleteInst(i.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400"><Trash2 size={16}/></button></td>
                               </tr>
                             ))}
                           </tbody>
@@ -2356,9 +2413,9 @@ export default function App() {
                   </div>
 
                   {/* 表單下拉選單維護 (移至最下方) */}
-                  <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800"><Tags size={20} className="mr-2 text-indigo-600"/> 表單下拉選單維護</h3>
-                    <p className="text-xs text-slate-500 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><Tags size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                       <DropdownManager title="反映管道" dbKey="channels" items={channels} />
                       <DropdownManager title="業務類別" dbKey="categories" items={categories} />
@@ -2378,6 +2435,7 @@ export default function App() {
           {showCannedModal && <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />}
         </div>
       </div>
+    </div>
     </div>
   );
 }
