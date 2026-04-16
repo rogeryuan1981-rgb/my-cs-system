@@ -5,14 +5,14 @@ import {
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Archive
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.6.0 (正式版)";
+const APP_VERSION = "v1.8.0 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -86,7 +86,6 @@ const getInitialForm = (username = '') => ({
   replies: []
 });
 
-// 格式化回覆歷史軌跡 (修改為只換一行)
 const formatRepliesHistory = (replies, fallbackContent) => {
   if (replies && replies.length > 0) {
     return replies.map(r => {
@@ -97,7 +96,6 @@ const formatRepliesHistory = (replies, fallbackContent) => {
   return fallbackContent || '';
 };
 
-// 取得最新一筆回覆內容
 const getLatestReply = (replies, fallbackContent) => {
   if (replies && replies.length > 0) {
     return replies[replies.length - 1].content;
@@ -233,8 +231,14 @@ export default function App() {
   const [cannedMessages, setCannedMessages] = useState([]);
   const [showCannedModal, setShowCannedModal] = useState(false);
 
-  // History Import State
+  // History Import & Batch State
   const [isImportingHistory, setIsImportingHistory] = useState(false);
+  const [selectedTickets, setSelectedTickets] = useState([]); // 儲存歷史區/資料區勾選的項目 ID
+
+  // 防呆機制：切換分頁時自動清空已勾選的項目，避免跨頁誤刪
+  useEffect(() => {
+    setSelectedTickets([]);
+  }, [activeTab]);
 
   // Form State
   const [formData, setFormData] = useState(getInitialForm());
@@ -258,6 +262,14 @@ export default function App() {
   const [historyProgress, setHistoryProgress] = useState('全部');
   const [sortConfig, setSortConfig] = useState({ key: 'receiveTime', direction: 'desc' });
 
+  // All Records State (紀錄資料區)
+  const [allRecordsSearchTerm, setAllRecordsSearchTerm] = useState('');
+
+  // 當查詢條件改變時，清空勾選項目，防止誤刪不在畫面上的資料
+  useEffect(() => {
+    setSelectedTickets([]);
+  }, [searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, allRecordsSearchTerm]);
+
   // Dashboard State
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
@@ -274,7 +286,6 @@ export default function App() {
   const [newInst, setNewInst] = useState({ code: '', name: '', level: '診所' });
   const [instSubmitMsg, setInstSubmitMsg] = useState('');
   const [isImporting, setIsImporting] = useState(false);
-  const [showInstList, setShowInstList] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
   // User Management & Password State
@@ -616,16 +627,41 @@ export default function App() {
     }
   };
 
-  // --- History Delete Handler (Admin Only) ---
-  const handleDeleteTicket = async (id, ticketId) => {
+  // --- History Delete Handler (Admin Only - Batch Checkbox) ---
+  const handleBatchDeleteTickets = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (window.confirm(`【警告】確定要刪除案件「${ticketId}」嗎？此操作無法復原。`)) {
+    if (selectedTickets.length === 0) return;
+
+    if (window.confirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？此操作無法復原。`)) {
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-        await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', id) : doc(db, 'cs_records', id));
+        let batch = writeBatch(db);
+        let count = 0;
+        
+        for (let i = 0; i < selectedTickets.length; i++) {
+          const docRef = baseDbPath.length 
+            ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) 
+            : doc(db, 'cs_records', selectedTickets[i]);
+          
+          batch.delete(docRef);
+          count++;
+          
+          if (count === 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+
+        if (count > 0) {
+          await batch.commit();
+        }
+
+        setSelectedTickets([]);
+        alert(`成功刪除 ${selectedTickets.length} 筆紀錄。`);
       } catch (error) {
-        console.error("Error deleting ticket:", error);
-        alert("刪除失敗：" + error.message);
+        console.error("Batch delete error:", error);
+        alert("批次刪除失敗：" + error.message);
       }
     }
   };
@@ -636,12 +672,16 @@ export default function App() {
       alert("Excel 模組尚未載入完成，請稍後再試。");
       return;
     }
-    if (filteredAndSortedHistory.length === 0) {
+    
+    // 如果在紀錄資料區，則匯出 allRecordsFiltered，否則匯出歷史查詢區的 filteredAndSortedHistory
+    const targetData = activeTab === 'all-records' ? allRecordsFiltered : filteredAndSortedHistory;
+
+    if (targetData.length === 0) {
       alert("目前沒有資料可以匯出。");
       return;
     }
 
-    const exportData = filteredAndSortedHistory.map(t => {
+    const exportData = targetData.map(t => {
       const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
 
       return {
@@ -666,7 +706,7 @@ export default function App() {
 
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(wb, ws, "歷史查詢結果");
+    window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
     
     const fileName = `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`;
     window.XLSX.writeFile(wb, fileName);
@@ -696,43 +736,76 @@ export default function App() {
       try {
         const data = new Uint8Array(event.target.result);
         const workbook = window.XLSX.read(data, { type: 'array' });
-        const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        // 使用 raw: false 讓 Excel 日期直接轉為字串，避免奇怪的數字序號
+        const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: "" });
+        
+        const errors = [];
+        const validRows = [];
+        
+        // 嚴謹的資料檢核機制
+        jsonData.forEach((row, index) => {
+          const rowNum = index + 2; // +1 為了 0-index，+1 為了標題列
+          let rowErrors = [];
+          
+          const rawTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
+          if (!rawTime || String(rawTime).trim() === '') rowErrors.push('接收時間為空');
+          
+          if (!row['反映管道'] || String(row['反映管道']).trim() === '') rowErrors.push('反映管道為空');
+          if (!row['業務類別'] || String(row['業務類別']).trim() === '') rowErrors.push('業務類別為空');
+          if (!row['案件狀態'] || String(row['案件狀態']).trim() === '') rowErrors.push('案件狀態為空');
+          if (!row['處理進度'] || String(row['處理進度']).trim() === '') rowErrors.push('處理進度為空');
+          if (!row['建檔人'] || String(row['建檔人']).trim() === '') rowErrors.push('建檔人為空');
+
+          if (rowErrors.length > 0) {
+            errors.push(`第 ${rowNum} 列: ${rowErrors.join('、')}`);
+          } else {
+            validRows.push(row);
+          }
+        });
+
+        // 發現任何錯誤即中斷並彈出提示
+        if (errors.length > 0) {
+          alert(`匯入失敗，發現 ${errors.length} 筆資料不符合標準：\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...等' : ''}\n\n請修正以上錯誤後再重新上傳。`);
+          setIsImportingHistory(false);
+          e.target.value = null;
+          return;
+        }
         
         let added = 0;
         let batch = writeBatch(db);
         let count = 0;
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
 
-        for (const row of jsonData) {
-          const ticketId = row['案件號'] ? String(row['案件號']).trim() : '歷史資料匯入';
+        for (const row of validRows) {
+          const ticketId = String(row['案件號'] || '').trim() || '歷史資料匯入';
           
           let rTime = getFormatDate();
-          if (row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間']) {
-             const parsedTime = new Date(row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間']);
-             if(!isNaN(parsedTime)) rTime = getFormatDate(parsedTime);
-          }
+          const rawRecTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
+          const parsedRTime = new Date(rawRecTime);
+          if (!isNaN(parsedRTime)) rTime = getFormatDate(parsedRTime);
 
           let cTime = '';
-          if (row['結案時間(YYYY-MM-DD HH:mm)'] || row['結案時間']) {
-             const parsedTime = new Date(row['結案時間(YYYY-MM-DD HH:mm)'] || row['結案時間']);
-             if(!isNaN(parsedTime)) cTime = getFormatDate(parsedTime);
+          const rawCloseTime = row['結案時間(YYYY-MM-DD HH:mm)'] || row['結案時間'];
+          if (rawCloseTime) {
+             const parsedCTime = new Date(rawCloseTime);
+             if(!isNaN(parsedCTime)) cTime = getFormatDate(parsedCTime);
           }
 
           const recordData = {
             ticketId: ticketId,
             receiveTime: rTime,
-            channel: String(row['反映管道'] || ''),
-            instCode: String(row['院所代碼'] || '').replace('\u200B', ''), 
-            instName: String(row['院所名稱'] || ''),
-            instLevel: String(row['醫療層級'] || ''),
-            questioner: String(row['提問人資訊'] || ''),
-            category: String(row['業務類別'] || ''),
-            status: String(row['案件狀態'] || ''),
-            progress: String(row['處理進度'] || '結案'),
-            receiver: String(row['建檔人'] || ''),
-            assignee: String(row['指定處理人'] || ''),
-            extraInfo: String(row['詳細問題描述'] || ''),
-            replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || ''),
+            channel: String(row['反映管道']).trim(),
+            instCode: String(row['院所代碼'] || '').replace('\u200B', '').trim(), 
+            instName: String(row['院所名稱'] || '').trim(),
+            instLevel: String(row['醫療層級'] || '').trim(),
+            questioner: String(row['提問人資訊'] || '').trim(),
+            category: String(row['業務類別']).trim(),
+            status: String(row['案件狀態']).trim(),
+            progress: String(row['處理進度']).trim(),
+            receiver: String(row['建檔人']).trim(),
+            assignee: String(row['指定處理人'] || '').trim(),
+            extraInfo: String(row['詳細問題描述'] || '').trim(),
+            replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || '').trim(),
             closeTime: cTime,
             replies: [], 
             createdAt: new Date().toISOString(),
@@ -761,7 +834,7 @@ export default function App() {
         alert(`成功匯入 ${added} 筆歷史紀錄！`);
       } catch (error) {
         console.error("Import Error: ", error);
-        alert("匯入失敗，請確認檔案格式是否符合範本。");
+        alert("匯入發生未預期錯誤，請確認檔案格式是否正確。");
       } finally {
         setIsImportingHistory(false);
         e.target.value = null;
@@ -932,6 +1005,34 @@ export default function App() {
     return result;
   }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig]);
 
+  // All Records Filtering & Sorting (紀錄資料區)
+  const allRecordsFiltered = useMemo(() => {
+    let result = tickets.filter(t => {
+      if (!allRecordsSearchTerm) return true;
+      return (t.ticketId||'').includes(allRecordsSearchTerm) || 
+             (t.instName||'').includes(allRecordsSearchTerm) || 
+             (t.extraInfo||'').includes(allRecordsSearchTerm) || 
+             (t.receiver||'').includes(allRecordsSearchTerm);
+    });
+
+    // 預設以時間降冪排序
+    result.sort((a, b) => {
+      let valA = a[sortConfig.key] || '';
+      let valB = b[sortConfig.key] || '';
+
+      if (sortConfig.key === 'receiveTime') {
+        valA = new Date(valA).getTime();
+        valB = new Date(valB).getTime();
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [tickets, allRecordsSearchTerm, sortConfig]);
+
   // History Sortable Header Component
   const SortHeader = ({ label, sortKey, align = 'left' }) => {
     const isActive = sortConfig.key === sortKey;
@@ -1093,6 +1194,7 @@ export default function App() {
           <NavButton id="form" icon={Plus} label="新增紀錄區" />
           <NavButton id="maintenance" icon={Edit} label="紀錄維護區" />
           <NavButton id="list" icon={List} label="歷史查詢區" />
+          <NavButton id="all-records" icon={Database} label="紀錄資料區" />
           <NavButton id="dashboard" icon={LayoutDashboard} label="進階統計區" />
           <NavButton id="settings" icon={Settings} label="系統設定區" />
         </nav>
@@ -1253,7 +1355,7 @@ export default function App() {
                                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xs shrink-0">{r.user.charAt(0).toUpperCase()}</div>
                                  <div>
                                    <div className="text-xs font-bold text-slate-800 mb-1">{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                   <div className="text-sm text-slate-600 leading-relaxed">{r.content}</div>
+                                   <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{r.content}</div>
                                  </div>
                                </div>
                              ))}
@@ -1310,9 +1412,21 @@ export default function App() {
                  
                  {/* 匯出與匯入 Excel 按鈕區 */}
                  <div className="flex items-center space-x-2 shrink-0">
+                   
+                   {/* 批次刪除按鈕 (僅管理員，且有勾選時顯示) */}
+                   {currentUser.role === ROLES.ADMIN && selectedTickets.length > 0 && (
+                     <button 
+                       onClick={handleBatchDeleteTickets}
+                       className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in"
+                     >
+                       <Trash2 size={16} />
+                       <span className="hidden md:inline">刪除 ({selectedTickets.length})</span>
+                     </button>
+                   )}
+
                    <button 
                      onClick={handleExportExcel}
-                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm"
+                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm shrink-0"
                    >
                      <Download size={16} />
                      <span className="hidden md:inline">匯出 Excel</span>
@@ -1376,12 +1490,28 @@ export default function App() {
                    <table className="w-full text-left">
                      <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest">
                        <tr>
+                         {currentUser.role === ROLES.ADMIN && (
+                           <th className="p-5 text-center w-12">
+                             <input 
+                               type="checkbox" 
+                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                               title="全選/取消全選本頁條件下的紀錄"
+                               checked={filteredAndSortedHistory.length > 0 && selectedTickets.length === filteredAndSortedHistory.length}
+                               onChange={(e) => {
+                                 if (e.target.checked) {
+                                   setSelectedTickets(filteredAndSortedHistory.map(t => t.id));
+                                 } else {
+                                   setSelectedTickets([]);
+                                 }
+                               }}
+                             />
+                           </th>
+                         )}
                          <SortHeader label="案件號/日期" sortKey="receiveTime" />
                          <SortHeader label="院所" sortKey="instName" />
                          <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
                          <SortHeader label="建立/負責人" sortKey="receiver" />
                          <SortHeader label="進度" sortKey="progress" align="center" />
-                         {currentUser.role === ROLES.ADMIN && <th className="p-5 text-center">操作</th>}
                        </tr>
                      </thead>
                      <tbody className="divide-y text-sm font-medium">
@@ -1393,22 +1523,159 @@ export default function App() {
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
                              <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                               <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
-                               <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                               <td className="p-5 max-w-[250px]"><div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div><div className="truncate text-slate-400 text-xs" title={fullHistoryStr || '尚無回覆紀錄'}>答: {latestReplyStr || '-'}</div></td>
-                               <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
-                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
                                {currentUser.role === ROLES.ADMIN && (
                                  <td className="p-5 text-center">
-                                   <button 
-                                     onClick={() => handleDeleteTicket(t.id, t.ticketId)} 
-                                     className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" 
-                                     title="刪除此筆紀錄"
-                                   >
-                                     <Trash2 size={16}/>
-                                   </button>
+                                   <input 
+                                     type="checkbox" 
+                                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                     checked={selectedTickets.includes(t.id)}
+                                     onChange={(e) => {
+                                       if (e.target.checked) {
+                                         setSelectedTickets([...selectedTickets, t.id]);
+                                       } else {
+                                         setSelectedTickets(selectedTickets.filter(id => id !== t.id));
+                                       }
+                                     }}
+                                   />
                                  </td>
                                )}
+                               <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
+                               <td className="p-5 max-w-[250px] relative group">
+                                  <div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                                  <div className="truncate text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                                  
+                                  {/* Hover 顯示完整歷史紀錄 */}
+                                  {fullHistoryStr && (
+                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72 p-4 bg-slate-800 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 pb-2">完整回覆紀錄</div>
+                                      <div className="whitespace-pre-wrap leading-relaxed">{fullHistoryStr}</div>
+                                      <div className="absolute w-3 h-3 bg-slate-800 transform rotate-45 -bottom-1.5 left-8"></div>
+                                    </div>
+                                  )}
+                               </td>
+                               <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
+                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
+                             </tr>
+                           )
+                         })
+                       )}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+             </div>
+          )}
+
+          {/* TAB 6: ALL RECORDS (紀錄資料區) */}
+          {activeTab === 'all-records' && (
+             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
+               <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                 <div>
+                   <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">紀錄資料區</h2>
+                   <p className="text-sm text-slate-500 mt-2">顯示資料庫中所有原始紀錄（不過濾任何條件），方便檢視與批次操作。</p>
+                 </div>
+                 
+                 <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
+                   {/* 批次刪除按鈕 (僅管理員，且有勾選時顯示) */}
+                   {currentUser.role === ROLES.ADMIN && selectedTickets.length > 0 && (
+                     <button 
+                       onClick={handleBatchDeleteTickets}
+                       className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in"
+                     >
+                       <Trash2 size={16} />
+                       <span className="hidden md:inline">刪除 ({selectedTickets.length})</span>
+                     </button>
+                   )}
+                   
+                   {/* 匯出 Excel 按鈕 */}
+                   <button 
+                     onClick={handleExportExcel}
+                     className="flex items-center justify-center space-x-2 bg-green-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 transition-colors font-bold text-sm shrink-0"
+                   >
+                     <Download size={16} />
+                     <span className="hidden md:inline">匯出全部</span>
+                   </button>
+
+                   {/* Keyword Filter (All Records) */}
+                   <div className="relative flex-1 xl:w-72">
+                     <Search size={18} className="absolute left-4 top-3 text-slate-400"/>
+                     <input type="text" placeholder="關鍵字搜尋..." value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium"/>
+                   </div>
+                 </div>
+               </div>
+               
+               <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+                 <div className="overflow-x-auto min-h-[400px] max-h-[700px]">
+                   <table className="w-full text-left">
+                     <thead className="bg-slate-50 border-b text-[11px] font-black text-slate-400 uppercase tracking-widest sticky top-0 z-10">
+                       <tr>
+                         {currentUser.role === ROLES.ADMIN && (
+                           <th className="p-5 text-center w-12">
+                             <input 
+                               type="checkbox" 
+                               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                               title="全選/取消全選本頁條件下的紀錄"
+                               checked={allRecordsFiltered.length > 0 && selectedTickets.length === allRecordsFiltered.length}
+                               onChange={(e) => {
+                                 if (e.target.checked) {
+                                   setSelectedTickets(allRecordsFiltered.map(t => t.id));
+                                 } else {
+                                   setSelectedTickets([]);
+                                 }
+                               }}
+                             />
+                           </th>
+                         )}
+                         <SortHeader label="案件號/日期" sortKey="receiveTime" />
+                         <SortHeader label="院所" sortKey="instName" />
+                         <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
+                         <SortHeader label="建立/負責人" sortKey="receiver" />
+                         <SortHeader label="進度" sortKey="progress" align="center" />
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y text-sm font-medium">
+                       {allRecordsFiltered.length === 0 ? (
+                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "6" : "5"} className="p-12 text-center text-slate-400 font-bold">查無符合條件的案件</td></tr>
+                       ) : (
+                         allRecordsFiltered.map(t => {
+                           const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
+                           const latestReplyStr = getLatestReply(t.replies, t.replyContent);
+                           return (
+                             <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                               {currentUser.role === ROLES.ADMIN && (
+                                 <td className="p-5 text-center">
+                                   <input 
+                                     type="checkbox" 
+                                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                     checked={selectedTickets.includes(t.id)}
+                                     onChange={(e) => {
+                                       if (e.target.checked) {
+                                         setSelectedTickets([...selectedTickets, t.id]);
+                                       } else {
+                                         setSelectedTickets(selectedTickets.filter(id => id !== t.id));
+                                       }
+                                     }}
+                                   />
+                                 </td>
+                               )}
+                               <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
+                               <td className="p-5 max-w-[250px] relative group">
+                                  <div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                                  <div className="truncate text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                                  
+                                  {/* Hover 顯示完整歷史紀錄 */}
+                                  {fullHistoryStr && (
+                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72 p-4 bg-slate-800 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 pb-2">完整回覆紀錄</div>
+                                      <div className="whitespace-pre-wrap leading-relaxed">{fullHistoryStr}</div>
+                                      <div className="absolute w-3 h-3 bg-slate-800 transform rotate-45 -bottom-1.5 left-8"></div>
+                                    </div>
+                                  )}
+                               </td>
+                               <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
+                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
                              </tr>
                            )
                          })
