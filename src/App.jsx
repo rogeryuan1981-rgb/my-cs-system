@@ -5,14 +5,14 @@ import {
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Archive
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.8.0 (正式版)";
+const APP_VERSION = "v1.9.0 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -229,13 +229,14 @@ export default function App() {
   const [statuses, setStatuses] = useState([]);
   const [progresses, setProgresses] = useState([]);
   const [cannedMessages, setCannedMessages] = useState([]);
+  const [categoryMapping, setCategoryMapping] = useState({}); // 大類別映射
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   // History Import & Batch State
   const [isImportingHistory, setIsImportingHistory] = useState(false);
-  const [selectedTickets, setSelectedTickets] = useState([]); // 儲存歷史區/資料區勾選的項目 ID
+  const [selectedTickets, setSelectedTickets] = useState([]); 
 
-  // 防呆機制：切換分頁時自動清空已勾選的項目，避免跨頁誤刪
+  // 防呆機制：切換分頁時自動清空已勾選的項目
   useEffect(() => {
     setSelectedTickets([]);
   }, [activeTab]);
@@ -265,7 +266,7 @@ export default function App() {
   // All Records State (紀錄資料區)
   const [allRecordsSearchTerm, setAllRecordsSearchTerm] = useState('');
 
-  // 當查詢條件改變時，清空勾選項目，防止誤刪不在畫面上的資料
+  // 當查詢條件改變時，清空勾選項目
   useEffect(() => {
     setSelectedTickets([]);
   }, [searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, allRecordsSearchTerm]);
@@ -377,14 +378,15 @@ export default function App() {
         setStatuses(data.statuses || []);
         setProgresses(data.progresses || []);
         setCannedMessages(data.cannedMessages || []);
+        setCategoryMapping(data.categoryMapping || {});
       } else {
-        // 如果還沒有設定檔，建立預設值防呆
         const defaultSettings = {
           channels: ["電話", "LINE"],
           categories: ["慢防-成人預防保健", "其他"],
           statuses: ["詢問步驟", "其他"],
           progresses: ["待處理", "處理中", "待回覆", "結案"],
-          cannedMessages: ["請提供更詳細的相關資訊以便查詢"]
+          cannedMessages: ["請提供更詳細的相關資訊以便查詢"],
+          categoryMapping: {}
         };
         setDoc(buildDocPath('cs_settings', 'dropdowns'), defaultSettings);
       }
@@ -491,16 +493,26 @@ export default function App() {
     let newFormData = { ...formData, [name]: value };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
-    // 若是結案，清空指派
     if (name === 'progress' && value === '結案') newFormData.assignee = '';
     setFormData(newFormData);
   };
 
   const handleInstCodeBlur = () => {
     if (!formData.instCode) return;
+
+    const rawCode = formData.instCode.trim();
+    if (rawCode === '999') {
+      setFormData(prev => ({ 
+        ...prev, 
+        instCode: '999', 
+        instLevel: '',
+        instName: prev.instName.includes('查無資料') ? '' : prev.instName
+      }));
+      return;
+    }
+
     setIsLookingUp(true);
     setTimeout(() => {
-      const rawCode = formData.instCode.trim();
       const paddedCode = rawCode.padStart(10, '0');
       let data = instMap[rawCode] || instMap[paddedCode];
       if (data) {
@@ -547,7 +559,6 @@ export default function App() {
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       
-      // 送出後維持目前動態選單預設值
       setFormData(prev => ({
         ...getInitialForm(currentUser.username),
         channel: channels.includes(prev.channel) ? prev.channel : (channels[0] || ''),
@@ -627,7 +638,6 @@ export default function App() {
     }
   };
 
-  // --- History Delete Handler (Admin Only - Batch Checkbox) ---
   const handleBatchDeleteTickets = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (selectedTickets.length === 0) return;
@@ -673,7 +683,6 @@ export default function App() {
       return;
     }
     
-    // 如果在紀錄資料區，則匯出 allRecordsFiltered，否則匯出歷史查詢區的 filteredAndSortedHistory
     const targetData = activeTab === 'all-records' ? allRecordsFiltered : filteredAndSortedHistory;
 
     if (targetData.length === 0) {
@@ -688,7 +697,6 @@ export default function App() {
         '案件號': t.ticketId || '',
         '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
         '反映管道': t.channel || '',
-        // 加入 \u200B (Zero-width space) 強制轉為文字，避免 Excel 開啟時去除首碼 0
         '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '',
         '院所名稱': t.instName || '',
         '醫療層級': t.instLevel || '',
@@ -736,15 +744,13 @@ export default function App() {
       try {
         const data = new Uint8Array(event.target.result);
         const workbook = window.XLSX.read(data, { type: 'array' });
-        // 使用 raw: false 讓 Excel 日期直接轉為字串，避免奇怪的數字序號
         const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: "" });
         
         const errors = [];
         const validRows = [];
         
-        // 嚴謹的資料檢核機制
         jsonData.forEach((row, index) => {
-          const rowNum = index + 2; // +1 為了 0-index，+1 為了標題列
+          const rowNum = index + 2; 
           let rowErrors = [];
           
           const rawTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
@@ -763,7 +769,6 @@ export default function App() {
           }
         });
 
-        // 發現任何錯誤即中斷並彈出提示
         if (errors.length > 0) {
           alert(`匯入失敗，發現 ${errors.length} 筆資料不符合標準：\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...等' : ''}\n\n請修正以上錯誤後再重新上傳。`);
           setIsImportingHistory(false);
@@ -878,6 +883,53 @@ export default function App() {
             </li>
           ))}
         </ul>
+      </div>
+    );
+  };
+
+  // 大類別設定管理模組
+  const CategoryMappingManager = ({ categories, mapping }) => {
+    const [localMap, setLocalMap] = useState({});
+
+    useEffect(() => {
+      setLocalMap(mapping || {});
+    }, [mapping]);
+
+    const handleMapChange = (cat, value) => {
+      setLocalMap(prev => ({ ...prev, [cat]: value }));
+    };
+
+    const handleSaveMapping = async () => {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
+      alert("大類別設定已儲存成功！");
+    };
+
+    return (
+      <div className="bg-slate-50 p-8 rounded-[1.5rem] border border-slate-100 mt-8">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h4 className="font-black text-slate-800 flex items-center"><Layers size={18} className="mr-2 text-indigo-600"/> 大類別歸屬設定</h4>
+            <p className="text-xs text-slate-500 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
+          </div>
+          <button onClick={handleSaveMapping} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-transform active:scale-95">儲存大類別設定</button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {categories.map(cat => (
+            <div key={cat} className="flex items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+               <span className="text-sm font-bold text-slate-600 w-1/2 truncate border-r border-slate-100 pr-2 mr-2" title={cat}>{cat}</span>
+               <input 
+                 type="text" 
+                 value={localMap[cat] || ''} 
+                 onChange={e => handleMapChange(cat, e.target.value)} 
+                 placeholder="輸入大類別 (例:慢防組)" 
+                 className="w-1/2 p-1 text-sm font-medium outline-none text-slate-800" 
+               />
+            </div>
+          ))}
+          {categories.length === 0 && <div className="text-xs text-slate-400 p-4 col-span-full text-center">請先於上方「業務類別」新增項目。</div>}
+        </div>
       </div>
     );
   };
@@ -1015,7 +1067,6 @@ export default function App() {
              (t.receiver||'').includes(allRecordsSearchTerm);
     });
 
-    // 預設以時間降冪排序
     result.sort((a, b) => {
       let valA = a[sortConfig.key] || '';
       let valB = b[sortConfig.key] || '';
@@ -1033,7 +1084,6 @@ export default function App() {
     return result;
   }, [tickets, allRecordsSearchTerm, sortConfig]);
 
-  // History Sortable Header Component
   const SortHeader = ({ label, sortKey, align = 'left' }) => {
     const isActive = sortConfig.key === sortKey;
     return (
@@ -1072,12 +1122,23 @@ export default function App() {
     });
 
     const categoryData = {};
+    const aggregatedCategoryData = {};
+    
     categories.forEach(c => categoryData[c] = 0); // Initialize dynamically
+    
     rangeTickets.forEach(t => {
       if (categories.includes(t.category)) {
         categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       } else {
         categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
+      }
+    });
+
+    // 處理大類別彙整資料
+    Object.keys(categoryData).forEach(cat => {
+      if(categoryData[cat] > 0 || Object.keys(categoryMapping).length > 0) { // 有設定大類別或有數字才處理
+        const majorCat = categoryMapping[cat] && categoryMapping[cat].trim() !== '' ? categoryMapping[cat].trim() : '未歸屬大類別';
+        aggregatedCategoryData[majorCat] = (aggregatedCategoryData[majorCat] || 0) + categoryData[cat];
       }
     });
 
@@ -1096,8 +1157,8 @@ export default function App() {
       }).length;
     });
 
-    return { total, pending, resolved, completionRate, categoryData, trendDataArray, monthLabels };
-  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories]);
+    return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendDataArray, monthLabels };
+  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping]);
 
   // --- Render Login Screen ---
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
@@ -1240,8 +1301,23 @@ export default function App() {
                     <div className="md:col-span-2">
                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所名稱與層級</label>
                       <div className="flex space-x-4">
-                        <input type="text" name="instName" value={formData.instName} readOnly className="w-2/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-bold outline-none" placeholder="名稱"/>
-                        <input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" placeholder="層級"/>
+                        <input 
+                          type="text" 
+                          name="instName" 
+                          value={formData.instName} 
+                          onChange={handleFormChange} 
+                          readOnly={formData.instCode !== '999'} 
+                          className={`w-2/3 p-3.5 border border-slate-200 rounded-2xl outline-none ${formData.instCode === '999' ? 'bg-white focus:ring-2 focus:ring-blue-500 text-slate-800' : 'bg-slate-50 text-slate-600 font-bold'}`} 
+                          placeholder={formData.instCode === '999' ? "請自行輸入單位名稱" : "名稱"}
+                        />
+                        <input 
+                          type="text" 
+                          name="instLevel" 
+                          value={formData.instLevel} 
+                          readOnly 
+                          className="w-1/3 p-3.5 border border-slate-200 rounded-2xl bg-slate-50 text-slate-500 font-bold outline-none" 
+                          placeholder="層級"
+                        />
                       </div>
                     </div>
                   </div>
@@ -1742,6 +1818,32 @@ export default function App() {
                     );
                   })}
                 </div>
+
+                {/* 大類別彙整表格 */}
+                <div className="mt-8 pt-8 border-t border-slate-100 animate-in slide-in-from-bottom-4 duration-500">
+                  <h4 className="text-lg font-black text-slate-800 mb-4 flex items-center"><List size={18} className="mr-2 text-indigo-600"/> 大類別彙整</h4>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50 border-b border-t border-slate-200 text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                      <tr>
+                        <th className="p-4 rounded-tl-xl">大類別</th>
+                        <th className="p-4 text-right rounded-tr-xl">件數</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-sm font-medium">
+                      {Object.keys(dashboardStats.aggregatedCategoryData).length === 0 ? (
+                        <tr><td colSpan="2" className="p-8 text-center text-slate-400">目前無大類別資料，請至設定區進行歸屬設定。</td></tr>
+                      ) : (
+                        Object.entries(dashboardStats.aggregatedCategoryData).sort((a,b)=>b[1]-a[1]).map(([majorCat, count]) => (
+                          <tr key={majorCat} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-4 text-slate-700">{majorCat}</td>
+                            <td className="p-4 text-right text-slate-900 font-bold">{count}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
               </div>
 
               {/* 圖表區 2: 線型圖 (月趨勢) */}
@@ -1896,6 +1998,9 @@ export default function App() {
                       <DropdownManager title="處理進度" dbKey="progresses" items={progresses} />
                     </div>
                   </div>
+
+                  {/* 大類別映射設定 */}
+                  <CategoryMappingManager categories={categories} mapping={categoryMapping} />
                 </>
               )}
             </div>
