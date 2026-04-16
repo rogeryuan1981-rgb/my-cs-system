@@ -1388,6 +1388,19 @@ export default function App() {
 
   if (!currentUser) {
     const isFirstTime = dbUsers.length === 0;
+    
+    // 將下拉選單中的用戶根據指定順序進行排序
+    const sortedLoginUsers = [...dbUsers].sort((a, b) => {
+      const roleOrder = {
+        [ROLES.USER]: 1,    // 一般使用者
+        [ROLES.VIEWER]: 2,  // 紀錄檢視者
+        [ROLES.ADMIN]: 3    // 系統管理者
+      };
+      const orderA = roleOrder[a.role] || 99;
+      const orderB = roleOrder[b.role] || 99;
+      return orderA - orderB;
+    });
+
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 relative overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20"></div>
@@ -1421,7 +1434,7 @@ export default function App() {
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">帳號</label>
                   <select required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-700">
                     <option value="" disabled>請選擇使用者...</option>
-                    {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username} ({u.role})</option>)}
+                    {sortedLoginUsers.map(u => <option key={u.id} value={u.username}>{u.username} ({u.role})</option>)}
                   </select>
                 </div>
                 <div>
@@ -1589,7 +1602,7 @@ export default function App() {
                         <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
                         <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
                            <option value="">-- 未指定 --</option>
-                           {(Array.isArray(dbUsers)?dbUsers:[]).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                           {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
                       </div>
                     ) : <div></div>}
