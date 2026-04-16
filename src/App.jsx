@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
-  Phone, MessageCircle, Clock, Save, FileText, BarChart3, 
-  Search, CheckCircle, AlertCircle, User, Building2, 
-  List, LayoutDashboard, Plus, X, PhoneCall,
-  Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download,
-  Moon, Sun
+  PhoneCall, MessageCircle, Save, FileText, Search, CheckCircle, AlertCircle, User, 
+  List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
+  Shield, Lock, Calendar, Tag, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
+  Menu, FileCheck, Eye, Moon, Sun, Image as ImageIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -20,7 +18,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.2.3 (強制類別選擇版)";
+const APP_VERSION = "v2.2.5 (圖示相容修復與防呆版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -308,7 +306,7 @@ const DropdownManager = ({ title, dbKey, items }) => {
           >
             <div className="flex items-center flex-1 overflow-hidden">
               <div className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 mr-2 p-1" title="按住拖曳排序">
-                <ArrowUpDown size={16} />
+                <Menu size={16} />
               </div>
               <span className="text-slate-700 dark:text-slate-200 font-medium truncate" title={item}>{item}</span>
             </div>
@@ -438,8 +436,8 @@ export default function App() {
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
-      channel: prev.channel || (channels[0] || ''),
-      progress: prev.progress || (progresses[0] || '')
+      channel: prev.channel || (Array.isArray(channels) ? channels[0] : ''),
+      progress: prev.progress || (Array.isArray(progresses) ? progresses[0] : '')
     }));
   }, [channels, progresses]);
 
@@ -466,7 +464,7 @@ export default function App() {
 
   // Maintenance State
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
-  const [maintainSortOrder, setMaintainSortOrder] = useState('asc'); // 維護區排序設定 (舊到新或新到舊)
+  const [maintainSortOrder, setMaintainSortOrder] = useState('desc'); // 維護區排序設定 (舊到新或新到舊)
   const [maintainModal, setMaintainModal] = useState(null);
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
 
@@ -1416,7 +1414,7 @@ export default function App() {
             {isActive ? (
               sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>
             ) : (
-              <ArrowUpDown size={14} />
+              <Menu size={14} />
             )}
           </span>
         </div>
@@ -1509,8 +1507,8 @@ export default function App() {
               <Shield size={32} className="text-white"/>
             </div>
             <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">系統存取驗證</h2>
-            <p className="text-slate-400 dark:text-slate-400 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
-            <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold tracking-widest">{APP_VERSION}</div>
+            <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
+            <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold tracking-widest">{APP_VERSION}</div>
           </div>
 
           <form onSubmit={isFirstTime ? handleCreateFirstAdmin : handleLogin} className="space-y-6">
@@ -1615,7 +1613,7 @@ export default function App() {
           
           {/* Admin Only Audit Tab */}
           {currentUser.role === ROLES.ADMIN && (
-             renderNavButton('audit', ClipboardCheck, '申請與日誌區')
+             renderNavButton('audit', FileCheck, '申請與日誌區')
           )}
           
           {renderNavButton('settings', Settings, '系統設定區')}
@@ -1651,9 +1649,9 @@ export default function App() {
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light] dark:[color-scheme:dark]"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light] dark:[color-scheme:dark]"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
                       <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label>
@@ -2020,13 +2018,13 @@ export default function App() {
                                <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
                                <td className="p-5">
                                  <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">
-                                   {t.ticketId || '-'} <Search size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
+                                   {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
                                  </div>
-                                 <div className="text-[10px] text-slate-400 dark:text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
                                </td>
                                <td className="p-5">
                                  <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
-                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-400 mt-1">{t.instCode}</div>
+                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
                                </td>
                                <td className="p-5 max-w-[250px] relative group/tooltip">
                                   <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
@@ -2160,7 +2158,7 @@ export default function App() {
           )}
 
           {/* TAB 6: ALL RECORDS (紀錄資料區) */}
-          {activeTab === 'all-records' && currentUser.role !== ROLES.VIEWER && (
+          {activeTab === 'all-records' && currentUser.role === ROLES.ADMIN && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                  <div>
@@ -2253,10 +2251,10 @@ export default function App() {
                                  </td>
                                )}
                                <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
-                               <td className="p-5"><div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 dark:text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5"><div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
                                <td className="p-5">
                                  <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
-                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-400 mt-1">{t.instCode}</div>
+                                 <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
                                </td>
                                <td className="p-5 max-w-[250px] relative group/tooltip">
                                   <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
@@ -2355,11 +2353,11 @@ export default function App() {
                            </div>
                            <div className="space-y-3">
                              <div>
-                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-1">修改前原內容</div>
+                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">修改前原內容</div>
                                <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded line-through decoration-red-400 dark:decoration-red-500 border border-slate-200 dark:border-slate-700">{log.oldContent || '(空)'}</div>
                              </div>
                              <div>
-                               <div className="text-[10px] font-black text-indigo-400 dark:text-indigo-400 uppercase tracking-widest mb-1">修改後新內容</div>
+                               <div className="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-1">修改後新內容</div>
                                <div className="text-xs text-slate-800 dark:text-slate-200 bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded border border-indigo-100 dark:border-indigo-800">{log.newContent || '(空)'}</div>
                              </div>
                            </div>
@@ -2486,20 +2484,20 @@ export default function App() {
           )}
 
           {/* TAB 5: SETTINGS (系統設定區) */}
-          {/* (略過前面 Tab 1~5 的原始碼) */}
-          {/* ... */}
-          
-          {/* TAB 6: ALL RECORDS (紀錄資料區) */}
-          {activeTab === 'all-records' && currentUser.role === ROLES.ADMIN && (
-             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6">
-               <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                 <div>
-                   <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
+          {activeTab === 'settings' && (
+            <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
+              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">系統設定區</h2>
+
+              {/* 個人帳號與密碼修改區 (所有角色可見) */}
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><User size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 個人帳號設定</h3>
+                
+                <div className="flex flex-col md:flex-row gap-8 items-start">
                   {/* 個人圖像上傳區塊 */}
                   <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
                     <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
                     <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
-                      <Upload size={14} className="mr-1.5"/> 更換個人圖像
+                      <ImageIcon size={14} className="mr-1.5"/> 更換個人圖像
                       <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                     </label>
                     <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
@@ -2628,7 +2626,7 @@ export default function App() {
 
                   {/* 表單下拉選單維護 (移至最下方) */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><Tags size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
+                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><Tag size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                       <DropdownManager title="反映管道" dbKey="channels" items={channels} />
