@@ -12,7 +12,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.9.2 (正式版)";
+const APP_VERSION = "v1.9.3 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -537,8 +537,25 @@ export default function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (currentUser?.role === ROLES.VIEWER) {
-      setSubmitStatus({ type: 'error', msg: '您沒有新增權限' }); return;
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：您沒有新增權限' }); return;
     }
+
+    // --- Validation Logic ---
+    const code = formData.instCode.trim();
+    if (!code || (code !== '999' && code.length !== 10)) {
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼，或填寫 999' });
+      return;
+    }
+    if (!formData.extraInfo.trim()) {
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：詳細問題描述不能為空' });
+      return;
+    }
+    if (!formData.replyContent.trim()) {
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：初步答覆不能為空' });
+      return;
+    }
+    // ------------------------
+
     try {
       setSubmitStatus({ type: 'loading', msg: '儲存中...' });
       
@@ -1362,12 +1379,12 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間</label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道</label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
-                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對)</label>
+                      <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500">*</span></label>
                       <input type="text" name="instCode" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="輸入10碼後點擊空白處"/>
                     </div>
                     <div className="md:col-span-2">
@@ -1398,9 +1415,9 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別</label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態</label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度</label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{progresses.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別 <span className="text-red-500">*</span></label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態 <span className="text-red-500">*</span></label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度 <span className="text-red-500">*</span></label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{progresses.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
                     
                     {/* 指派功能：只要不是結案即可指派 */}
                     {formData.progress !== '結案' ? (
@@ -1415,17 +1432,17 @@ export default function App() {
                   </div>
                   <div className="space-y-6">
                     <div>
-                      <label className="text-xs font-bold mb-2 block text-slate-700">詳細問題描述</label>
-                      <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="詳細問題描述..."></textarea>
+                      <label className="text-xs font-bold mb-2 block text-slate-700">詳細問題描述 <span className="text-red-500">*</span></label>
+                      <textarea name="extraInfo" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50" placeholder="請詳細描述客戶的問題..."></textarea>
                     </div>
                     <div>
                       <div className="flex justify-between items-end mb-2">
-                        <label className="text-xs font-bold block text-slate-700">給予的初步答覆 (選填)</label>
+                        <label className="text-xs font-bold block text-slate-700">給予的初步答覆 <span className="text-red-500">*</span></label>
                         <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 flex items-center bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
                           <MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字
                         </button>
                       </div>
-                      <textarea id="replyContent" name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆 (選填)..."></textarea>
+                      <textarea id="replyContent" name="replyContent" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30" placeholder="給予的初步答覆..."></textarea>
                     </div>
                   </div>
                 </div>
