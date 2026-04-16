@@ -5,14 +5,14 @@ import {
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers, GripVertical
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.9.0 (正式版)";
+const APP_VERSION = "v1.9.1 (正式版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -275,6 +275,7 @@ export default function App() {
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
   const [trendCategory, setTrendCategory] = useState('全類別');
+  const [categoryViewMode, setCategoryViewMode] = useState('detail'); // 新增：控制長條圖顯示細項或大類別
 
   // Maintenance State
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
@@ -559,6 +560,7 @@ export default function App() {
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       
+      // 送出後維持目前動態選單預設值
       setFormData(prev => ({
         ...getInitialForm(currentUser.username),
         channel: channels.includes(prev.channel) ? prev.channel : (channels[0] || ''),
@@ -848,9 +850,11 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  // --- Dynamic Dropdown Handlers (Settings) ---
+  // --- Dynamic Dropdown Handlers with Drag and Drop (Settings) ---
   const DropdownManager = ({ title, dbKey, items }) => {
     const [newItem, setNewItem] = useState('');
+    const [draggedIdx, setDraggedIdx] = useState(null);
+
     const handleAdd = async (e) => {
       e.preventDefault();
       if (!newItem.trim() || items.includes(newItem.trim())) return;
@@ -860,6 +864,7 @@ export default function App() {
       await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
       setNewItem('');
     };
+
     const handleRemove = async (itemToRemove) => {
       if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
       const newArray = items.filter(i => i !== itemToRemove);
@@ -868,20 +873,71 @@ export default function App() {
       await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
     };
 
+    // Native HTML5 Drag and Drop Handlers
+    const handleDragStart = (e, index) => {
+      setDraggedIdx(index);
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox requires dataTransfer to have some data to enable dragging
+      e.dataTransfer.setData("text/plain", index);
+    };
+
+    const handleDragOver = (e) => {
+      e.preventDefault(); // Necessary to allow dropping
+      e.dataTransfer.dropEffect = "move";
+    };
+
+    const handleDrop = async (e, dropIdx) => {
+      e.preventDefault();
+      const startIdx = draggedIdx;
+      
+      if (startIdx === null || startIdx === dropIdx) {
+        setDraggedIdx(null);
+        return;
+      }
+
+      // Reorder items array
+      const newItems = [...items];
+      const [movedItem] = newItems.splice(startIdx, 1);
+      newItems.splice(dropIdx, 0, movedItem);
+
+      // Update Firestore
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
+      
+      setDraggedIdx(null);
+    };
+
     return (
       <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100 flex flex-col h-full">
         <h4 className="font-bold text-sm mb-4 text-slate-700">{title}</h4>
-        <form onSubmit={handleAdd} className="flex mb-4 gap-2">
+        <form onSubmit={handleAdd} className="flex mb-4 gap-2 shrink-0">
           <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
           <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-sm"><Plus size={18}/></button>
         </form>
         <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
-          {items.map(item => (
-            <li key={item} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm group">
-              <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
-              <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
+          {items.map((item, idx) => (
+            <li 
+              key={item} 
+              draggable
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, idx)}
+              onDragEnd={() => setDraggedIdx(null)}
+              className={`flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm group transition-all ${draggedIdx === idx ? 'opacity-40 scale-95 shadow-none' : ''} hover:border-indigo-200`}
+            >
+              <div className="flex items-center flex-1 overflow-hidden">
+                <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-indigo-500 mr-2 p-1" title="按住拖曳排序">
+                  <GripVertical size={16} />
+                </div>
+                <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
+              </div>
+              <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2" title="刪除">
+                <Trash2 size={16}/>
+              </button>
             </li>
           ))}
+          {items.length === 0 && <div className="text-center text-xs text-slate-400 py-4">無設定項目</div>}
         </ul>
       </div>
     );
@@ -1786,10 +1842,26 @@ export default function App() {
 
               {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <div>
-                    <h3 className="text-xl font-black text-slate-800">服務類別分佈</h3>
-                    <p className="text-xs text-slate-400 mt-1 font-medium">區間數據獨立計算，不受其他圖表影響</p>
+                    <div className="flex items-center space-x-4">
+                      <h3 className="text-xl font-black text-slate-800">服務類別分佈</h3>
+                      <div className="flex bg-slate-100 p-1 rounded-lg">
+                        <button 
+                          onClick={() => setCategoryViewMode('detail')}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                          細項類別
+                        </button>
+                        <button 
+                          onClick={() => setCategoryViewMode('major')}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                          大類別彙整
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2 font-medium">區間數據獨立計算，不受其他圖表影響</p>
                   </div>
                   <div className="flex items-center space-x-2 bg-slate-50 p-2 rounded-2xl border border-slate-100">
                     <Calendar size={16} className="text-slate-400 ml-2"/>
@@ -1799,50 +1871,37 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
-                  {Object.entries(dashboardStats.categoryData).sort((a,b)=>b[1]-a[1]).map(([cat, count]) => {
-                    const maxVal = Math.max(...Object.values(dashboardStats.categoryData), 1);
-                    const heightPct = (count / maxVal) * 100;
-                    return (
-                      <div key={cat} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative">
-                        <div className="absolute -top-8 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm">
-                          {count} 件
-                        </div>
-                        <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative">
-                          <div className="w-full bg-indigo-500 rounded-t-full transition-all duration-1000 ease-out" style={{ height: `${heightPct}%` }}></div>
-                        </div>
-                        <div className="text-[12px] font-bold text-slate-500 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] group-hover:text-blue-600 transition-colors tracking-widest cursor-default select-none">
-                          {cat}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 大類別彙整表格 */}
-                <div className="mt-8 pt-8 border-t border-slate-100 animate-in slide-in-from-bottom-4 duration-500">
-                  <h4 className="text-lg font-black text-slate-800 mb-4 flex items-center"><List size={18} className="mr-2 text-indigo-600"/> 大類別彙整</h4>
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50 border-b border-t border-slate-200 text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                      <tr>
-                        <th className="p-4 rounded-tl-xl">大類別</th>
-                        <th className="p-4 text-right rounded-tr-xl">件數</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y text-sm font-medium">
-                      {Object.keys(dashboardStats.aggregatedCategoryData).length === 0 ? (
-                        <tr><td colSpan="2" className="p-8 text-center text-slate-400">目前無大類別資料，請至設定區進行歸屬設定。</td></tr>
-                      ) : (
-                        Object.entries(dashboardStats.aggregatedCategoryData).sort((a,b)=>b[1]-a[1]).map(([majorCat, count]) => (
-                          <tr key={majorCat} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-4 text-slate-700">{majorCat}</td>
-                            <td className="p-4 text-right text-slate-900 font-bold">{count}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {categoryViewMode === 'major' && Object.keys(dashboardStats.aggregatedCategoryData).length === 0 ? (
+                  <div className="h-[320px] flex items-center justify-center text-slate-400 font-bold text-sm bg-slate-50 rounded-2xl mt-4">
+                    目前無大類別資料，請至「系統設定區」進行歸屬設定。
+                  </div>
+                ) : (
+                  <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
+                    {Object.entries(categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData)
+                      .sort((a,b)=>b[1]-a[1])
+                      .map(([cat, count]) => {
+                        const currentData = categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData;
+                        const maxVal = Math.max(...Object.values(currentData), 1);
+                        const heightPct = (count / maxVal) * 100;
+                        const barColorClass = categoryViewMode === 'detail' ? 'bg-indigo-500' : 'bg-blue-500';
+                        const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600' : 'group-hover:text-blue-600';
+                        
+                        return (
+                          <div key={cat} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500">
+                            <div className="absolute -top-8 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm">
+                              {count} 件
+                            </div>
+                            <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative">
+                              <div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out`} style={{ height: `${heightPct}%` }}></div>
+                            </div>
+                            <div className={`text-[12px] font-bold text-slate-500 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest cursor-default select-none ${textColorClass}`}>
+                              {cat}
+                            </div>
+                          </div>
+                        );
+                    })}
+                  </div>
+                )}
 
               </div>
 
@@ -1990,7 +2049,7 @@ export default function App() {
                   {/* 表單下拉選單維護 (移至最下方) */}
                   <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800"><Tags size={20} className="mr-2 text-indigo-600"/> 表單下拉選單維護</h3>
-                    <p className="text-xs text-slate-500 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500"/> 注意：系統預設以「結案」兩字作為完成率計算標準，建議保留此選項。</p>
+                    <p className="text-xs text-slate-500 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                       <DropdownManager title="反映管道" dbKey="channels" items={channels} />
                       <DropdownManager title="業務類別" dbKey="categories" items={categories} />
