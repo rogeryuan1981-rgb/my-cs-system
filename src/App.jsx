@@ -5,14 +5,15 @@ import {
   Search, CheckCircle, AlertCircle, User, Building2, 
   List, LayoutDashboard, Plus, X, PhoneCall,
   Settings, Trash2, Upload, Database, Edit, UserPlus, Shield, Lock, Calendar, Tags,
-  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers, GripVertical
+  Copy, Check, ArrowUpDown, ArrowUp, ArrowDown, MessageSquare, Download, Layers, GripVertical,
+  ClipboardCheck, Eye
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v1.9.3 (正式版)";
+const APP_VERSION = "v2.0.0 (簽核與連動版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -83,7 +84,8 @@ const getInitialForm = (username = '') => ({
   closeTime: '',
   progress: '',
   assignee: '',
-  replies: []
+  replies: [],
+  editLogs: []
 });
 
 const formatRepliesHistory = (replies, fallbackContent) => {
@@ -236,6 +238,9 @@ export default function App() {
   const [isImportingHistory, setIsImportingHistory] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState([]); 
 
+  // View Modal State (歷史查詢檢視視窗)
+  const [viewModalTicket, setViewModalTicket] = useState(null);
+
   // 防呆機制：切換分頁時自動清空已勾選的項目
   useEffect(() => {
     setSelectedTickets([]);
@@ -280,7 +285,7 @@ export default function App() {
   // Maintenance State
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainModal, setMaintainModal] = useState(null);
-  const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '' });
+  const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
 
   // Institution State
   const [institutions, setInstitutions] = useState([]);
@@ -578,6 +583,7 @@ export default function App() {
         ...formData,
         ticketId: newTicketId,
         replies: initialReplies,
+        editLogs: [],
         createdAt: new Date().toISOString()
       };
 
@@ -625,8 +631,30 @@ export default function App() {
     setMaintainForm({
       progress: ticket.progress,
       assignee: ticket.assignee || '',
-      newReply: ''
+      newReply: '',
+      extraInfo: ticket.extraInfo || '' // 開放編輯原始問題
     });
+  };
+
+  const handleRequestDelete = async () => {
+    const reason = window.prompt(`請輸入刪除案件「${maintainModal.instName || maintainModal.ticketId}」的申請原因：`);
+    if (!reason) return;
+    
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), {
+        deleteRequest: {
+          status: 'pending',
+          reason: reason.trim(),
+          requestedBy: currentUser.username,
+          requestTime: getFormatDate()
+        }
+      });
+      alert('刪除申請已送出，待管理員簽核。');
+      setMaintainModal(null);
+    } catch (error) {
+      alert("申請失敗：" + error.message);
+    }
   };
 
   const handleMaintainSubmit = async (e) => {
@@ -648,6 +676,19 @@ export default function App() {
         updates.assignee = ''; 
       }
 
+      // 檢查原始問題是否有修改，若有則寫入修改日誌
+      if (maintainForm.extraInfo !== maintainModal.extraInfo) {
+        const editLog = {
+          time: getFormatDate(),
+          user: currentUser.username,
+          oldContent: maintainModal.extraInfo,
+          newContent: maintainForm.extraInfo,
+          type: 'extraInfo_edit'
+        };
+        updates.extraInfo = maintainForm.extraInfo;
+        updates.editLogs = [...(maintainModal.editLogs || []), editLog];
+      }
+
       if (maintainForm.newReply.trim()) {
         const newReplyObj = {
           time: getFormatDate(),
@@ -663,6 +704,56 @@ export default function App() {
       setMaintainModal(null);
     } catch (error) {
       alert("更新失敗：" + error.message);
+    }
+  };
+
+  // --- Audit & Approval Handlers (Admin Only) ---
+  const pendingDeleteRequests = useMemo(() => {
+    return tickets.filter(t => t.deleteRequest && t.deleteRequest.status === 'pending');
+  }, [tickets]);
+
+  const allEditLogs = useMemo(() => {
+    let logs = [];
+    tickets.forEach(t => {
+      if (t.editLogs && t.editLogs.length > 0) {
+        t.editLogs.forEach(log => {
+          logs.push({
+            ...log,
+            ticketId: t.ticketId,
+            instName: t.instName,
+            recordId: t.id
+          });
+        });
+      }
+    });
+    // 依據時間降冪排序
+    return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
+  }, [tickets]);
+
+  const handleApproveDelete = async (ticketId, ticketInstName) => {
+    if (!window.confirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？此操作無法復原。`)) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId));
+      alert('已成功核准並刪除該筆紀錄。');
+    } catch (error) {
+      alert('刪除失敗：' + error.message);
+    }
+  };
+
+  const handleRejectDelete = async (ticketId) => {
+    const rejectReason = window.prompt('請輸入退回此刪除申請的理由：');
+    if (rejectReason === null) return; // 使用者按取消
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
+        'deleteRequest.status': 'rejected',
+        'deleteRequest.rejectReason': rejectReason.trim(),
+        'deleteRequest.rejectedBy': currentUser.username,
+        'deleteRequest.rejectTime': getFormatDate()
+      });
+    } catch (error) {
+      alert('退回失敗：' + error.message);
     }
   };
 
@@ -877,7 +968,7 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  // --- Dynamic Dropdown Handlers with Drag and Drop (Settings) ---
+  // --- Dynamic Dropdown Handlers (Settings) ---
   const DropdownManager = ({ title, dbKey, items }) => {
     const [newItem, setNewItem] = useState('');
     const [draggedIdx, setDraggedIdx] = useState(null);
@@ -904,12 +995,11 @@ export default function App() {
     const handleDragStart = (e, index) => {
       setDraggedIdx(index);
       e.dataTransfer.effectAllowed = "move";
-      // Firefox requires dataTransfer to have some data to enable dragging
       e.dataTransfer.setData("text/plain", index);
     };
 
     const handleDragOver = (e) => {
-      e.preventDefault(); // Necessary to allow dropping
+      e.preventDefault(); 
       e.dataTransfer.dropEffect = "move";
     };
 
@@ -922,12 +1012,10 @@ export default function App() {
         return;
       }
 
-      // Reorder items array
       const newItems = [...items];
       const [movedItem] = newItems.splice(startIdx, 1);
       newItems.splice(dropIdx, 0, movedItem);
 
-      // Update Firestore
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
       await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
@@ -1030,69 +1118,6 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  const handleDeleteInst = async (id) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
-  };
-
-  const handleClearAllInsts = async () => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!window.confirm('確定要清空所有院所資料嗎？')) return;
-    setIsImporting(true);
-    try {
-      const batch = writeBatch(db);
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      institutions.forEach(inst => {
-        batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id));
-      });
-      await batch.commit();
-    } catch (e) { console.error(e); }
-    finally { setIsImporting(false); }
-  };
-
-  const handleFileUpload = async (e) => {
-    if (currentUser?.role !== ROLES.ADMIN && currentUser?.role !== ROLES.USER) return;
-    const file = e.target.files[0];
-    if (!file || !window.XLSX) return;
-    setIsImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const data = new Uint8Array(event.target.result);
-        const workbook = window.XLSX.read(data, { type: 'array' });
-        const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
-        const levelMapping = { '1': '醫學中心', '2': '區域醫院', '3': '地區醫院', '4': '診所', '5': '藥局', '6': '居家護理', '7': '康復之家', '8': '助產所', '9': '檢驗所', 'A': '物理治療所', 'B': '特約醫事放射機構', 'X': '不詳' };
-        let currentChunk = [], chunks = [];
-        for (let i = 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (!row || !row[1] || !row[3]) continue;
-          const code = String(row[1]).trim().padStart(10, '0');
-          if (instMap[code] && typeof instMap[code] !== 'boolean') continue; 
-          const levelRaw = row[7] ? String(row[7]).trim().toUpperCase() : 'X';
-          currentChunk.push({ code, name: String(row[3]).trim(), level: levelMapping[levelRaw] || '其他' });
-          instMap[code] = true;
-          if (currentChunk.length >= 4000) { chunks.push(currentChunk); currentChunk = []; }
-        }
-        if (currentChunk.length > 0) chunks.push(currentChunk);
-        
-        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-        for (const chunkData of chunks) {
-          const batch = writeBatch(db);
-          const docRef = baseDbPath.length ? doc(collection(db, ...baseDbPath, 'mohw_institutions')) : doc(collection(db, 'mohw_institutions'));
-          batch.set(docRef, { isChunk: true, payload: JSON.stringify(chunkData) });
-          await batch.commit();
-        }
-      } catch (error) {}
-      finally { setIsImporting(false); e.target.value = null; }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  const filteredInsts = useMemo(() => {
-    return institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm));
-  }, [institutions, instSearchTerm]);
-
   // --- History Filtering & Sorting ---
   const handleSort = (key) => {
     let direction = 'asc';
@@ -1102,6 +1127,13 @@ export default function App() {
     setSortConfig({ key, direction });
   };
 
+  const handleCategoryClick = (cat) => {
+    setHistoryStartDate(dashStartDate);
+    setHistoryEndDate(dashEndDate);
+    setSearchTerm(cat);
+    setActiveTab('list');
+  };
+
   const filteredAndSortedHistory = useMemo(() => {
     // Filter
     let result = tickets.filter(t => {
@@ -1109,6 +1141,7 @@ export default function App() {
         (t.ticketId||'').includes(searchTerm) || 
         (t.instName||'').includes(searchTerm) || 
         (t.extraInfo||'').includes(searchTerm) || 
+        (t.category||'').includes(searchTerm) || 
         (t.receiver||'').includes(searchTerm);
       
       const matchProgress = historyProgress === '全部' || t.progress === historyProgress;
@@ -1147,6 +1180,7 @@ export default function App() {
       return (t.ticketId||'').includes(allRecordsSearchTerm) || 
              (t.instName||'').includes(allRecordsSearchTerm) || 
              (t.extraInfo||'').includes(allRecordsSearchTerm) || 
+             (t.category||'').includes(allRecordsSearchTerm) || 
              (t.receiver||'').includes(allRecordsSearchTerm);
     });
 
@@ -1219,7 +1253,7 @@ export default function App() {
 
     // 處理大類別彙整資料
     Object.keys(categoryData).forEach(cat => {
-      if(categoryData[cat] > 0 || Object.keys(categoryMapping).length > 0) { // 有設定大類別或有數字才處理
+      if(categoryData[cat] > 0 || Object.keys(categoryMapping).length > 0) { 
         const majorCat = categoryMapping[cat] && categoryMapping[cat].trim() !== '' ? categoryMapping[cat].trim() : '未歸屬大類別';
         aggregatedCategoryData[majorCat] = (aggregatedCategoryData[majorCat] || 0) + categoryData[cat];
       }
@@ -1346,6 +1380,12 @@ export default function App() {
             <NavButton id="all-records" icon={Database} label="紀錄資料區" />
           )}
           <NavButton id="dashboard" icon={LayoutDashboard} label="進階統計區" />
+          
+          {/* Admin Only Audit Tab */}
+          {currentUser.role === ROLES.ADMIN && (
+            <NavButton id="audit" icon={ClipboardCheck} label="申請與日誌區" />
+          )}
+          
           <NavButton id="settings" icon={Settings} label="系統設定區" />
         </nav>
         <div className="p-4 border-t border-slate-100">
@@ -1501,13 +1541,20 @@ export default function App() {
                        <button onClick={() => setMaintainModal(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
                      </div>
                      <div className="p-8 overflow-y-auto flex-1 space-y-6">
-                       {/* 原始內容 (唯讀) */}
+                       {/* 問題描述 (開放編輯) */}
                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                         <div className="flex justify-between">
-                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">原始描述</div>
+                         <div className="flex justify-between mb-2">
+                           <div className="text-xs font-black text-slate-400 uppercase tracking-widest">問題描述 (可修改)</div>
                            <div className="text-[10px] font-mono text-slate-400 font-bold">案件號: {maintainModal.ticketId || '舊案件'}</div>
                          </div>
-                         <p className="text-sm text-slate-700">{maintainModal.extraInfo || '(無)'}</p>
+                         <textarea 
+                           value={maintainForm.extraInfo} 
+                           onChange={e => setMaintainForm({...maintainForm, extraInfo: e.target.value})} 
+                           rows="3" 
+                           className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm" 
+                           placeholder="修改問題描述..."
+                         ></textarea>
+                         <p className="text-[10px] text-slate-400 mt-2">提示：修改此處內容將會自動產生修改日誌，供管理員查核。</p>
                        </div>
                        
                        {/* 歷史答覆軌跡 (唯讀) */}
@@ -1559,9 +1606,14 @@ export default function App() {
                          </div>
                        </form>
                      </div>
-                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
-                       <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl mr-4 transition-colors">取消</button>
-                       <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
+                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between shrink-0">
+                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 font-bold hover:bg-red-50 rounded-xl transition-colors text-sm flex items-center">
+                         <Trash2 size={16} className="mr-1" /> 申請刪除
+                       </button>
+                       <div>
+                         <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl mr-3 transition-colors">取消</button>
+                         <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-700 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
+                       </div>
                      </div>
                    </div>
                  </div>
@@ -1687,9 +1739,9 @@ export default function App() {
                            const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
-                             <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                             <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 transition-colors cursor-pointer group">
                                {currentUser.role === ROLES.ADMIN && (
-                                 <td className="p-5 text-center">
+                                 <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
                                    <input 
                                      type="checkbox" 
                                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1704,20 +1756,16 @@ export default function App() {
                                    />
                                  </td>
                                )}
-                               <td className="p-5"><div className="font-black text-slate-800 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
+                               <td className="p-5">
+                                 <div className="font-black text-slate-800 font-mono text-xs group-hover:text-blue-600 transition-colors flex items-center">
+                                   {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
+                                 </div>
+                                 <div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                               </td>
                                <td className="p-5"><div>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 mt-1">{t.instCode}</div></td>
-                               <td className="p-5 max-w-[250px] relative group">
+                               <td className="p-5 max-w-[250px] relative">
                                   <div className="truncate text-slate-600 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                                  <div className="truncate text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                                  
-                                  {/* Hover 顯示完整歷史紀錄 */}
-                                  {fullHistoryStr && (
-                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72 p-4 bg-slate-800 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 pb-2">完整回覆紀錄</div>
-                                      <div className="whitespace-pre-wrap leading-relaxed">{fullHistoryStr}</div>
-                                      <div className="absolute w-3 h-3 bg-slate-800 transform rotate-45 -bottom-1.5 left-8"></div>
-                                    </div>
-                                  )}
+                                  <div className="truncate text-slate-400 text-xs" title={fullHistoryStr || '尚無回覆紀錄'}>答: {latestReplyStr || '-'}</div>
                                </td>
                                <td className="p-5"><div className="text-slate-800">{t.receiver}</div>{t.assignee && <div className="text-[10px] text-blue-600 font-bold bg-blue-50 inline-block px-1.5 rounded mt-1">負責: {t.assignee}</div>}</td>
                                <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 text-green-700':t.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>{t.progress}</span></td>
@@ -1729,6 +1777,80 @@ export default function App() {
                    </table>
                  </div>
                </div>
+
+               {/* View Modal (完整檢視視窗) */}
+               {viewModalTicket && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewModalTicket(null)}>
+                   <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+                       <h3 className="font-black text-lg flex items-center text-slate-800">
+                         <FileText size={20} className="mr-2 text-indigo-600"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
+                       </h3>
+                       <button onClick={() => setViewModalTicket(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400 hover:text-slate-700"><X size={20}/></button>
+                     </div>
+                     
+                     <div className="p-8 overflow-y-auto flex-1 space-y-8">
+                       {/* 區塊 1: 基本資料 */}
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700">{viewModalTicket.channel}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700">{viewModalTicket.category}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">建檔人</div><div className="text-sm font-bold text-slate-700">{viewModalTicket.receiver}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
+                           <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase ${viewModalTicket.progress==='結案'?'bg-green-100 text-green-700':viewModalTicket.progress==='待處理'?'bg-red-100 text-red-700':'bg-orange-100 text-orange-700'}`}>
+                             {viewModalTicket.progress}
+                           </span>
+                         </div>
+                       </div>
+                       
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800">{viewModalTicket.instName} <span className="text-slate-400 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800">{viewModalTicket.questioner || '未提供'}</div></div>
+                       </div>
+
+                       {/* 區塊 2: 完整對話紀錄 */}
+                       <div>
+                         <h4 className="font-black text-sm text-slate-800 mb-4 flex items-center border-b border-slate-100 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500"/> 對話軌跡與處理紀錄</h4>
+                         
+                         <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+                           
+                           {/* 使用者提問 */}
+                           <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
+                             <div className="bg-white border border-slate-200 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
+                               <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white border-2 border-slate-200 rotate-45 transform"></div>
+                               <div className="text-xs font-bold text-slate-800 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400"/> 客戶問題 <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                               <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
+                             </div>
+                           </div>
+
+                           {/* 歷史答覆 */}
+                           {viewModalTicket.replies && viewModalTicket.replies.map((r, i) => (
+                             <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
+                               <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                                 <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 border-2 border-blue-100 rotate-45 transform"></div>
+                                 <div className="text-xs font-bold text-blue-800 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500"/> 客服人員：{r.user} <span className="text-[10px] text-slate-400 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                                 <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                               </div>
+                             </div>
+                           ))}
+
+                           {/* 結案標記 */}
+                           {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
+                             <div className="relative flex items-center justify-center pt-4">
+                               <div className="bg-green-100 text-green-700 text-xs font-black px-4 py-2 rounded-full border border-green-200 shadow-sm flex items-center">
+                                 <CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案
+                               </div>
+                             </div>
+                           )}
+
+                         </div>
+                       </div>
+                     </div>
+                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+                       <button onClick={()=>setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 text-white font-black rounded-xl hover:bg-slate-900 transition-colors shadow-lg shadow-slate-200">關閉檢視</button>
+                     </div>
+                   </div>
+                 </div>
+               )}
              </div>
           )}
 
@@ -1852,6 +1974,82 @@ export default function App() {
              </div>
           )}
 
+          {/* TAB 7: AUDIT (申請與日誌區 - Admin Only) */}
+          {activeTab === 'audit' && currentUser.role === ROLES.ADMIN && (
+             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
+               <div>
+                 <h2 className="text-3xl font-black text-slate-900 tracking-tight shrink-0">申請與日誌區</h2>
+                 <p className="text-sm text-slate-500 mt-2">供管理員簽核刪除申請，以及查閱全系統的問題描述修改紀錄。</p>
+               </div>
+               
+               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                 {/* 刪除申請區塊 */}
+                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col max-h-[800px]">
+                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800">
+                     <AlertCircle size={20} className="mr-2 text-red-600"/> 待處理刪除申請
+                     {pendingDeleteRequests.length > 0 && <span className="ml-3 bg-red-100 text-red-600 px-2.5 py-0.5 rounded-full text-xs font-bold">{pendingDeleteRequests.length} 件</span>}
+                   </h3>
+                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                     {pendingDeleteRequests.length === 0 ? (
+                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 bg-slate-50 rounded-2xl">目前無待簽核的刪除申請。</div>
+                     ) : (
+                       pendingDeleteRequests.map(t => (
+                         <div key={t.id} className="bg-red-50/50 border border-red-100 p-5 rounded-2xl shadow-sm">
+                           <div className="flex justify-between items-start mb-2">
+                             <div className="font-black text-slate-800 text-sm">#{t.ticketId} - {t.instName}</div>
+                             <div className="text-[10px] text-slate-500 font-mono">{t.deleteRequest.requestTime}</div>
+                           </div>
+                           <div className="text-sm text-slate-700 mb-4 bg-white p-3 rounded-lg border border-slate-200">
+                             <span className="font-bold text-red-600 mr-2">申請原因:</span>{t.deleteRequest.reason}
+                           </div>
+                           <div className="flex justify-between items-center text-xs">
+                             <span className="font-bold text-slate-500">申請人: {t.deleteRequest.requestedBy}</span>
+                             <div className="space-x-2">
+                               <button onClick={() => handleRejectDelete(t.id)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-lg font-bold transition-colors">退回</button>
+                               <button onClick={() => handleApproveDelete(t.id, t.instName)} className="px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg font-bold shadow-sm transition-colors">核准刪除</button>
+                             </div>
+                           </div>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                 </div>
+
+                 {/* 修改日誌區塊 */}
+                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col max-h-[800px]">
+                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800">
+                     <FileText size={20} className="mr-2 text-indigo-600"/> 原始內容修改日誌
+                   </h3>
+                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                     {allEditLogs.length === 0 ? (
+                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 bg-slate-50 rounded-2xl">尚無任何修改紀錄。</div>
+                     ) : (
+                       allEditLogs.map((log, idx) => (
+                         <div key={idx} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl shadow-sm">
+                           <div className="flex justify-between items-center mb-3 border-b border-slate-200 pb-2">
+                             <div className="font-black text-indigo-800 text-xs">#{log.ticketId} - {log.instName}</div>
+                             <div className="text-[10px] text-slate-500 font-mono">{log.time}</div>
+                           </div>
+                           <div className="space-y-3">
+                             <div>
+                               <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">修改前原內容</div>
+                               <div className="text-xs text-slate-500 bg-slate-100 p-2 rounded line-through decoration-red-400">{log.oldContent || '(空)'}</div>
+                             </div>
+                             <div>
+                               <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">修改後新內容</div>
+                               <div className="text-xs text-slate-800 bg-indigo-50 p-2 rounded border border-indigo-100">{log.newContent || '(空)'}</div>
+                             </div>
+                           </div>
+                           <div className="mt-3 text-right text-[10px] font-bold text-slate-500">修改人: <span className="text-indigo-600">{log.user}</span></div>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                 </div>
+               </div>
+             </div>
+          )}
+
           {/* TAB 4: DASHBOARD (統計報表) */}
           {activeTab === 'dashboard' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
@@ -1894,7 +2092,7 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2 font-medium">區間數據獨立計算，不受其他圖表影響</p>
+                    <p className="text-xs text-slate-400 mt-2 font-medium">點擊長條圖可直接跳轉至歷史查詢區檢視該分類資料</p>
                   </div>
                   <div className="flex items-center space-x-2 bg-slate-50 p-2 rounded-2xl border border-slate-100">
                     <Calendar size={16} className="text-slate-400 ml-2"/>
@@ -1920,14 +2118,19 @@ export default function App() {
                         const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600' : 'group-hover:text-blue-600';
                         
                         return (
-                          <div key={cat} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500">
-                            <div className="absolute -top-8 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm">
+                          <div 
+                            key={cat} 
+                            onClick={() => handleCategoryClick(cat)}
+                            title="點擊查看此分類歷史紀錄"
+                            className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500 cursor-pointer"
+                          >
+                            <div className="absolute -top-8 text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">
                               {count} 件
                             </div>
-                            <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative">
-                              <div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out`} style={{ height: `${heightPct}%` }}></div>
+                            <div className="w-10 bg-slate-100 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner">
+                              <div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div>
                             </div>
-                            <div className={`text-[12px] font-bold text-slate-500 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest cursor-default select-none ${textColorClass}`}>
+                            <div className={`text-[12px] font-bold text-slate-500 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>
                               {cat}
                             </div>
                           </div>
