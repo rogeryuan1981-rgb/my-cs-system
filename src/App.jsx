@@ -13,7 +13,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v2.0.0 (簽核與連動版)";
+const APP_VERSION = "v2.0.1 (簽核與連動版-修復)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
