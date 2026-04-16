@@ -12,8 +12,17 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
+// --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
+if (typeof window !== 'undefined') {
+  window.tailwind = window.tailwind || {};
+  window.tailwind.config = {
+    ...window.tailwind.config,
+    darkMode: 'class',
+  };
+}
+
 // --- System Variables ---
-const APP_VERSION = "v2.1.0 (深色模式支援版)";
+const APP_VERSION = "v2.1.1 (深色模式修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -365,7 +374,13 @@ export default function App() {
     return false;
   });
 
+  // 確實套用深色模式的 class 到最底層的 documentElement
   useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('cs_theme', isDarkMode ? 'dark' : 'light');
     }
