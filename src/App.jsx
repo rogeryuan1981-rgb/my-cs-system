@@ -13,7 +13,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- System Variables ---
-const APP_VERSION = "v2.0.2 (表單嚴格防護版)";
+const APP_VERSION = "v2.0.3 (防崩潰穩定版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -106,11 +106,11 @@ const getLatestReply = (replies, fallbackContent) => {
 };
 
 
-// --- Components ---
+// --- Sub-Components (避免 React 巢狀渲染導致白畫面崩潰) ---
 
 // 1. 純原生 SVG 折線圖組件
 const LineChart = ({ data, labels }) => {
-  if (data.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
+  if (!Array.isArray(data) || data.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
   const maxVal = Math.max(...data, 10);
   const height = 200;
   const width = 600;
@@ -155,6 +155,7 @@ const LineChart = ({ data, labels }) => {
 // 2. 罐頭文字彈出式視窗組件
 const CannedMessagesModal = ({ messages, onClose }) => {
   const [copyId, setCopyId] = useState(null);
+  const safeMessages = Array.isArray(messages) ? messages : [];
 
   const handleCopy = (text, idx) => {
     const textArea = document.createElement("textarea");
@@ -184,7 +185,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20}/></button>
         </div>
         <div className="p-6 space-y-3 overflow-y-auto flex-1">
-          {messages.map((m, idx) => (
+          {safeMessages.map((m, idx) => (
             <div 
               key={idx} 
               className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-300 hover:shadow-md transition-all group relative cursor-pointer" 
@@ -197,7 +198,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
               </button>
             </div>
           ))}
-          {(!messages || messages.length === 0) && (
+          {safeMessages.length === 0 && (
             <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字，請至設定區新增。</p>
           )}
         </div>
@@ -209,8 +210,148 @@ const CannedMessagesModal = ({ messages, onClose }) => {
   );
 };
 
+// 3. 動態下拉選單與拖拉排序設定模組 (獨立於 App 外以防崩潰)
+const DropdownManager = ({ title, dbKey, items }) => {
+  const [newItem, setNewItem] = useState('');
+  const [draggedIdx, setDraggedIdx] = useState(null);
+  const safeItems = Array.isArray(items) ? items : [];
 
-// 3. 主應用程式
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!newItem.trim() || safeItems.includes(newItem.trim())) return;
+    const newArray = [...safeItems, newItem.trim()];
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+    setNewItem('');
+  };
+
+  const handleRemove = async (itemToRemove) => {
+    if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
+    const newArray = safeItems.filter(i => i !== itemToRemove);
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+  };
+
+  const handleDragStart = (e, index) => {
+    setDraggedIdx(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", index);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault(); 
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = async (e, dropIdx) => {
+    e.preventDefault();
+    const startIdx = draggedIdx;
+    
+    if (startIdx === null || startIdx === dropIdx) {
+      setDraggedIdx(null);
+      return;
+    }
+
+    const newItems = [...safeItems];
+    const [movedItem] = newItems.splice(startIdx, 1);
+    newItems.splice(dropIdx, 0, movedItem);
+
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
+    
+    setDraggedIdx(null);
+  };
+
+  return (
+    <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100 flex flex-col h-full">
+      <h4 className="font-bold text-sm mb-4 text-slate-700">{title}</h4>
+      <form onSubmit={handleAdd} className="flex mb-4 gap-2 shrink-0">
+        <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
+        <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-sm"><Plus size={18}/></button>
+      </form>
+      <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
+        {safeItems.map((item, idx) => (
+          <li 
+            key={item} 
+            draggable
+            onDragStart={(e) => handleDragStart(e, idx)}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, idx)}
+            onDragEnd={() => setDraggedIdx(null)}
+            className={`flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm group transition-all ${draggedIdx === idx ? 'opacity-40 scale-95 shadow-none' : ''} hover:border-indigo-200`}
+          >
+            <div className="flex items-center flex-1 overflow-hidden">
+              <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-indigo-500 mr-2 p-1" title="按住拖曳排序">
+                <GripVertical size={16} />
+              </div>
+              <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
+            </div>
+            <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2" title="刪除">
+              <Trash2 size={16}/>
+            </button>
+          </li>
+        ))}
+        {safeItems.length === 0 && <div className="text-center text-xs text-slate-400 py-4">無設定項目</div>}
+      </ul>
+    </div>
+  );
+};
+
+// 4. 大類別設定管理模組 (獨立於 App 外以防崩潰)
+const CategoryMappingManager = ({ categories, mapping }) => {
+  const [localMap, setLocalMap] = useState({});
+  const safeCategories = Array.isArray(categories) ? categories : [];
+
+  useEffect(() => {
+    setLocalMap(mapping || {});
+  }, [mapping]);
+
+  const handleMapChange = (cat, value) => {
+    setLocalMap(prev => ({ ...prev, [cat]: value }));
+  };
+
+  const handleSaveMapping = async () => {
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
+    alert("大類別設定已儲存成功！");
+  };
+
+  return (
+    <div className="bg-slate-50 p-8 rounded-[1.5rem] border border-slate-100 mt-8">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h4 className="font-black text-slate-800 flex items-center"><Layers size={18} className="mr-2 text-indigo-600"/> 大類別歸屬設定</h4>
+          <p className="text-xs text-slate-500 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
+        </div>
+        <button onClick={handleSaveMapping} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-transform active:scale-95">儲存大類別設定</button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {safeCategories.map(cat => (
+          <div key={cat} className="flex items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
+             <span className="text-sm font-bold text-slate-600 w-1/2 truncate border-r border-slate-100 pr-2 mr-2" title={cat}>{cat}</span>
+             <input 
+               type="text" 
+               value={localMap[cat] || ''} 
+               onChange={e => handleMapChange(cat, e.target.value)} 
+               placeholder="輸入大類別 (例:慢防組)" 
+               className="w-1/2 p-1 text-sm font-medium outline-none text-slate-800" 
+             />
+          </div>
+        ))}
+        {safeCategories.length === 0 && <div className="text-xs text-slate-400 p-4 col-span-full text-center">請先於上方「業務類別」新增項目。</div>}
+      </div>
+    </div>
+  );
+};
+
+
+// -------------------------------------------------
+// --- 主應用程式 App ---
+// -------------------------------------------------
 export default function App() {
   // Auth State
   const [firebaseUser, setFirebaseUser] = useState(null);
@@ -280,7 +421,7 @@ export default function App() {
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
   const [trendCategory, setTrendCategory] = useState('全類別');
-  const [categoryViewMode, setCategoryViewMode] = useState('detail'); // 新增：控制長條圖顯示細項或大類別
+  const [categoryViewMode, setCategoryViewMode] = useState('detail'); // 控制長條圖顯示細項或大類別
 
   // Maintenance State
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
@@ -598,10 +739,10 @@ export default function App() {
       // 送出後維持目前動態選單預設值
       setFormData(prev => ({
         ...getInitialForm(currentUser.username),
-        channel: channels.includes(prev.channel) ? prev.channel : (channels[0] || ''),
-        category: categories.includes(prev.category) ? prev.category : (categories[0] || ''),
-        status: statuses.includes(prev.status) ? prev.status : (statuses[0] || ''),
-        progress: progresses.includes(prev.progress) ? prev.progress : (progresses[0] || '待處理')
+        channel: (Array.isArray(channels) && channels.includes(prev.channel)) ? prev.channel : (channels[0] || ''),
+        category: (Array.isArray(categories) && categories.includes(prev.category)) ? prev.category : (categories[0] || ''),
+        status: (Array.isArray(statuses) && statuses.includes(prev.status)) ? prev.status : (statuses[0] || ''),
+        progress: (Array.isArray(progresses) && progresses.includes(prev.progress)) ? prev.progress : (progresses[0] || '待處理')
       }));
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
     } catch (error) {
@@ -689,7 +830,8 @@ export default function App() {
           type: 'extraInfo_edit'
         };
         updates.extraInfo = maintainForm.extraInfo;
-        updates.editLogs = [...(maintainModal.editLogs || []), editLog];
+        const safeLogs = Array.isArray(maintainModal.editLogs) ? maintainModal.editLogs : [];
+        updates.editLogs = [...safeLogs, editLog];
       }
 
       if (maintainForm.newReply.trim()) {
@@ -698,7 +840,8 @@ export default function App() {
           user: currentUser.username,
           content: maintainForm.newReply.trim()
         };
-        updates.replies = [...(maintainModal.replies || []), newReplyObj];
+        const safeReplies = Array.isArray(maintainModal.replies) ? maintainModal.replies : [];
+        updates.replies = [...safeReplies, newReplyObj];
         updates.replyContent = maintainForm.newReply.trim();
       }
 
@@ -718,7 +861,7 @@ export default function App() {
   const allEditLogs = useMemo(() => {
     let logs = [];
     tickets.forEach(t => {
-      if (t.editLogs && t.editLogs.length > 0) {
+      if (Array.isArray(t.editLogs) && t.editLogs.length > 0) {
         t.editLogs.forEach(log => {
           logs.push({
             ...log,
@@ -867,6 +1010,7 @@ export default function App() {
       try {
         const data = new Uint8Array(event.target.result);
         const workbook = window.XLSX.read(data, { type: 'array' });
+        // 使用 raw: false 讓 Excel 日期直接轉為字串，避免奇怪的數字序號
         const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: "" });
         
         const errors = [];
@@ -971,143 +1115,6 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  // --- Dynamic Dropdown Handlers (Settings) ---
-  const DropdownManager = ({ title, dbKey, items }) => {
-    const [newItem, setNewItem] = useState('');
-    const [draggedIdx, setDraggedIdx] = useState(null);
-
-    const handleAdd = async (e) => {
-      e.preventDefault();
-      if (!newItem.trim() || items.includes(newItem.trim())) return;
-      const newArray = [...items, newItem.trim()];
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
-      setNewItem('');
-    };
-
-    const handleRemove = async (itemToRemove) => {
-      if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
-      const newArray = items.filter(i => i !== itemToRemove);
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
-    };
-
-    // Native HTML5 Drag and Drop Handlers
-    const handleDragStart = (e, index) => {
-      setDraggedIdx(index);
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", index);
-    };
-
-    const handleDragOver = (e) => {
-      e.preventDefault(); 
-      e.dataTransfer.dropEffect = "move";
-    };
-
-    const handleDrop = async (e, dropIdx) => {
-      e.preventDefault();
-      const startIdx = draggedIdx;
-      
-      if (startIdx === null || startIdx === dropIdx) {
-        setDraggedIdx(null);
-        return;
-      }
-
-      const newItems = [...items];
-      const [movedItem] = newItems.splice(startIdx, 1);
-      newItems.splice(dropIdx, 0, movedItem);
-
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-      await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
-      
-      setDraggedIdx(null);
-    };
-
-    return (
-      <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100 flex flex-col h-full">
-        <h4 className="font-bold text-sm mb-4 text-slate-700">{title}</h4>
-        <form onSubmit={handleAdd} className="flex mb-4 gap-2 shrink-0">
-          <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
-          <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-sm"><Plus size={18}/></button>
-        </form>
-        <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
-          {items.map((item, idx) => (
-            <li 
-              key={item} 
-              draggable
-              onDragStart={(e) => handleDragStart(e, idx)}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, idx)}
-              onDragEnd={() => setDraggedIdx(null)}
-              className={`flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm text-sm group transition-all ${draggedIdx === idx ? 'opacity-40 scale-95 shadow-none' : ''} hover:border-indigo-200`}
-            >
-              <div className="flex items-center flex-1 overflow-hidden">
-                <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-indigo-500 mr-2 p-1" title="按住拖曳排序">
-                  <GripVertical size={16} />
-                </div>
-                <span className="text-slate-700 font-medium truncate" title={item}>{item}</span>
-              </div>
-              <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2" title="刪除">
-                <Trash2 size={16}/>
-              </button>
-            </li>
-          ))}
-          {items.length === 0 && <div className="text-center text-xs text-slate-400 py-4">無設定項目</div>}
-        </ul>
-      </div>
-    );
-  };
-
-  // 大類別設定管理模組
-  const CategoryMappingManager = ({ categories, mapping }) => {
-    const [localMap, setLocalMap] = useState({});
-
-    useEffect(() => {
-      setLocalMap(mapping || {});
-    }, [mapping]);
-
-    const handleMapChange = (cat, value) => {
-      setLocalMap(prev => ({ ...prev, [cat]: value }));
-    };
-
-    const handleSaveMapping = async () => {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-      await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
-      alert("大類別設定已儲存成功！");
-    };
-
-    return (
-      <div className="bg-slate-50 p-8 rounded-[1.5rem] border border-slate-100 mt-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h4 className="font-black text-slate-800 flex items-center"><Layers size={18} className="mr-2 text-indigo-600"/> 大類別歸屬設定</h4>
-            <p className="text-xs text-slate-500 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
-          </div>
-          <button onClick={handleSaveMapping} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-transform active:scale-95">儲存大類別設定</button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map(cat => (
-            <div key={cat} className="flex items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-shadow">
-               <span className="text-sm font-bold text-slate-600 w-1/2 truncate border-r border-slate-100 pr-2 mr-2" title={cat}>{cat}</span>
-               <input 
-                 type="text" 
-                 value={localMap[cat] || ''} 
-                 onChange={e => handleMapChange(cat, e.target.value)} 
-                 placeholder="輸入大類別 (例:慢防組)" 
-                 className="w-1/2 p-1 text-sm font-medium outline-none text-slate-800" 
-               />
-            </div>
-          ))}
-          {categories.length === 0 && <div className="text-xs text-slate-400 p-4 col-span-full text-center">請先於上方「業務類別」新增項目。</div>}
-        </div>
-      </div>
-    );
-  };
-
   // --- Inst Management Handlers ---
   const handleAddInst = async (e) => {
     e.preventDefault();
@@ -1120,6 +1127,69 @@ export default function App() {
       setInstSubmitMsg('單筆新增成功！'); setTimeout(() => setInstSubmitMsg(''), 3000);
     } catch (e) { console.error(e); }
   };
+
+  const handleDeleteInst = async (id) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
+  };
+
+  const handleClearAllInsts = async () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (!window.confirm('確定要清空所有院所資料嗎？')) return;
+    setIsImporting(true);
+    try {
+      const batch = writeBatch(db);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      institutions.forEach(inst => {
+        batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id));
+      });
+      await batch.commit();
+    } catch (e) { console.error(e); }
+    finally { setIsImporting(false); }
+  };
+
+  const handleFileUpload = async (e) => {
+    if (currentUser?.role !== ROLES.ADMIN && currentUser?.role !== ROLES.USER) return;
+    const file = e.target.files[0];
+    if (!file || !window.XLSX) return;
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = window.XLSX.read(data, { type: 'array' });
+        const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+        const levelMapping = { '1': '醫學中心', '2': '區域醫院', '3': '地區醫院', '4': '診所', '5': '藥局', '6': '居家護理', '7': '康復之家', '8': '助產所', '9': '檢驗所', 'A': '物理治療所', 'B': '特約醫事放射機構', 'X': '不詳' };
+        let currentChunk = [], chunks = [];
+        for (let i = 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || !row[1] || !row[3]) continue;
+          const code = String(row[1]).trim().padStart(10, '0');
+          if (instMap[code] && typeof instMap[code] !== 'boolean') continue; 
+          const levelRaw = row[7] ? String(row[7]).trim().toUpperCase() : 'X';
+          currentChunk.push({ code, name: String(row[3]).trim(), level: levelMapping[levelRaw] || '其他' });
+          instMap[code] = true;
+          if (currentChunk.length >= 4000) { chunks.push(currentChunk); currentChunk = []; }
+        }
+        if (currentChunk.length > 0) chunks.push(currentChunk);
+        
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        for (const chunkData of chunks) {
+          const batch = writeBatch(db);
+          const docRef = baseDbPath.length ? doc(collection(db, ...baseDbPath, 'mohw_institutions')) : doc(collection(db, 'mohw_institutions'));
+          batch.set(docRef, { isChunk: true, payload: JSON.stringify(chunkData) });
+          await batch.commit();
+        }
+      } catch (error) {}
+      finally { setIsImporting(false); e.target.value = null; }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const filteredInsts = useMemo(() => {
+    return institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm));
+  }, [institutions, instSearchTerm]);
 
   // --- History Filtering & Sorting ---
   const handleSort = (key) => {
@@ -1138,7 +1208,6 @@ export default function App() {
   };
 
   const filteredAndSortedHistory = useMemo(() => {
-    // Filter
     let result = tickets.filter(t => {
       const matchSearch = searchTerm === '' || 
         (t.ticketId||'').includes(searchTerm) || 
@@ -1158,7 +1227,6 @@ export default function App() {
       return matchSearch && matchProgress && matchDate;
     });
 
-    // Sort
     result.sort((a, b) => {
       let valA = a[sortConfig.key] || '';
       let valB = b[sortConfig.key] || '';
@@ -1204,7 +1272,8 @@ export default function App() {
     return result;
   }, [tickets, allRecordsSearchTerm, sortConfig]);
 
-  const SortHeader = ({ label, sortKey, align = 'left' }) => {
+  // 渲染表頭 (改為純函數避免 Hook 衝突)
+  const renderSortHeader = (label, sortKey, align = 'left') => {
     const isActive = sortConfig.key === sortKey;
     return (
       <th 
@@ -1244,10 +1313,11 @@ export default function App() {
     const categoryData = {};
     const aggregatedCategoryData = {};
     
-    categories.forEach(c => categoryData[c] = 0); // Initialize dynamically
+    const safeCategories = Array.isArray(categories) ? categories : [];
+    safeCategories.forEach(c => categoryData[c] = 0); // Initialize dynamically
     
     rangeTickets.forEach(t => {
-      if (categories.includes(t.category)) {
+      if (safeCategories.includes(t.category)) {
         categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       } else {
         categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
@@ -1339,8 +1409,8 @@ export default function App() {
     );
   }
 
-  // --- Navigation Component ---
-  const NavButton = ({ id, icon: Icon, label }) => (
+  // --- 渲染導覽按鈕 (改為純函數避免 Hook 衝突) ---
+  const renderNavButton = (id, Icon, label) => (
     <button
       onClick={() => setActiveTab(id)}
       className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${
@@ -1374,22 +1444,22 @@ export default function App() {
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
           {currentUser.role !== ROLES.VIEWER && (
             <>
-              <NavButton id="form" icon={Plus} label="新增紀錄區" />
-              <NavButton id="maintenance" icon={Edit} label="紀錄維護區" />
+              {renderNavButton('form', Plus, '新增紀錄區')}
+              {renderNavButton('maintenance', Edit, '紀錄維護區')}
             </>
           )}
-          <NavButton id="list" icon={List} label="歷史查詢區" />
+          {renderNavButton('list', List, '歷史查詢區')}
           {currentUser.role !== ROLES.VIEWER && (
-            <NavButton id="all-records" icon={Database} label="紀錄資料區" />
+             renderNavButton('all-records', Database, '紀錄資料區')
           )}
-          <NavButton id="dashboard" icon={LayoutDashboard} label="進階統計區" />
+          {renderNavButton('dashboard', LayoutDashboard, '進階統計區')}
           
           {/* Admin Only Audit Tab */}
           {currentUser.role === ROLES.ADMIN && (
-            <NavButton id="audit" icon={ClipboardCheck} label="申請與日誌區" />
+             renderNavButton('audit', ClipboardCheck, '申請與日誌區')
           )}
           
-          <NavButton id="settings" icon={Settings} label="系統設定區" />
+          {renderNavButton('settings', Settings, '系統設定區')}
         </nav>
         <div className="p-4 border-t border-slate-100">
           <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">登出系統</button>
@@ -1423,7 +1493,7 @@ export default function App() {
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{channels.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500">*</span></label><select name="channel" value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
@@ -1458,9 +1528,9 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別 <span className="text-red-500">*</span></label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態 <span className="text-red-500">*</span></label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{statuses.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度 <span className="text-red-500">*</span></label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{progresses.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">類別 <span className="text-red-500">*</span></label><select name="category" value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">狀態 <span className="text-red-500">*</span></label><select name="status" value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 rounded-2xl bg-white focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700">進度 <span className="text-red-500">*</span></label><select name="progress" value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 bg-green-50 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 bg-red-50 focus:ring-red-500' : 'text-orange-600 bg-orange-50 focus:ring-orange-500'}`}>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
                     
                     {/* 指派功能：只要不是結案即可指派 */}
                     {formData.progress !== '結案' ? (
@@ -1468,7 +1538,7 @@ export default function App() {
                         <label className="text-xs font-bold mb-2 block text-red-600 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
                         <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 rounded-2xl bg-white font-bold text-red-700 outline-none focus:border-red-500">
                            <option value="">-- 未指定 --</option>
-                           {dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                           {(Array.isArray(dbUsers)?dbUsers:[]).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
                       </div>
                     ) : <div></div>}
@@ -1584,7 +1654,7 @@ export default function App() {
                            <div>
                              <label className="text-xs font-black text-slate-800 mb-2 block">更新進度</label>
                              <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 font-bold outline-none">
-                               {progresses.map(p=><option key={p} value={p}>{p}</option>)}
+                               {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
                              </select>
                            </div>
                            {/* 變更指定用戶 (只要不是結案即可用) */}
@@ -1696,7 +1766,7 @@ export default function App() {
                  {/* Progress Filter */}
                  <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white px-4 py-2.5 border border-slate-200 rounded-2xl shadow-sm font-bold text-sm text-slate-700 outline-none shrink-0">
                    <option value="全部">全部進度</option>
-                   {progresses.map(p=><option key={p} value={p}>{p}</option>)}
+                   {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
                  </select>
                  {/* Keyword Filter */}
                  <div className="relative flex-1">
@@ -1727,11 +1797,11 @@ export default function App() {
                              />
                            </th>
                          )}
-                         <SortHeader label="案件號/日期" sortKey="receiveTime" />
-                         <SortHeader label="院所" sortKey="instName" />
-                         <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
-                         <SortHeader label="建立/負責人" sortKey="receiver" />
-                         <SortHeader label="進度" sortKey="progress" align="center" />
+                         {renderSortHeader('案件號/日期', 'receiveTime')}
+                         {renderSortHeader('院所', 'instName')}
+                         {renderSortHeader('描述/回覆摘要', 'extraInfo')}
+                         {renderSortHeader('建立/負責人', 'receiver')}
+                         {renderSortHeader('進度', 'progress', 'center')}
                        </tr>
                      </thead>
                      <tbody className="divide-y text-sm font-medium">
@@ -1826,7 +1896,7 @@ export default function App() {
                            </div>
 
                            {/* 歷史答覆 */}
-                           {viewModalTicket.replies && viewModalTicket.replies.map((r, i) => (
+                           {(Array.isArray(viewModalTicket.replies)?viewModalTicket.replies:[]).map((r, i) => (
                              <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
                                <div className="bg-blue-50 border border-blue-100 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
                                  <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 border-2 border-blue-100 rotate-45 transform"></div>
@@ -1917,11 +1987,11 @@ export default function App() {
                              />
                            </th>
                          )}
-                         <SortHeader label="案件號/日期" sortKey="receiveTime" />
-                         <SortHeader label="院所" sortKey="instName" />
-                         <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
-                         <SortHeader label="建立/負責人" sortKey="receiver" />
-                         <SortHeader label="進度" sortKey="progress" align="center" />
+                         {renderSortHeader('案件號/日期', 'receiveTime')}
+                         {renderSortHeader('院所', 'instName')}
+                         {renderSortHeader('描述/回覆摘要', 'extraInfo')}
+                         {renderSortHeader('建立/負責人', 'receiver')}
+                         {renderSortHeader('進度', 'progress', 'center')}
                        </tr>
                      </thead>
                      <tbody className="divide-y text-sm font-medium">
@@ -2153,7 +2223,7 @@ export default function App() {
                   </div>
                   <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="全類別">-- 綜合全類別 --</option>
-                    {categories.map(c=><option key={c} value={c}>{c}</option>)}
+                    {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 
@@ -2221,7 +2291,7 @@ export default function App() {
                             <tr><th className="p-4">帳號</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y text-sm font-medium">
-                            {dbUsers.map(u => (
+                            {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
                               <tr key={u.id} className="hover:bg-slate-50">
                                 <td className="p-4">{u.username}</td>
                                 <td className="p-4"><span className="bg-slate-100 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
@@ -2263,8 +2333,8 @@ export default function App() {
                     </div>
                     <div className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-200 shadow-sm h-[700px] flex flex-col">
                       <div className="p-6 bg-slate-50/50 border-b flex justify-between items-center px-8">
-                        <h3 className="font-black text-sm text-slate-800 uppercase tracking-widest">雲端院所對照表 ({institutions.length.toLocaleString()} 筆)</h3>
-                        {institutions.length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
+                        <h3 className="font-black text-sm text-slate-800 uppercase tracking-widest">雲端院所對照表 ({(Array.isArray(institutions)?institutions:[]).length.toLocaleString()} 筆)</h3>
+                        {(Array.isArray(institutions)?institutions:[]).length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
                       </div>
                       <div className="flex-1 overflow-auto">
                         <table className="w-full text-left border-collapse">
@@ -2272,7 +2342,7 @@ export default function App() {
                             <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y text-xs font-medium">
-                            {filteredInsts.slice(0, 100).map(i=>(
+                            {(Array.isArray(filteredInsts)?filteredInsts:[]).slice(0, 100).map(i=>(
                               <tr key={i.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="p-5 font-mono text-slate-500">{i.code}</td>
                                 <td className="p-5 text-slate-800 font-bold">{i.name}</td>
