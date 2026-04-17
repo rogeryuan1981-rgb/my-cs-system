@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { 
   PhoneCall, MessageCircle, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
-  Shield, Lock, Calendar, Tag, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, FileCheck, Eye, Moon, Sun, Image as ImageIcon
+  Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
+  Menu, Eye, Moon, Sun, Camera
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.2.5 (圖示相容修復與防呆版)";
+const APP_VERSION = "v2.2.6 (相容性與防呆修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -72,11 +72,11 @@ const getToday = () => {
   return `${y}-${m}-${day}`;
 };
 
-// 表單初始狀態完全淨空，稍後由資料庫讀取後動態帶入
-const getInitialForm = (username = '') => ({
+// 表單初始狀態完全淨空，並動態帶入 channels 與 progresses 陣列以確保預設值正確
+const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => ({
   receiveTime: getFormatDate(),
   callEndTime: '',
-  channel: '',
+  channel: Array.isArray(channelsArr) && channelsArr.length > 0 ? channelsArr[0] : '',
   receiver: username,
   instCode: '',
   instName: '',
@@ -87,7 +87,7 @@ const getInitialForm = (username = '') => ({
   questioner: '',
   replyContent: '',
   closeTime: '',
-  progress: '',
+  progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理',
   assignee: '',
   replies: [],
   editLogs: []
@@ -436,8 +436,8 @@ export default function App() {
   useEffect(() => {
     setFormData(prev => ({
       ...prev,
-      channel: prev.channel || (Array.isArray(channels) ? channels[0] : ''),
-      progress: prev.progress || (Array.isArray(progresses) ? progresses[0] : '')
+      channel: prev.channel || (Array.isArray(channels) && channels.length > 0 ? channels[0] : ''),
+      progress: prev.progress || (Array.isArray(progresses) && progresses.length > 0 ? progresses[0] : '')
     }));
   }, [channels, progresses]);
 
@@ -604,7 +604,7 @@ export default function App() {
     const user = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
     if (user) {
       setCurrentUser(user);
-      setFormData(getInitialForm(user.username));
+      setFormData(getInitialForm(user.username, channels, progresses));
       
       // 根據權限決定預設顯示的頁籤
       if (user.role === ROLES.VIEWER) {
@@ -796,6 +796,11 @@ export default function App() {
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
       return;
     }
+    if (!formData.channel) {
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：請選擇反映管道' });
+      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
+      return;
+    }
     if (!formData.category) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗：請選擇業務類別' });
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
@@ -803,6 +808,11 @@ export default function App() {
     }
     if (!formData.status) {
       setSubmitStatus({ type: 'error', msg: '儲存失敗：請選擇案件狀態' });
+      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
+      return;
+    }
+    if (!formData.progress) {
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：請選擇當前進度' });
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
       return;
     }
@@ -849,9 +859,9 @@ export default function App() {
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       
-      // 送出後維持目前動態選單預設值
+      // 送出後維持目前動態選單預設值 (重置為陣列首項或空白)
       setFormData(prev => ({
-        ...getInitialForm(currentUser.username),
+        ...getInitialForm(currentUser.username, channels, progresses),
         channel: (Array.isArray(channels) && channels.includes(prev.channel)) ? prev.channel : (channels[0] || ''),
         category: '',
         status: '',
@@ -1613,7 +1623,7 @@ export default function App() {
           
           {/* Admin Only Audit Tab */}
           {currentUser.role === ROLES.ADMIN && (
-             renderNavButton('audit', FileCheck, '申請與日誌區')
+             renderNavButton('audit', CheckCircle, '申請與日誌區')
           )}
           
           {renderNavButton('settings', Settings, '系統設定區')}
@@ -1650,7 +1660,7 @@ export default function App() {
                   <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label><input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light] dark:[color-scheme:dark]"/></div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
                     
                     <div className="md:col-span-1">
@@ -1687,7 +1697,7 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">類別 <span className="text-red-500 dark:text-red-400">*</span></label><select name="category" required value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">狀態 <span className="text-red-500 dark:text-red-400">*</span></label><select name="status" required value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" required value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" required value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : formData.progress === '' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}><option value="" disabled>請選擇...</option>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
                     
                     {/* 指派功能：只要不是結案即可指派 */}
                     {formData.progress !== '結案' ? (
@@ -2091,8 +2101,8 @@ export default function App() {
                        </div>
                        
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
-                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
+                         <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
                        </div>
 
                        {/* 區塊 2: 完整對話紀錄 */}
@@ -2198,7 +2208,7 @@ export default function App() {
                <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                  <div className="overflow-x-auto min-h-[400px] max-h-[700px]">
                    <table className="w-full text-left">
-                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-10">
+                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest sticky top-0 z-10">
                        <tr>
                          {currentUser.role === ROLES.ADMIN && (
                            <th className="p-5 text-center w-12">
@@ -2497,7 +2507,7 @@ export default function App() {
                   <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
                     <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
                     <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
-                      <ImageIcon size={14} className="mr-1.5"/> 更換個人圖像
+                      <Camera size={14} className="mr-1.5"/> 更換個人圖像
                       <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                     </label>
                     <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
@@ -2626,7 +2636,7 @@ export default function App() {
 
                   {/* 表單下拉選單維護 (移至最下方) */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><Tag size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
+                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                       <DropdownManager title="反映管道" dbKey="channels" items={channels} />
