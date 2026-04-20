@@ -4,7 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, Image as ImageIcon
+  Menu, Eye, Moon, Sun
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.6.2 (完整修復與防呆升級版)";
+const APP_VERSION = "v2.6.4 (穩定連動修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -1424,7 +1424,8 @@ export default function App() {
         majorCat.includes(searchTerm) || 
         (t.receiver||'').includes(searchTerm);
       
-      const matchProgress = historyProgress === '全部' || t.progress === historyProgress;
+      const matchProgress = historyProgress === '全部' || 
+        (historyProgress === '未結案' ? t.progress !== '結案' : t.progress === historyProgress);
       
       let matchDate = true;
       if (historyStartDate && historyEndDate) {
@@ -2054,6 +2055,7 @@ export default function App() {
                  {/* Progress Filter */}
                  <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm font-bold text-sm text-slate-700 dark:text-slate-200 outline-none shrink-0">
                    <option value="全部">全部進度</option>
+                   <option value="未結案">未結案 (所有待處理)</option>
                    {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
                  </select>
                  {/* Keyword Filter */}
@@ -2393,9 +2395,22 @@ export default function App() {
                   <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
                   <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">待處理件數</div>
-                  <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right">{dashboardStats.pending}</div>
+                <div 
+                  onClick={() => {
+                    setHistoryStartDate(''); // 清除日期，抓取全部待處理
+                    setHistoryEndDate('');
+                    setHistoryProgress('未結案');
+                    setSearchTerm('');
+                    setActiveTab('list');
+                  }}
+                  className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group"
+                  title="點擊檢視所有待處理案件"
+                >
+                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">
+                    待處理件數
+                    <ArrowUp className="opacity-0 group-hover:opacity-100 rotate-45 text-red-500 dark:text-red-400 transition-opacity" size={24} />
+                  </div>
+                  <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
                   <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
@@ -2515,7 +2530,7 @@ export default function App() {
                   <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
                     <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
                     <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
-                      <Camera size={14} className="mr-1.5"/> 更換個人圖像
+                      <ImageIcon size={14} className="mr-1.5"/> 更換個人圖像
                       <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                     </label>
                     <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
