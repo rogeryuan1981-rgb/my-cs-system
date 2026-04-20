@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.3.1 (全圖示相容與時間快設版)";
+const APP_VERSION = "v2.5.0 (穩定運作與強制修改版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -398,8 +398,13 @@ export default function App() {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [dbUsers, setDbUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [authError, setAuthError] = useState('');
+  
+  // 登入表單狀態 (讀取 localStorage 以預設上次登入的帳號)
+  const [loginForm, setLoginForm] = useState(() => {
+    const savedUser = typeof localStorage !== 'undefined' ? localStorage.getItem('cs_last_user') : '';
+    return { username: savedUser || '', password: '' };
+  });
   
   // App State
   const [activeTab, setActiveTab] = useState('form'); 
@@ -422,6 +427,9 @@ export default function App() {
 
   // View Modal State (歷史查詢檢視視窗)
   const [viewModalTicket, setViewModalTicket] = useState(null);
+  // 管理者強制修改狀態
+  const [isEditingModal, setIsEditingModal] = useState(false);
+  const [modalEditForm, setModalEditForm] = useState(null);
 
   // 防呆機制：切換分頁時自動清空已勾選的項目
   useEffect(() => {
@@ -603,6 +611,9 @@ export default function App() {
     e.preventDefault();
     const user = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
     if (user) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('cs_last_user', user.username);
+      }
       setCurrentUser(user);
       setFormData(getInitialForm(user.username, channels, progresses));
       
@@ -637,7 +648,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setLoginForm({username:'', password:''});
+    setLoginForm(prev => ({ ...prev, password: '' })); // 保留使用者名稱，只清空密碼
     setActiveTab('form');
   };
 
@@ -982,6 +993,20 @@ export default function App() {
       setMaintainModal(null);
     } catch (error) {
       alert("更新失敗：" + error.message);
+    }
+  };
+
+  // --- 強制修改功能 (Admin Only) ---
+  const handleModalSave = async () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), modalEditForm);
+      alert('強制修改成功！');
+      setViewModalTicket(null);
+      setIsEditingModal(false);
+    } catch (error) {
+      alert('修改失敗：' + error.message);
     }
   };
 
@@ -1882,8 +1907,8 @@ export default function App() {
                          </div>
                        </form>
                      </div>
-                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
-                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center">
+                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-between shrink-0">
+                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center">
                          <Trash2 size={16} className="mr-1" /> 申請刪除
                        </button>
                        <div>
@@ -1979,7 +2004,7 @@ export default function App() {
                </div>
                
                <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                 <div className="overflow-x-auto min-h-[400px]">
+                 <div className="max-md:overflow-x-auto min-h-[400px]">
                    <table className="w-full text-left">
                      <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest">
                        <tr>
@@ -2044,16 +2069,16 @@ export default function App() {
                                  <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
                                  <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
                                </td>
-                               <td className="p-5 max-w-[250px] relative group/tooltip">
+                               <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                                   <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                                   <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
                                   
                                   {/* Hover 顯示完整歷史紀錄 */}
                                   {fullHistoryStr && (
-                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50 w-72 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
+                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block z-[999] w-80 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 border border-slate-700 dark:border-slate-600">
                                       <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
                                       <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-8"></div>
+                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-1/2 -translate-x-1/2"></div>
                                     </div>
                                   )}
                                </td>
@@ -2214,7 +2239,7 @@ export default function App() {
                </div>
                
                <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                 <div className="overflow-x-auto min-h-[400px] max-h-[700px]">
+                 <div className="max-md:overflow-x-auto min-h-[400px] max-h-[700px]">
                    <table className="w-full text-left">
                      <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest sticky top-0 z-10">
                        <tr>
@@ -2251,9 +2276,9 @@ export default function App() {
                            const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                            const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                            return (
-                             <tr key={t.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700">
+                             <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700">
                                {currentUser.role === ROLES.ADMIN && (
-                                 <td className="p-5 text-center">
+                                 <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
                                    <input 
                                      type="checkbox" 
                                      className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -2274,16 +2299,16 @@ export default function App() {
                                  <div className="text-slate-800 dark:text-slate-200">{t.instName}</div>
                                  <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
                                </td>
-                               <td className="p-5 max-w-[250px] relative group/tooltip">
+                               <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                                   <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                                   <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
                                   
                                   {/* Hover 顯示完整歷史紀錄 */}
                                   {fullHistoryStr && (
-                                    <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50 w-72 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
+                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block z-[999] w-80 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
                                       <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
                                       <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-8"></div>
+                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-1/2 -translate-x-1/2"></div>
                                     </div>
                                   )}
                                </td>
@@ -2308,361 +2333,189 @@ export default function App() {
                    </table>
                  </div>
                </div>
-             </div>
-          )}
 
-          {/* TAB 7: AUDIT (申請與日誌區 - Admin Only) */}
-          {activeTab === 'audit' && currentUser.role === ROLES.ADMIN && (
-             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-               <div>
-                 <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">申請與日誌區</h2>
-                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">供管理員簽核刪除申請，以及查閱全系統的問題描述修改紀錄。</p>
-               </div>
-               
-               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                 {/* 刪除申請區塊 */}
-                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col max-h-[800px]">
-                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100">
-                     <AlertCircle size={20} className="mr-2 text-red-600 dark:text-red-400"/> 待處理刪除申請
-                     {pendingDeleteRequests.length > 0 && <span className="ml-3 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-2.5 py-0.5 rounded-full text-xs font-bold">{pendingDeleteRequests.length} 件</span>}
-                   </h3>
-                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                     {pendingDeleteRequests.length === 0 ? (
-                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 rounded-2xl">目前無待簽核的刪除申請。</div>
-                     ) : (
-                       pendingDeleteRequests.map(t => (
-                         <div key={t.id} className="bg-red-50/50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 p-5 rounded-2xl shadow-sm">
-                           <div className="flex justify-between items-start mb-2">
-                             <div className="font-black text-slate-800 dark:text-slate-200 text-sm">#{t.ticketId} - {t.instName}</div>
-                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{t.deleteRequest.requestTime}</div>
-                           </div>
-                           <div className="text-sm text-slate-700 dark:text-slate-300 mb-4 bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
-                             <span className="font-bold text-red-600 dark:text-red-400 mr-2">申請原因:</span>{t.deleteRequest.reason}
-                           </div>
-                           <div className="flex justify-between items-center text-xs">
-                             <div className="flex items-center font-bold text-slate-500 dark:text-slate-400">
-                               申請人: <UserAvatar username={t.deleteRequest.requestedBy} photoURL={userMap[t.deleteRequest.requestedBy]?.photoURL} className="w-5 h-5 text-[8px] mx-1.5" /> {t.deleteRequest.requestedBy}
+               {/* View Modal (完整檢視視窗) */}
+               {viewModalTicket && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}}>
+                   <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
+                     <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
+                       <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
+                         <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
+                         {currentUser?.role === ROLES.ADMIN && !isEditingModal && (
+                            <button onClick={() => { setModalEditForm(viewModalTicket); setIsEditingModal(true); }} className="ml-4 px-3 py-1.5 bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors flex items-center">
+                              <Edit size={14} className="mr-1" /> 強制修改
+                            </button>
+                         )}
+                       </h3>
+                       <button onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
+                     </div>
+                     
+                     <div className="p-8 overflow-y-auto flex-1 space-y-8">
+                        {!isEditingModal ? (
+                           <>
+                             {/* 區塊 1: 基本資料 */}
+                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                               <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
+                               <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
+                               <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">建檔人</div>
+                                  <div className="flex items-center text-sm font-bold text-slate-700 dark:text-slate-200 mt-1">
+                                     <UserAvatar username={viewModalTicket.receiver} photoURL={userMap[viewModalTicket.receiver]?.photoURL} className="w-5 h-5 text-[10px] mr-1.5" />
+                                     {viewModalTicket.receiver}
+                                  </div>
+                               </div>
+                               <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
+                                 <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
+                                   {viewModalTicket.progress}
+                                 </span>
+                               </div>
                              </div>
-                             <div className="space-x-2">
-                               <button onClick={() => handleRejectDelete(t.id)} className="px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-lg font-bold transition-colors">退回</button>
-                               <button onClick={() => handleApproveDelete(t.id, t.instName)} className="px-3 py-1.5 bg-red-600 dark:bg-red-500 text-white hover:bg-red-700 dark:hover:bg-red-600 rounded-lg font-bold shadow-sm transition-colors">核准刪除</button>
+                             
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
+                               <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
+                               <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
                              </div>
-                           </div>
-                         </div>
-                       ))
-                     )}
-                   </div>
-                 </div>
 
-                 {/* 修改日誌區塊 */}
-                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col max-h-[800px]">
-                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100">
-                     <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 原始內容修改日誌
-                   </h3>
-                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                     {allEditLogs.length === 0 ? (
-                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 rounded-2xl">尚無任何修改紀錄。</div>
-                     ) : (
-                       allEditLogs.map((log, idx) => (
-                         <div key={idx} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl shadow-sm">
-                           <div className="flex justify-between items-center mb-3 border-b border-slate-200 dark:border-slate-600 pb-2">
-                             <div className="font-black text-indigo-800 dark:text-indigo-300 text-xs">#{log.ticketId} - {log.instName}</div>
-                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{log.time}</div>
-                           </div>
-                           <div className="space-y-3">
+                             {/* 區塊 2: 完整對話紀錄 */}
                              <div>
-                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">修改前原內容</div>
-                               <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded line-through decoration-red-400 dark:decoration-red-500 border border-slate-200 dark:border-slate-700">{log.oldContent || '(空)'}</div>
+                               <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
+                               
+                               <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
+                                 
+                                 {/* 使用者提問 */}
+                                 <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
+                                   <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
+                                     <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
+                                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                                     <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
+                                   </div>
+                                 </div>
+
+                                 {/* 歷史答覆 (支援歷史匯入顯示) */}
+                                 {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
+                                   viewModalTicket.replies.map((r, i) => (
+                                     <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
+                                       <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                                         <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                                         <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
+                                           <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
+                                           客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                         </div>
+                                         <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                       </div>
+                                     </div>
+                                   ))
+                                 ) : viewModalTicket.replyContent ? (
+                                   <div className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
+                                     <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                                       <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                                       <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
+                                         <Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄
+                                       </div>
+                                       <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
+                                     </div>
+                                   </div>
+                                 ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
+
+                                 {/* 結案標記 */}
+                                 {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
+                                   <div className="relative flex items-center justify-center pt-4">
+                                     <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center">
+                                       <CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案
+                                     </div>
+                                   </div>
+                                 )}
+
+                               </div>
                              </div>
-                             <div>
-                               <div className="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-1">修改後新內容</div>
-                               <div className="text-xs text-slate-800 dark:text-slate-200 bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded border border-indigo-100 dark:border-indigo-800">{log.newContent || '(空)'}</div>
+                           </>
+                        ) : (
+                           // Edit Logic
+                           <div className="space-y-6">
+                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">反映管道</div>
+                                 <select value={modalEditForm.channel} onChange={e=>setModalEditForm({...modalEditForm, channel: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                                    {(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}
+                                 </select>
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">業務類別</div>
+                                 <select value={modalEditForm.category} onChange={e=>setModalEditForm({...modalEditForm, category: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                                    {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
+                                 </select>
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">案件狀態</div>
+                                 <select value={modalEditForm.status} onChange={e=>setModalEditForm({...modalEditForm, status: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                                    {(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}
+                                 </select>
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">當前進度</div>
+                                 <select value={modalEditForm.progress} onChange={e=>setModalEditForm({...modalEditForm, progress: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                                    {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
+                                 </select>
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">建檔人</div>
+                                 <input type="text" value={modalEditForm.receiver} onChange={e=>setModalEditForm({...modalEditForm, receiver: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">負責人</div>
+                                 <select value={modalEditForm.assignee || ''} onChange={e=>setModalEditForm({...modalEditForm, assignee: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">-- 未指定 --</option>
+                                    {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                                 </select>
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">接收時間</div>
+                                 <input type="datetime-local" value={modalEditForm.receiveTime} onChange={e=>setModalEditForm({...modalEditForm, receiveTime: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 [color-scheme:light] dark:[color-scheme:dark]" />
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">結案時間</div>
+                                 <input type="datetime-local" value={modalEditForm.closeTime || ''} onChange={e=>setModalEditForm({...modalEditForm, closeTime: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 [color-scheme:light] dark:[color-scheme:dark]" />
+                               </div>
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 mt-4">
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所名稱 / 代碼</div>
+                                 <div className="flex space-x-2">
+                                   <input type="text" value={modalEditForm.instName} onChange={e=>setModalEditForm({...modalEditForm, instName: e.target.value})} className="w-2/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="名稱"/>
+                                   <input type="text" value={modalEditForm.instCode} onChange={e=>setModalEditForm({...modalEditForm, instCode: e.target.value})} className="w-1/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono" placeholder="代碼"/>
+                                 </div>
+                               </div>
+                               <div>
+                                 <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div>
+                                 <input type="text" value={modalEditForm.questioner} onChange={e=>setModalEditForm({...modalEditForm, questioner: e.target.value})} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                               </div>
+                             </div>
+                             <div className="mt-4">
+                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">詳細問題描述 (首筆)</div>
+                               <textarea value={modalEditForm.extraInfo} onChange={e=>setModalEditForm({...modalEditForm, extraInfo: e.target.value})} rows="3" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+                             </div>
+                             <div className="mt-4">
+                               <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">初步回覆內容 (首筆)</div>
+                               <textarea value={modalEditForm.replyContent} onChange={e=>setModalEditForm({...modalEditForm, replyContent: e.target.value})} rows="3" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
                              </div>
                            </div>
-                           <div className="mt-3 flex justify-end items-center text-[10px] font-bold text-slate-500 dark:text-slate-400">
-                             修改人: <UserAvatar username={log.user} photoURL={userMap[log.user]?.photoURL} className="w-4 h-4 text-[6px] mx-1" /> <span className="text-indigo-600 dark:text-indigo-400">{log.user}</span>
-                           </div>
-                         </div>
-                       ))
-                     )}
-                   </div>
-                 </div>
-               </div>
-             </div>
-          )}
-
-          {/* TAB 4: DASHBOARD (統計報表) */}
-          {activeTab === 'dashboard' && (
-            <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">進階統計區</h2>
-              
-              {/* 修改：頂部數據置左、文字上移放大 */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
-                  <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">待處理件數</div>
-                  <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right">{dashboardStats.pending}</div>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
-                  <div className="text-5xl md:text-6xl font-black text-blue-600 dark:text-blue-400 leading-none text-right">{dashboardStats.completionRate}%</div>
-                </div>
-              </div>
-
-              {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                  <div>
-                    <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務類別分佈</h3>
-                      <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                        <button 
-                          onClick={() => setCategoryViewMode('detail')}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-                        >
-                          細項類別
-                        </button>
-                        <button 
-                          onClick={() => setCategoryViewMode('major')}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-                        >
-                          大類別彙整
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 font-medium">點擊長條圖可直接跳轉至歷史查詢區檢視該分類資料</p>
-                  </div>
-                  <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
-                    <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
-                    <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
-                    <span className="text-slate-300 dark:text-slate-500">~</span>
-                    <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
-                  </div>
-                </div>
-                
-                {categoryViewMode === 'major' && Object.keys(dashboardStats.aggregatedCategoryData).length === 0 ? (
-                  <div className="h-[320px] flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm bg-slate-50 dark:bg-slate-700/30 rounded-2xl mt-4">
-                    目前無大類別資料，請至「系統設定區」進行歸屬設定。
-                  </div>
-                ) : (
-                  <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
-                    {Object.entries(categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData)
-                      .sort((a,b)=>b[1]-a[1])
-                      .map(([cat, count]) => {
-                        const currentData = categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData;
-                        const maxVal = Math.max(...Object.values(currentData), 1);
-                        const heightPct = (count / maxVal) * 100;
-                        const barColorClass = categoryViewMode === 'detail' ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-blue-500 dark:bg-blue-400';
-                        const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'group-hover:text-blue-600 dark:group-hover:text-blue-400';
-                        
-                        return (
-                          <div 
-                            key={cat} 
-                            onClick={() => handleCategoryClick(cat)}
-                            title="點擊查看此分類歷史紀錄"
-                            className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500 cursor-pointer"
-                          >
-                            <div className="absolute -top-8 text-slate-900 dark:text-slate-800 bg-slate-100 dark:bg-slate-200 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">
-                              {count} 件
-                            </div>
-                            <div className="w-10 bg-slate-100 dark:bg-slate-700 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner">
-                              <div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div>
-                            </div>
-                            <div className={`text-[12px] font-bold text-slate-500 dark:text-slate-400 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>
-                              {cat}
-                            </div>
-                          </div>
-                        );
-                    })}
-                  </div>
-                )}
-
-              </div>
-
-              {/* 圖表區 2: 線型圖 (月趨勢) */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <div className="flex justify-between items-center mb-8">
-                  <div>
-                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">近半年趨勢走勢圖</h3>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 font-medium">觀測各類別每月份案件數量波動</p>
-                  </div>
-                  <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="全類別">-- 綜合全類別 --</option>
-                    {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                
-                <LineChart data={dashboardStats.trendDataArray} labels={dashboardStats.monthLabels.map(m => m.replace('-','/'))} isDarkMode={isDarkMode} />
-              </div>
-
-            </div>
-          )}
-
-          {/* TAB 5: SETTINGS (系統設定區) */}
-          {activeTab === 'settings' && (
-            <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8">
-              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">系統設定區</h2>
-
-              {/* 個人帳號與密碼修改區 (所有角色可見) */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><User size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 個人帳號設定</h3>
-                
-                <div className="flex flex-col md:flex-row gap-8 items-start">
-                  {/* 個人圖像上傳區塊 */}
-                  <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
-                    <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
-                    <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
-                      <Upload size={14} className="mr-1.5"/> 更換個人圖像
-                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                    </label>
-                    <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
-                  </div>
-
-                  {/* 密碼修改區塊 */}
-                  <form onSubmit={handleChangeOwnPassword} className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">新密碼</label>
-                      <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">確認新密碼</label>
-                      <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
-                    </div>
-                    <div className="md:col-span-2">
-                      <button type="submit" className="w-full md:w-auto px-10 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-black dark:hover:bg-slate-500 transition-all shadow-lg active:scale-95">更新密碼</button>
-                      {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'}`}>{pwdChangeMsg}</p>}
-                    </div>
-                  </form>
-                </div>
-              </div>
-
-              {/* 罐頭文字維護區 (管理員與一般使用者可見) */}
-              {currentUser.role !== ROLES.VIEWER && (
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
-                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
-                  <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
-                </div>
-              )}
-
-              {/* 以下功能僅管理員可見 */}
-              {currentUser.role === ROLES.ADMIN && (
-                <>
-                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
-                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與權限管理</h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* 新增使用者 */}
-                      <div className="bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
-                        <h4 className="font-bold text-sm mb-4 dark:text-slate-200">建立新用戶</h4>
-                        <form onSubmit={handleAddUser} className="space-y-4">
-                          <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
-                          <input type="password" required placeholder="設定初始密碼" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
-                          <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold outline-none">
-                            <option value={ROLES.USER}>{ROLES.USER} (可新增/維護紀錄)</option>
-                            <option value={ROLES.VIEWER}>{ROLES.VIEWER} (僅能看不可改)</option>
-                            <option value={ROLES.ADMIN}>{ROLES.ADMIN} (系統全權限)</option>
-                          </select>
-                          <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
-                        </form>
-                      </div>
-                      {/* 使用者清單 */}
-                      <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
-                        <table className="w-full text-left">
-                          <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
-                            {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
-                              <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                <td className="p-4 flex items-center space-x-3 dark:text-slate-200">
-                                  <UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" />
-                                  <span>{u.username}</span>
-                                </td>
-                                <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
-                                <td className="p-4 text-center">
-                                  <button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button>
-                                </td>
-                                <td className="p-4 text-center">
-                                  {u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 院所維護區 */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                    <div className="space-y-8">
-                      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <h3 className="font-black mb-6 text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600 dark:text-blue-400"/> 單筆新增院所</h3>
-                        <form onSubmit={handleAddInst} className="space-y-4">
-                          <input type="text" placeholder="代碼" value={newInst.code} onChange={e=>setNewInst({...newInst, code:e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-2xl font-medium focus:ring-2 outline-none"/>
-                          <input type="text" placeholder="名稱" value={newInst.name} onChange={e=>setNewInst({...newInst, name:e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-2xl font-medium focus:ring-2 outline-none"/>
-                          <button type="submit" className="w-full py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black dark:hover:bg-slate-500 transition-colors">單筆存入</button>
-                        </form>
-                      </div>
-                      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <h3 className="font-black mb-2 text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest flex items-center"><Upload size={18} className="mr-2 text-green-600 dark:text-green-400"/> 批次匯入 (Excel)</h3>
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-6 font-bold">自動擷取 B 欄、D 欄、H 欄</p>
-                        <div className="relative">
-                          <input type="file" onChange={handleFileUpload} disabled={isImporting} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"/>
-                          <button disabled={isImporting} className="w-full py-4 bg-green-600 dark:bg-green-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center hover:bg-green-700 dark:hover:bg-green-600 disabled:bg-slate-300 dark:disabled:bg-slate-600 transition-colors">
-                            {isImporting ? <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div> : <Upload size={18} className="mr-2"/>} 開始匯入
-                          </button>
+                        )}
+                        </div>
+                        <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
+                          {isEditingModal ? (
+                            <>
+                              <button onClick={() => setIsEditingModal(false)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消修改</button>
+                              <button onClick={handleModalSave} className="px-8 py-3 bg-red-600 text-white font-black rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200 dark:shadow-none flex items-center">
+                                <Save size={16} className="mr-2"/>儲存修改
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 dark:bg-slate-600 text-white font-black rounded-xl hover:bg-slate-900 dark:hover:bg-slate-500 transition-colors shadow-lg shadow-slate-200 dark:shadow-none">關閉檢視</button>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm h-[700px] flex flex-col">
-                      <div className="p-6 bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center px-8">
-                        <h3 className="font-black text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest">雲端院所對照表 ({(Array.isArray(institutions)?institutions:[]).length.toLocaleString()} 筆)</h3>
-                        {(Array.isArray(institutions)?institutions:[]).length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
-                      </div>
-                      <div className="flex-1 overflow-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead className="bg-white dark:bg-slate-800 sticky top-0 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
-                            <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-xs font-medium">
-                            {(Array.isArray(filteredInsts)?filteredInsts:[]).slice(0, 100).map(i=>(
-                              <tr key={i.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                <td className="p-5 font-mono text-slate-500 dark:text-slate-400">{i.code}</td>
-                                <td className="p-5 text-slate-800 dark:text-slate-200 font-bold">{i.name}</td>
-                                <td className="p-5 text-center"><button onClick={()=>handleDeleteInst(i.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400"><Trash2 size={16}/></button></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* 表單下拉選單維護 (移至最下方) */}
-                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-                      <DropdownManager title="反映管道" dbKey="channels" items={channels} />
-                      <DropdownManager title="業務類別" dbKey="categories" items={categories} />
-                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
-                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} />
-                    </div>
-                  </div>
-
-                  {/* 大類別映射設定 */}
-                  <CategoryMappingManager categories={categories} mapping={categoryMapping} />
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Render Canned Modal in Root */}
-          {showCannedModal && <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />}
         </div>
       </div>
     </div>
