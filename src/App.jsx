@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.8.0 (全功能完整修復版)";
+const APP_VERSION = "v2.8.1 (精簡架構與全防呆修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -490,6 +490,33 @@ export default function App() {
     }
   };
 
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file || !activeUser) return;
+    if (!file.type.startsWith('image/')) return alert('請上傳圖片檔案！');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 150; let width = img.width; let height = img.height;
+        if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
+        else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        try {
+          const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+          const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+          await updateDoc(docRef, { photoURL: dataUrl });
+          alert('個人圖像更新成功！');
+        } catch (error) { alert('圖像更新失敗，請稍後再試。'); }
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file); e.target.value = null; 
+  };
+
   const handleFormChange = (e) => {
     const { name, value } = e.target;
     let newFormData = { ...formData, [name]: value };
@@ -693,7 +720,7 @@ export default function App() {
         const workbook = window.XLSX.read(data, { type: 'array' });
         const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, defval: "" });
         const validRows = [];
-        jsonData.forEach((row, index) => {
+        jsonData.forEach((row) => {
           const rawTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
           if (rawTime && row['反映管道'] && row['業務類別'] && row['案件狀態'] && row['處理進度'] && row['建檔人']) validRows.push(row);
         });
@@ -828,10 +855,10 @@ export default function App() {
     return result;
   }, [tickets, allRecordsSearchTerm, sortConfig, categoryMapping]);
 
-  const renderSortHeader = (label, sortKey, align = 'left') => {
+  const renderSortHeader = (label, sortKey, align = 'left', isFirst = false, isLast = false) => {
     const isActive = sortConfig.key === sortKey;
     return (
-      <th className={`p-5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'}`} onClick={() => handleSort(sortKey)}>
+      <th className={`p-5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'} ${isFirst ? 'rounded-tl-[2rem]' : ''} ${isLast ? 'rounded-tr-[2rem]' : ''}`} onClick={() => handleSort(sortKey)}>
         <div className={`flex items-center ${align === 'center' ? 'justify-center' : 'justify-start'} group`}>
           {label}
           <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'}`}>
@@ -841,6 +868,73 @@ export default function App() {
       </th>
     );
   };
+
+  // --- 優化：抽離共用的 Table 渲染模組 (解決超出長度被截斷的問題) ---
+  const renderTicketTable = (dataList) => (
+    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible">
+      <div className="overflow-x-auto min-h-[400px]">
+        <table className="w-full text-left border-collapse relative">
+          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
+            <tr>
+              {currentUser.role === ROLES.ADMIN && (
+                <th className="p-5 text-center w-12 rounded-tl-[2rem]">
+                  <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={dataList.length > 0 && selectedTickets.length === dataList.length} onChange={(e) => setSelectedTickets(e.target.checked ? dataList.map(t => t.id) : [])} />
+                </th>
+              )}
+              <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
+              {renderSortHeader('案件號/日期', 'receiveTime')}
+              {renderSortHeader('院所', 'instName')}
+              {renderSortHeader('描述/回覆摘要', 'extraInfo')}
+              {renderSortHeader('建立/負責人', 'receiver')}
+              {renderSortHeader('進度', 'progress', 'center', false, true)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
+            {dataList.length === 0 ? (
+              <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
+            ) : (
+              dataList.map((t, index) => {
+                const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
+                const latestReplyStr = getLatestReply(t.replies, t.replyContent);
+                return (
+                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50">
+                    {currentUser.role === ROLES.ADMIN && (
+                      <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
+                      </td>
+                    )}
+                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
+                    <td className="p-5">
+                      <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">{t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" /></div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                    </td>
+                    <td className="p-5"><div className="text-slate-800 dark:text-slate-200">{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
+                    <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
+                       <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                       <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                       {/* Hover 顯示完整歷史紀錄 (改為向下顯示避免上方被截斷) */}
+                       {fullHistoryStr && (
+                         <div className="absolute left-0 top-full mt-2 hidden group-hover/tooltip:block z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
+                           <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
+                           <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
+                           <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
+                         </div>
+                       )}
+                    </td>
+                    <td className="p-5">
+                      <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
+                      {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
+                    </td>
+                    <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   const dashboardStats = useMemo(() => {
     const total = tickets.length;
@@ -1139,7 +1233,7 @@ export default function App() {
                          </div>
                        </form>
                      </div>
-                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-between shrink-0">
+                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
                        <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center"><Trash2 size={16} className="mr-1" /> 申請刪除</button>
                        <div>
                          <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消</button>
@@ -1193,68 +1287,7 @@ export default function App() {
                  </div>
                </div>
                
-               <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                 <div className="max-md:overflow-x-auto min-h-[400px]">
-                   <table className="w-full text-left">
-                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest">
-                       <tr>
-                         {currentUser.role === ROLES.ADMIN && (
-                           <th className="p-5 text-center w-12">
-                             <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={filteredAndSortedHistory.length > 0 && selectedTickets.length === filteredAndSortedHistory.length} onChange={(e) => setSelectedTickets(e.target.checked ? filteredAndSortedHistory.map(t => t.id) : [])}/>
-                           </th>
-                         )}
-                         <th className="p-5 text-center w-12">序號</th>
-                         {renderSortHeader('案件號/日期', 'receiveTime')}
-                         {renderSortHeader('院所', 'instName')}
-                         {renderSortHeader('描述/回覆摘要', 'extraInfo')}
-                         {renderSortHeader('建立/負責人', 'receiver')}
-                         {renderSortHeader('進度', 'progress', 'center')}
-                       </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
-                       {filteredAndSortedHistory.length === 0 ? (
-                         <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
-                       ) : (
-                         filteredAndSortedHistory.map((t, index) => {
-                           const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
-                           const latestReplyStr = getLatestReply(t.replies, t.replyContent);
-                           return (
-                             <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700">
-                               {currentUser.role === ROLES.ADMIN && (
-                                 <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                   <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))}/>
-                                 </td>
-                               )}
-                               <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
-                               <td className="p-5">
-                                 <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">{t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" /></div>
-                                 <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
-                               </td>
-                               <td className="p-5"><div className="text-slate-800 dark:text-slate-200">{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
-                               <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
-                                  <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                                  <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                                  {fullHistoryStr && (
-                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block z-[999] w-80 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
-                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
-                                      <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-1/2 -translate-x-1/2"></div>
-                                    </div>
-                                  )}
-                               </td>
-                               <td className="p-5">
-                                 <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
-                                 {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
-                               </td>
-                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
-                             </tr>
-                           )
-                         })
-                       )}
-                     </tbody>
-                   </table>
-                 </div>
-               </div>
+               {renderTicketTable(filteredAndSortedHistory)}
              </div>
           )}
 
@@ -1278,57 +1311,7 @@ export default function App() {
                  </div>
                </div>
                
-               <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                 <div className="max-md:overflow-x-auto min-h-[400px] max-h-[700px]">
-                   <table className="w-full text-left">
-                     <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest sticky top-0 z-10">
-                       <tr>
-                         <th className="p-5 text-center w-12"><input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={allRecordsFiltered.length > 0 && selectedTickets.length === allRecordsFiltered.length} onChange={(e) => setSelectedTickets(e.target.checked ? allRecordsFiltered.map(t => t.id) : [])} /></th>
-                         <th className="p-5 text-center w-12">序號</th>
-                         {renderSortHeader('案件號/日期', 'receiveTime')}
-                         {renderSortHeader('院所', 'instName')}
-                         {renderSortHeader('描述/回覆摘要', 'extraInfo')}
-                         {renderSortHeader('建立/負責人', 'receiver')}
-                         {renderSortHeader('進度', 'progress', 'center')}
-                       </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
-                       {allRecordsFiltered.length === 0 ? (
-                         <tr><td colSpan="7" className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
-                       ) : (
-                         allRecordsFiltered.map((t, index) => {
-                           const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
-                           const latestReplyStr = getLatestReply(t.replies, t.replyContent);
-                           return (
-                             <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700">
-                               <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} /></td>
-                               <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
-                               <td className="p-5"><div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs">{t.ticketId || '-'}</div><div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div></td>
-                               <td className="p-5"><div className="text-slate-800 dark:text-slate-200">{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
-                               <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
-                                  <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                                  <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                                  {fullHistoryStr && (
-                                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block z-[999] w-80 p-4 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 border border-slate-700 dark:border-slate-600">
-                                      <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
-                                      <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                                      <div className="absolute w-3 h-3 bg-slate-800 dark:bg-slate-700 border-b border-r border-slate-700 dark:border-slate-600 transform rotate-45 -bottom-1.5 left-1/2 -translate-x-1/2"></div>
-                                    </div>
-                                  )}
-                               </td>
-                               <td className="p-5">
-                                 <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
-                                 {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
-                               </td>
-                               <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
-                             </tr>
-                           )
-                         })
-                       )}
-                     </tbody>
-                   </table>
-                 </div>
-               </div>
+               {renderTicketTable(allRecordsFiltered)}
              </div>
           )}
 
