@@ -19,7 +19,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.1.0 (進階統計與逾期追蹤版)";
+const APP_VERSION = "v3.2.0 (進階圖表切換與邏輯修正版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -366,6 +366,7 @@ export default function App() {
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
   const [trendCategory, setTrendCategory] = useState('全類別');
   const [categoryViewMode, setCategoryViewMode] = useState('detail');
+  const [personnelViewMode, setPersonnelViewMode] = useState('assignee'); // 新增：處理人員/地區切換
 
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
@@ -1054,14 +1055,15 @@ export default function App() {
       if (safeCategories.includes(t.category)) categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       else categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
 
-      // Calculate for Assignee & Region stats
-      if (t.assignee) {
-        assigneeData[t.assignee] = (assigneeData[t.assignee] || 0) + 1;
-        const userRegion = userMap[t.assignee]?.region || '未設定地區';
+      // 修正邏輯：未指定負責人之紀錄，就是原紀錄建立者
+      const effectiveAssignee = t.assignee || t.receiver;
+      
+      // 僅針對一般使用者 (排除管理員與紀錄檢視者) 進行統計
+      const role = userMap[effectiveAssignee]?.role;
+      if (role === ROLES.USER) {
+        assigneeData[effectiveAssignee] = (assigneeData[effectiveAssignee] || 0) + 1;
+        const userRegion = userMap[effectiveAssignee]?.region || '未設定地區';
         regionData[userRegion] = (regionData[userRegion] || 0) + 1;
-      } else {
-        assigneeData['未指派'] = (assigneeData['未指派'] || 0) + 1;
-        regionData['未指派'] = (regionData['未指派'] || 0) + 1;
       }
     });
 
@@ -1090,30 +1092,6 @@ export default function App() {
     return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
   }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping, userMap]);
 
-  const renderHorizontalBar = (dataObj, title, icon) => {
-    const sorted = Object.entries(dataObj).sort((a, b) => b[1] - a[1]);
-    const max = Math.max(...Object.values(dataObj), 1);
-    return (
-      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-        <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100">{icon} {title}</h3>
-        {sorted.length === 0 ? (
-           <div className="h-32 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500">尚無資料</div>
-        ) : (
-           <div className="space-y-4 max-h-[250px] overflow-y-auto pr-2">
-             {sorted.map(([name, count]) => (
-               <div key={name} className="flex items-center group">
-                 <span className="w-20 md:w-24 truncate text-sm font-bold text-slate-600 dark:text-slate-300" title={name}>{name}</span>
-                 <div className="flex-1 bg-slate-100 dark:bg-slate-700 rounded-full h-3.5 mx-3 md:mx-4 overflow-hidden relative">
-                   <div className="bg-gradient-to-r from-blue-400 to-blue-500 dark:from-indigo-500 dark:to-indigo-400 h-full rounded-full transition-all duration-1000 ease-out group-hover:brightness-110" style={{ width: `${(count/max)*100}%` }}></div>
-                 </div>
-                 <span className="w-10 text-right text-sm font-black text-slate-700 dark:text-slate-200">{count}</span>
-               </div>
-             ))}
-           </div>
-        )}
-      </div>
-    );
-  };
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
 
@@ -1600,10 +1578,40 @@ export default function App() {
                 )}
               </div>
 
-              {/* 圖表區 2: 負責人與地區分佈 (新增進階統計) */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {renderHorizontalBar(dashboardStats.assigneeData, '處理人員案件統計', <Users size={20} className="mr-2 text-indigo-500 dark:text-indigo-400"/>)}
-                {renderHorizontalBar(dashboardStats.regionData, '負責地區服務分佈', <MapPin size={20} className="mr-2 text-emerald-500 dark:text-emerald-400"/>)}
+              {/* 圖表區 2: 負責人與地區分佈 (切換直條圖) */}
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                  <div>
+                    <div className="flex items-center space-x-4">
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">人員與地區分佈</h3>
+                      <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                        <button onClick={() => setPersonnelViewMode('assignee')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'assignee' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>處理人員</button>
+                        <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>負責地區</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {Object.keys(personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData).length === 0 ? (
+                  <div className="h-[320px] flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm bg-slate-50 dark:bg-slate-700/30 rounded-2xl mt-4">目前無相關資料。</div>
+                ) : (
+                  <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
+                    {Object.entries(personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData).sort((a,b)=>b[1]-a[1]).map(([key, count]) => {
+                        const currentData = personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData;
+                        const maxVal = Math.max(...Object.values(currentData), 1);
+                        const heightPct = (count / maxVal) * 100;
+                        const barColorClass = personnelViewMode === 'assignee' ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-emerald-500 dark:bg-emerald-400';
+                        const textColorClass = personnelViewMode === 'assignee' ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'group-hover:text-emerald-600 dark:group-hover:text-emerald-400';
+                        return (
+                          <div key={key} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500">
+                            <div className="absolute -top-8 text-slate-900 dark:text-slate-800 bg-slate-100 dark:bg-slate-200 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">{count} 件</div>
+                            <div className="w-10 bg-slate-100 dark:bg-slate-700 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner"><div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div></div>
+                            <div className={`text-[12px] font-bold text-slate-500 dark:text-slate-400 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>{key}</div>
+                          </div>
+                        );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* 圖表區 3: 線型圖 (月趨勢) */}
@@ -1717,13 +1725,17 @@ export default function App() {
                                 <td className="p-4 flex items-center space-x-3 dark:text-slate-200"><UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" /><span>{u.username}</span></td>
                                 <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
                                 <td className="p-4">
-                                  <input 
-                                    type="text" 
-                                    defaultValue={u.region || ''} 
-                                    onBlur={(e) => handleUpdateUserRegion(u.id, e.target.value)} 
-                                    placeholder="輸入負責地區..." 
-                                    className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs"
-                                  />
+                                  {u.role === ROLES.USER ? (
+                                    <input 
+                                      type="text" 
+                                      defaultValue={u.region || ''} 
+                                      onBlur={(e) => handleUpdateUserRegion(u.id, e.target.value)} 
+                                      placeholder="輸入負責地區..." 
+                                      className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                    />
+                                  ) : (
+                                    <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
+                                  )}
                                 </td>
                                 <td className="p-4 text-center">{u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}</td>
                               </tr>
