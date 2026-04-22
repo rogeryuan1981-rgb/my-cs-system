@@ -6,8 +6,8 @@ import {
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
   Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon
 } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 
 // --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v2.8.6 (Vercel編譯修復與全功能版)";
+const APP_VERSION = "v3.0.0 (原生Auth資安升級版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -34,6 +34,15 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Secondary App for Admin to create users without logging themselves out
+let secondaryApp;
+try {
+  secondaryApp = getApp('SecondaryApp');
+} catch (e) {
+  secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
+}
+const secondaryAuth = getAuth(secondaryApp);
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
@@ -54,6 +63,8 @@ const getToday = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+
+const getEmailFromUsername = (username) => `${encodeURIComponent(username).replace(/%/g, '_')}@cs.local`.toLowerCase();
 
 const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => ({
   receiveTime: getFormatDate(), callEndTime: '',
@@ -86,7 +97,6 @@ const UserAvatar = ({ username, photoURL, className = "w-8 h-8 text-xs" }) => {
   );
 };
 
-// 純原生 SVG 複合折線圖組件 (防重疊與動態放大)
 const LineChart = ({ datasets, labels, isDarkMode }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
@@ -181,7 +191,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
         </div>
         <div className="p-6 space-y-3 overflow-y-auto flex-1">
           {(Array.isArray(messages)?messages:[]).map((m, idx) => (
-            <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => handleCopy(m, idx)}>
+            <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-blue-300 dark:border-blue-500 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => handleCopy(m, idx)}>
               <p className="text-sm text-slate-600 dark:text-slate-200 line-clamp-4 pr-6">{m}</p>
               <button className="absolute top-2 right-2 p-1.5 bg-white dark:bg-slate-600 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400">
                 {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
@@ -363,7 +373,6 @@ export default function App() {
   const [institutions, setInstitutions] = useState([]);
   const [instMap, setInstMap] = useState({});
   const [newInst, setNewInst] = useState({ code: '', name: '', level: '診所' });
-  const [instSubmitMsg, setInstSubmitMsg] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
@@ -375,25 +384,46 @@ export default function App() {
     const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
   }, [dbUsers]);
 
+  // Auth State Sync
+  useEffect(() => {
+    if (firebaseUser && !firebaseUser.isAnonymous && dbUsers.length > 0) {
+      const matchedUser = dbUsers.find(u => getEmailFromUsername(u.username) === firebaseUser.email);
+      if (matchedUser) {
+        setCurrentUser(matchedUser);
+        if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
+      } else {
+        setCurrentUser(null);
+      }
+    } else if (!firebaseUser || firebaseUser.isAnonymous) {
+      setCurrentUser(null);
+    }
+  }, [firebaseUser, dbUsers]);
+
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
+  // --- Initialization ---
   useEffect(() => {
     if (!document.getElementById('xlsx-script')) {
       const script = document.createElement('script'); script.id = 'xlsx-script';
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
       document.body.appendChild(script);
     }
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
-        else await signInAnonymously(auth);
-      } catch (error) { console.error("Firebase Auth Error:", error); }
-    };
-    initAuth();
-    const unsubscribeAuth = onAuthStateChanged(auth, setFirebaseUser);
+    const unsubscribeAuth = onAuthStateChanged(auth, (fUser) => {
+      setFirebaseUser(fUser);
+      if (!fUser) {
+        const initAuth = async () => {
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+            else await signInAnonymously(auth);
+          } catch (error) { console.error("Firebase Auth Error:", error); }
+        };
+        initAuth();
+      }
+    });
     return () => unsubscribeAuth();
   }, []);
 
+  // --- Data Fetching ---
   useEffect(() => {
     if (!firebaseUser) return;
     const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : []; 
@@ -429,44 +459,98 @@ export default function App() {
     return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
   }, [firebaseUser]);
 
-  const handleLogin = (e) => {
+  // --- Auth Handlers ---
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const user = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
-    if (user) {
-      if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', user.username);
-      setCurrentUser(user);
-      setFormData(getInitialForm(user.username, channels, progresses));
-      setActiveTab(user.role === ROLES.VIEWER ? 'list' : 'form');
-      setAuthError('');
-    } else setAuthError('帳號或密碼錯誤');
+    const email = getEmailFromUsername(loginForm.username);
+    try {
+      await signInWithEmailAndPassword(auth, email, loginForm.password);
+      const matchedUser = dbUsers.find(u => u.username === loginForm.username);
+      if (matchedUser) {
+        if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
+        setFormData(getInitialForm(matchedUser.username, channels, progresses));
+        setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
+        setAuthError('');
+      }
+    } catch (err) {
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
+        const legacyUser = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
+        if (legacyUser) {
+          try {
+            await createUserWithEmailAndPassword(auth, email, loginForm.password);
+            if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', legacyUser.username);
+            setFormData(getInitialForm(legacyUser.username, channels, progresses));
+            setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form');
+            setAuthError('');
+          } catch (createErr) {
+            if (createErr.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+            else setAuthError('帳號升級失敗：' + createErr.message);
+          }
+        } else {
+          setAuthError('帳號或密碼錯誤');
+        }
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+      } else {
+        setAuthError('登入失敗：' + err.message);
+      }
+    }
   };
 
   const handleCreateFirstAdmin = async (e) => {
     e.preventDefault();
     if (dbUsers.length > 0) return;
+    if (loginForm.password.length < 6) return setAuthError('密碼長度至少需要 6 個字元！');
     try {
+      const email = getEmailFromUsername(loginForm.username);
+      await createUserWithEmailAndPassword(auth, email, loginForm.password);
+      
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, password: loginForm.password, role: ROLES.ADMIN, createdAt: new Date().toISOString() });
-      setAuthError('管理員建立成功，請點擊登入'); setLoginForm({ username: '', password: '' });
-    } catch (e) { setAuthError('建立失敗'); }
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, role: ROLES.ADMIN, createdAt: new Date().toISOString() });
+      
+      setAuthError('');
+      setActiveTab('form');
+      setFormData(getInitialForm(loginForm.username, channels, progresses));
+    } catch (e) { 
+      if (e.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+      else setAuthError('建立失敗：' + e.message); 
+    }
   };
 
-  const handleLogout = () => { setCurrentUser(null); setLoginForm(prev => ({ ...prev, password: '' })); setActiveTab('form'); };
+  const handleLogout = async () => { 
+    await auth.signOut();
+    try {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+      else await signInAnonymously(auth);
+    } catch (e) {}
+    setCurrentUser(null); 
+    setLoginForm(prev => ({ ...prev, password: '' })); 
+    setActiveTab('form'); 
+  };
 
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (dbUsers.some(u => u.username === newUser.username)) return alert('帳號名稱已存在');
+    if (newUser.password.length < 6) return alert('密碼長度至少需要 6 個字元！');
     try {
+      const email = getEmailFromUsername(newUser.username);
+      await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
+      await secondaryAuth.signOut();
+
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { ...newUser, createdAt: new Date().toISOString() });
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, createdAt: new Date().toISOString() });
       setNewUser({ username: '', password: '', role: ROLES.USER });
-    } catch(e) {}
+      alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
+    } catch(e) { 
+        if (e.code === 'auth/operation-not-allowed') alert('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+        else alert('新增失敗：' + e.message);
+    }
   };
 
   const handleDeleteUser = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (window.confirm('確定要刪除此使用者嗎？')) {
+    if (window.confirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)')) {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
     }
@@ -474,24 +558,16 @@ export default function App() {
 
   const handleChangeOwnPassword = async (e) => {
     e.preventDefault();
-    if (pwdChangeForm.newPwd !== pwdChangeForm.confirmPwd) return setPwdChangeMsg('❌ 兩次輸入的密碼不一致，請重新輸入！');
+    if (pwdChangeForm.newPwd !== pwdChangeForm.confirmPwd) return setPwdChangeMsg('❌ 兩次密碼不一致！');
     try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', currentUser.id) : doc(db, 'cs_users', currentUser.id), { password: pwdChangeForm.newPwd });
+      await updatePassword(auth.currentUser, pwdChangeForm.newPwd);
       setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。'); setPwdChangeForm({ newPwd: '', confirmPwd: '' }); setTimeout(() => setPwdChangeMsg(''), 5000);
     } catch (e) { setPwdChangeMsg('❌ 密碼更新失敗：' + e.message); }
   };
 
   const handleResetUserPassword = async (id, username) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    const newPwd = window.prompt(`請輸入要為用戶「${username}」設定的新密碼：\n(設定後請將此密碼轉交給該用戶)`);
-    if (newPwd) {
-      try {
-        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { password: newPwd.trim() });
-        alert(`✅ 用戶「${username}」的密碼已成功重置為：${newPwd.trim()}`);
-      } catch (e) { alert('密碼重置失敗：' + e.message); }
-    }
+    alert('【安全性升級】\n系統已全面導入 Firebase 原生 Auth。\n為保障資安，前端無法直接重設他人密碼。\n\n請至 Firebase Console > Authentication 手動重置密碼，也可以直接停用該帳號後重建。');
   };
 
   const handleAvatarUpload = (e) => {
