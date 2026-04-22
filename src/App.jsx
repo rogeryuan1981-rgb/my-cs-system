@@ -4,7 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera
+  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
   window.tailwind.config.darkMode = 'class';
 }
 
-const APP_VERSION = "v3.6.1 (圖示降級修復與重置移除版)";
+const APP_VERSION = "v3.6.5 (白畫面修復與高相容穩定版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -42,7 +42,10 @@ const secondaryAuth = getAuth(secondaryApp);
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
-const getFormatDate = (date = new Date()) => new Date(date - (new Date()).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const getFormatDate = (date = new Date()) => {
+  if (isNaN(date.getTime())) return '';
+  return new Date(date - (new Date()).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
 const getFirstDayOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
 const getLastDayOfMonth = () => { const d = new Date(); const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`; };
 const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -55,14 +58,19 @@ const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => 
 });
 
 const formatRepliesHistory = (replies, fallbackContent) => {
-  if (replies && replies.length > 0) return replies.map(r => `${r.content} (${r.user} ${new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })})`).join('\n');
+  if (Array.isArray(replies) && replies.length > 0) {
+    return replies.map(r => `${r.content} (${r.user} ${new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })})`).join('\n');
+  }
   return fallbackContent || '';
 };
 
-const getLatestReply = (replies, fallbackContent) => replies && replies.length > 0 ? replies[replies.length - 1].content : (fallbackContent || '');
+const getLatestReply = (replies, fallbackContent) => {
+  if (Array.isArray(replies) && replies.length > 0) return replies[replies.length - 1].content;
+  return fallbackContent || '';
+};
 
 const checkSLA = (receiveTime, progress, slaHours) => {
-  if (progress === '結案' || !receiveTime) return false; 
+  if (progress === '結案' || !receiveTime || typeof receiveTime !== 'string') return false; 
   const receiveDate = new Date(receiveTime).getTime();
   return !isNaN(receiveDate) && (Date.now() - receiveDate) > (slaHours * 60 * 60 * 1000);
 };
@@ -75,7 +83,7 @@ const UserAvatar = ({ username, photoURL, className = "w-8 h-8 text-xs" }) => {
 };
 
 const AttachmentViewer = ({ attachments = [] }) => {
-  if (!attachments || attachments.length === 0) return null;
+  if (!Array.isArray(attachments) || attachments.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
       <div className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 flex items-center"><FileText size={12} className="mr-1"/> 附加檔案</div>
@@ -95,7 +103,7 @@ const EditField = ({ label, type="text", val, setVal, options }) => (
     <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</div>
     {type === "select" ? (
       <select value={val||''} onChange={e=>setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-         {(options || []).map((o, i)=><option key={i} value={typeof o === 'object' ? o.value : o}>{typeof o === 'object' ? o.label : (o === '' ? '-- 未指定 --' : o)}</option>)}
+         {(Array.isArray(options) ? options : []).map((o, i)=><option key={i} value={typeof o === 'object' ? o.value : o}>{typeof o === 'object' ? o.label : (o === '' ? '-- 未指定 --' : o)}</option>)}
       </select>
     ) : type === "textarea" ? (
       <textarea value={val||''} onChange={e=>setVal(e.target.value)} rows="3" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"></textarea>
@@ -108,7 +116,9 @@ const EditField = ({ label, type="text", val, setVal, options }) => (
 const LineChart = ({ datasets, labels, isDarkMode }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
-  const allData = datasets.flatMap(ds => ds.data || []);
+  
+  // 防呆：使用 reduce 取代 flatMap 以相容舊版瀏覽器
+  const allData = datasets.reduce((acc, ds) => acc.concat(Array.isArray(ds.data) ? ds.data : []), []);
   if (allData.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
 
   const maxVal = Math.max(...allData, 10);
@@ -139,10 +149,10 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             );
           })}
           {datasets.map((ds) => {
-            const points = ds.data.map((val, i) => `${paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)))},${height - paddingY - (val / maxVal) * (height - paddingY * 2)}`).join(' ');
+            const points = (Array.isArray(ds.data) ? ds.data : []).map((val, i) => `${paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)))},${height - paddingY - (val / maxVal) * (height - paddingY * 2)}`).join(' ');
             return <polyline key={`line-${ds.label}`} points={points} fill="none" stroke={ds.color} strokeWidth={ds.dashed ? "2" : "3"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={ds.dashed ? '6 6' : 'none'} className="transition-all duration-500" />;
           })}
-          {datasets.map((ds, dsIdx) => ds.data.map((val, i) => {
+          {datasets.map((ds, dsIdx) => (Array.isArray(ds.data) ? ds.data : []).map((val, i) => {
             if (hoveredPoint?.dsIdx === dsIdx && hoveredPoint?.i === i) return null;
             const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
             const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
@@ -150,6 +160,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             if (dsIdx === 0) dy = -22; if (dsIdx === 1) dy = -10;
             if (dsIdx === 2) { dy = 14; dx = 10; } if (dsIdx === 3) { dy = 24; dx = -10; }
             if (y + dy > height - paddingY - 5) dy = -10;
+
             return (
               <g key={`point-${ds.label}-${i}`} onMouseEnter={() => setHoveredPoint({ dsIdx, i })} onMouseLeave={() => setHoveredPoint(null)} className="cursor-pointer">
                 <circle cx={x} cy={y} r="4" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="2" className="transition-all duration-200" />
@@ -376,7 +387,7 @@ export default function App() {
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
-  const userMap = useMemo(() => { const map = {}; dbUsers.forEach(u => map[u.username] = u); return map; }, [dbUsers]);
+  const userMap = useMemo(() => { const map = {}; if (Array.isArray(dbUsers)) { dbUsers.forEach(u => { if (u && u.username) map[u.username] = u; }); } return map; }, [dbUsers]);
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
   useEffect(() => {
@@ -886,19 +897,7 @@ export default function App() {
 
   const filteredInsts = useMemo(() => institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm)), [institutions, instSearchTerm]);
 
-  const SortHeader = ({ label, sortKey, align = 'left', isFirst = false, isLast = false }) => {
-    const isActive = sortConfig.key === sortKey;
-    return (
-      <th className={`p-5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'} ${isFirst ? 'rounded-tl-[2rem]' : ''} ${isLast ? 'rounded-tr-[2rem]' : ''}`} onClick={() => setSortConfig({ key: sortKey, direction: sortConfig.key === sortKey && sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
-        <div className={`flex items-center ${align === 'center' ? 'justify-center' : 'justify-start'} group`}>
-          {label}
-          <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'}`}>
-            {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>) : <Menu size={14} />}
-          </span>
-        </div>
-      </th>
-    );
-  };
+  const handleSort = (key) => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
 
   const filteredAndSortedHistory = useMemo(() => {
     let result = tickets.filter(t => {
@@ -915,7 +914,7 @@ export default function App() {
       let matchDate = true;
       if (historyStartDate && historyEndDate) {
         const rTimeStr = t.receiveTime || '';
-        matchDate = rTimeStr.slice(0, 10) >= historyStartDate && rTimeStr.slice(0, 10) <= historyEndDate;
+        matchDate = typeof rTimeStr === 'string' && rTimeStr.slice(0, 10) >= historyStartDate && rTimeStr.slice(0, 10) <= historyEndDate;
       }
       return matchSearch && matchProgress && matchDate && matchAssignee && matchCat && matchStat && matchChan && matchRegion;
     });
@@ -945,6 +944,20 @@ export default function App() {
     return result;
   }, [tickets, allRecordsSearchTerm, sortConfig, categoryMapping]);
 
+  const renderSortHeader = (label, sortKey, align = 'left', isFirst = false, isLast = false) => {
+    const isActive = sortConfig.key === sortKey;
+    return (
+      <th className={`p-5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'} ${isFirst ? 'rounded-tl-[2rem]' : ''} ${isLast ? 'rounded-tr-[2rem]' : ''}`} onClick={() => handleSort(sortKey)}>
+        <div className={`flex items-center ${align === 'center' ? 'justify-center' : 'justify-start'} group`}>
+          {label}
+          <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'}`}>
+            {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>) : <Menu size={14} />}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
   const renderTicketTable = (dataList) => (
     <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible mt-6">
       <div className="max-md:overflow-x-auto min-h-[400px] pb-32">
@@ -957,11 +970,11 @@ export default function App() {
                 </th>
               )}
               <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
-              <SortHeader label="案件號/日期" sortKey="receiveTime" />
-              <SortHeader label="院所" sortKey="instName" />
-              <SortHeader label="描述/回覆摘要" sortKey="extraInfo" />
-              <SortHeader label="建立/負責人" sortKey="receiver" />
-              <SortHeader label="進度" sortKey="progress" align="center" isLast={true} />
+              {renderSortHeader('案件號/日期', 'receiveTime')}
+              {renderSortHeader('院所', 'instName')}
+              {renderSortHeader('描述/回覆摘要', 'extraInfo')}
+              {renderSortHeader('建立/負責人', 'receiver')}
+              {renderSortHeader('進度', 'progress', 'center', false, true)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
@@ -986,13 +999,12 @@ export default function App() {
                     </td>
                     <td className="p-5">
                       <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">{t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" /></div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{(t.receiveTime||'').slice(0, 10)} / {t.channel}</div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{typeof t.receiveTime === 'string' ? t.receiveTime.slice(0, 10) : ''} / {t.channel}</div>
                     </td>
                     <td className="p-5"><div className="text-slate-800 dark:text-slate-200">{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
                     <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                        <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                        <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                       {/* Hover 顯示完整歷史紀錄 (向下顯示) */}
                        {fullHistoryStr && (
                          <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
                            <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
@@ -1070,7 +1082,7 @@ export default function App() {
 
     const trendData = { total: [], phone: [], line: [], phoneToLine: [] };
     monthLabels.forEach(monthStr => {
-      const monthTickets = tickets.filter(t => (t.receiveTime || '').substring(0, 7) === monthStr && (trendCategory === '全類別' || t.category === trendCategory));
+      const monthTickets = tickets.filter(t => typeof t.receiveTime === 'string' && t.receiveTime.substring(0, 7) === monthStr && (trendCategory === '全類別' || t.category === trendCategory));
       trendData.total.push(monthTickets.length);
       trendData.phone.push(monthTickets.filter(t => t.channel === '電話').length);
       trendData.line.push(monthTickets.filter(t => t.channel === 'LINE').length);
@@ -1145,7 +1157,7 @@ export default function App() {
         <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
           <div className="flex items-center space-x-3"><div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div><h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">客服中心</h1></div>
           <div className="flex items-center space-x-1 lg:hidden">
-            <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><Lock size={18} className={isPinned ? "" : "opacity-50"} /></button>
+            <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><Pin size={18} className={isPinned ? "" : "-rotate-45"} /></button>
             {!isPinned && <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={18} /></button>}
           </div>
         </div>
@@ -1298,7 +1310,7 @@ export default function App() {
                            {t.progress}
                          </span>
                          {isBreached && <span className="text-[10px] font-black text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-1 rounded-lg animate-pulse flex items-center"><AlertCircle size={12} className="mr-1"/> 逾期</span>}
-                         {!isBreached && <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{new Date(t.receiveTime).toLocaleDateString()}</span>}
+                         {!isBreached && <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{(t.receiveTime||'').slice(0, 10)}</span>}
                       </div>
                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
@@ -1461,10 +1473,6 @@ export default function App() {
                    <span className="text-slate-300 dark:text-slate-600 text-xs">至</span>
                    <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer w-32 [color-scheme:light] dark:[color-scheme:dark]"/>
                  </div>
-                 <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm font-bold text-sm text-slate-700 dark:text-slate-200 outline-none shrink-0">
-                   <option value="全部">全部進度</option><option value="未結案">未結案 (所有待處理)</option>
-                   {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
-                 </select>
                  <div className="relative flex-1">
                    <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
                    <input type="text" placeholder="快速搜尋關鍵字..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
