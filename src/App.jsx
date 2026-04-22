@@ -4,7 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera
+  Menu, Eye, Moon, Sun, Camera, Pin, Paperclip, FileImage, ExternalLink, MapPin, Filter
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
   window.tailwind.config.darkMode = 'class';
 }
 
-const APP_VERSION = "v3.6.5 (圖示降級與高穩定版)";
+const APP_VERSION = "v3.7.0 (核心淨化與高穩定修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -91,6 +91,7 @@ const AttachmentViewer = ({ attachments = [] }) => {
         <a key={i} href={file.url} target="_blank" rel="noreferrer" className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group">
           {typeof file.type === 'string' && file.type.startsWith('image/') ? <Camera size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
           <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] group-hover:text-blue-600 dark:group-hover:text-blue-400">{file.name}</span>
+          <ExternalLink size={12} className="text-slate-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" />
         </a>
       ))}
     </div>
@@ -555,8 +556,8 @@ export default function App() {
   const handleDeleteUser = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (window.confirm('確定要停用此使用者嗎？')) {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
+      const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_users/${id}`);
+      await deleteDoc(docRef);
     }
   };
 
@@ -825,7 +826,7 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
-      setNewInst({ code: '', name: '', level: '診所' }); setInstSubmitMsg('單筆新增成功！'); setTimeout(() => setInstSubmitMsg(''), 3000);
+      setNewInst({ code: '', name: '', level: '診所' }); alert('單筆新增成功！');
     } catch (e) {}
   };
 
@@ -893,9 +894,9 @@ export default function App() {
       
       const matchProgress = advFilters.progress === '全部' || (advFilters.progress === '未結案' ? t.progress !== '結案' : t.progress === advFilters.progress);
       const matchAssignee = advFilters.assignee === '' || t.assignee === advFilters.assignee || t.receiver === advFilters.assignee;
-      const matchCat = advFilters.categories.length === 0 || advFilters.categories.includes(t.category);
-      const matchStat = advFilters.statuses.length === 0 || advFilters.statuses.includes(t.status);
-      const matchChan = advFilters.channels.length === 0 || advFilters.channels.includes(t.channel);
+      const matchCat = (!Array.isArray(advFilters.categories) || advFilters.categories.length === 0) || advFilters.categories.includes(t.category);
+      const matchStat = (!Array.isArray(advFilters.statuses) || advFilters.statuses.length === 0) || advFilters.statuses.includes(t.status);
+      const matchChan = (!Array.isArray(advFilters.channels) || advFilters.channels.length === 0) || advFilters.channels.includes(t.channel);
       const matchRegion = advFilters.region === '' || userMap[t.receiver]?.region === advFilters.region || userMap[t.assignee]?.region === advFilters.region;
 
       let matchDate = true;
@@ -946,10 +947,10 @@ export default function App() {
   };
 
   const renderTicketTable = (dataList) => (
-    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible mt-6">
-      <div className="max-md:overflow-x-auto min-h-[400px] pb-32">
+    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible mt-6 relative z-10">
+      <div className="max-md:overflow-x-auto min-h-[400px] pb-32 rounded-[2rem]">
         <table className="w-full text-left border-collapse relative">
-          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-30">
+          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-20">
             <tr>
               {currentUser.role === ROLES.ADMIN && (
                 <th className="p-5 text-center w-12 rounded-tl-[2rem]">
@@ -974,13 +975,13 @@ export default function App() {
                 const isBreached = checkSLA(t.receiveTime, t.progress, slaTimeout);
                 
                 return (
-                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-40 ${isBreached ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
+                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-30 ${isBreached ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
                     {currentUser.role === ROLES.ADMIN && (
                       <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
                       </td>
                     )}
-                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">
+                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs relative">
                       {isBreached && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 animate-pulse"></div>}
                       {index + 1}
                     </td>
@@ -992,9 +993,8 @@ export default function App() {
                     <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                        <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                        <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                       {/* Hover 顯示完整歷史紀錄 (向下顯示) */}
                        {fullHistoryStr && (
-                         <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
+                         <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
                            <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
                            <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
                            <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
@@ -1302,7 +1302,7 @@ export default function App() {
                       </div>
                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
-                      {t.attachments && t.attachments.length > 0 && <div className="text-[10px] text-indigo-400 font-bold mb-3 flex items-center"><FileText size={12} className="mr-1"/> 附 {t.attachments.length} 個檔案</div>}
+                      {Array.isArray(t.attachments) && t.attachments.length > 0 && <div className="text-[10px] text-indigo-400 font-bold mb-3 flex items-center"><FileText size={12} className="mr-1"/> 附 {t.attachments.length} 個檔案</div>}
                       <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
                         <div className="flex items-center text-slate-400 dark:text-slate-500"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" /><span>建檔</span></div>
                         {t.assignee && <div className="flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">負責</span></div>}
@@ -1334,7 +1334,7 @@ export default function App() {
                          {/* 左側：對外回覆紀錄 */}
                          <div>
                            <div className="text-xs font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-3 flex items-center"><MessageCircle size={14} className="mr-1"/> 答覆軌跡紀錄</div>
-                           {maintainModal.replies && maintainModal.replies.length > 0 ? (
+                           {Array.isArray(maintainModal.replies) && maintainModal.replies.length > 0 ? (
                              <div className="space-y-4">
                                {maintainModal.replies.map((r, i) => (
                                  <div key={i} className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
@@ -1358,7 +1358,7 @@ export default function App() {
                          <div className="bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 p-6 rounded-3xl h-full flex flex-col">
                            <div className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-3 flex items-center"><FileText size={14} className="mr-1"/> 內部專屬交接備註</div>
                            <div className="flex-1 overflow-y-auto space-y-3 mb-4">
-                             {maintainModal.internalNotes && maintainModal.internalNotes.length > 0 ? (
+                             {Array.isArray(maintainModal.internalNotes) && maintainModal.internalNotes.length > 0 ? (
                                maintainModal.internalNotes.map((n, i) => (
                                  <div key={i} className="bg-amber-100/50 dark:bg-amber-900/30 p-3 rounded-xl border border-amber-200 dark:border-amber-700/50">
                                    <div className="text-[10px] font-bold text-amber-800 dark:text-amber-400 mb-1 flex justify-between"><span>{n.user}</span> <span className="text-amber-600/70 dark:text-amber-500/70 font-normal">{new Date(n.time).toLocaleString()}</span></div>
@@ -1378,7 +1378,7 @@ export default function App() {
                            <div>
                              <label className="text-xs font-black text-slate-800 dark:text-slate-200 mb-2 block">更新進度</label>
                              <select value={maintainForm.progress} onChange={e=>setMaintainForm({...maintainForm, progress:e.target.value})} className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl focus:ring-2 font-bold outline-none">
-                               {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
+                               {(Array.isArray(progresses)?progresses:[]).map((p,i)=><option key={i} value={p}>{p}</option>)}
                              </select>
                            </div>
                            {maintainForm.progress !== '結案' ? (
@@ -1466,7 +1466,7 @@ export default function App() {
                    <input type="text" placeholder="快速搜尋關鍵字..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                  </div>
                  <button onClick={() => setIsAdvFilterOpen(!isAdvFilterOpen)} className={`px-4 py-2.5 rounded-2xl font-bold text-sm shadow-sm transition-colors flex items-center shrink-0 border ${isAdvFilterOpen ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700'}`}>
-                   <List size={16} className="mr-2"/> 進階篩選器
+                   <Filter size={16} className="mr-2"/> 進階篩選器
                  </button>
                </div>
 
@@ -1490,7 +1490,7 @@ export default function App() {
                      <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">負責地區</label>
                      <select value={advFilters.region} onChange={e=>setAdvFilters({...advFilters, region:e.target.value})} className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm font-bold text-slate-700 dark:text-slate-200">
                        <option value="">不限</option>
-                       {(regions || []).map((r, i)=><option key={`reg-${i}`} value={r}>{r}</option>)}
+                       {(Array.isArray(regions) ? regions : []).map((r, i)=><option key={`reg-${i}`} value={r}>{r}</option>)}
                      </select>
                    </div>
                    <div className="flex items-end">
