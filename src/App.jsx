@@ -4,11 +4,13 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon
+  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon,
+  Paperclip, FileImage, ExternalLink, MapPin, BarChart3, Filter
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
 if (typeof window !== 'undefined') {
@@ -18,7 +20,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.0.0 (原生Auth資安升級版)";
+const APP_VERSION = "v3.5.0 (SLA、附件與績效完整版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -33,15 +35,11 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app); // 初始化 Storage
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// Secondary App for Admin to create users without logging themselves out
 let secondaryApp;
-try {
-  secondaryApp = getApp('SecondaryApp');
-} catch (e) {
-  secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
-}
+try { secondaryApp = getApp('SecondaryApp'); } catch (e) { secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp'); }
 const secondaryAuth = getAuth(secondaryApp);
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
@@ -51,19 +49,15 @@ const getFormatDate = (date = new Date()) => {
   return (new Date(date - tzOffset)).toISOString().slice(0, 16);
 };
 const getFirstDayOfMonth = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 };
 const getLastDayOfMonth = () => {
-  const d = new Date();
-  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const d = new Date(); const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 };
 const getToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-
 const getEmailFromUsername = (username) => `${encodeURIComponent(username).replace(/%/g, '_')}@cs.local`.toLowerCase();
 
 const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => ({
@@ -72,19 +66,26 @@ const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => 
   receiver: username, instCode: '', instName: '', instLevel: '', category: '', status: '',
   extraInfo: '', questioner: '', replyContent: '', closeTime: '',
   progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理',
-  assignee: '', replies: [], editLogs: []
+  assignee: '', replies: [], editLogs: [], attachments: [], internalNotes: []
 });
 
 const formatRepliesHistory = (replies, fallbackContent) => {
-  if (replies && replies.length > 0) {
-    return replies.map(r => `${r.content} (${r.user} ${new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })})`).join('\n');
-  }
+  if (replies && replies.length > 0) return replies.map(r => `${r.content} (${r.user} ${new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })})`).join('\n');
   return fallbackContent || '';
 };
 
 const getLatestReply = (replies, fallbackContent) => {
   if (replies && replies.length > 0) return replies[replies.length - 1].content;
   return fallbackContent || '';
+};
+
+// 計算 SLA 狀態
+const checkSLA = (receiveTime, progress, slaHours) => {
+  if (progress === '結案') return false; // 已結案不計超時
+  const receiveDate = new Date(receiveTime).getTime();
+  const now = Date.now();
+  const limitMs = slaHours * 60 * 60 * 1000;
+  return (now - receiveDate) > limitMs;
 };
 
 // --- Sub-Components ---
@@ -97,6 +98,39 @@ const UserAvatar = ({ username, photoURL, className = "w-8 h-8 text-xs" }) => {
   );
 };
 
+// 附件展示微型組件
+const AttachmentViewer = ({ attachments = [] }) => {
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+      <div className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 flex items-center"><Paperclip size={12} className="mr-1"/> 附加檔案</div>
+      {attachments.map((file, i) => (
+        <a key={i} href={file.url} target="_blank" rel="noreferrer" className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group">
+          {file.type?.startsWith('image/') ? <FileImage size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
+          <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] group-hover:text-blue-600 dark:group-hover:text-blue-400">{file.name}</span>
+          <ExternalLink size={12} className="text-slate-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </a>
+      ))}
+    </div>
+  );
+};
+
+const EditField = ({ label, type="text", val, setVal, options }) => (
+  <div>
+    <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</div>
+    {type === "select" ? (
+      <select value={val||''} onChange={e=>setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+         {options.map(o=><option key={typeof o === 'object' ? o.value : o} value={typeof o === 'object' ? o.value : o}>{typeof o === 'object' ? o.label : (o === '' ? '-- 未指定 --' : o)}</option>)}
+      </select>
+    ) : type === "textarea" ? (
+      <textarea value={val||''} onChange={e=>setVal(e.target.value)} rows="3" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+    ) : (
+      <input type={type} value={val||''} onChange={e=>setVal(e.target.value)} className={`w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 ${type==='datetime-local'?'[color-scheme:light] dark:[color-scheme:dark]':''}`} />
+    )}
+  </div>
+);
+
+// 純原生 SVG 複合折線圖組件 (防重疊與動態放大)
 const LineChart = ({ datasets, labels, isDarkMode }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
@@ -175,124 +209,6 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   );
 };
 
-const CannedMessagesModal = ({ messages, onClose }) => {
-  const [copyId, setCopyId] = useState(null);
-  const handleCopy = (text, idx) => {
-    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); setCopyId(idx); setTimeout(() => { setCopyId(null); onClose(); }, 500); } catch (err) { console.error('Copy failed', err); }
-    document.body.removeChild(ta);
-  };
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
-          <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-blue-600 dark:text-blue-400"/> 選擇罐頭回覆</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><X size={20}/></button>
-        </div>
-        <div className="p-6 space-y-3 overflow-y-auto flex-1">
-          {(Array.isArray(messages)?messages:[]).map((m, idx) => (
-            <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-blue-300 dark:border-blue-500 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => handleCopy(m, idx)}>
-              <p className="text-sm text-slate-600 dark:text-slate-200 line-clamp-4 pr-6">{m}</p>
-              <button className="absolute top-2 right-2 p-1.5 bg-white dark:bg-slate-600 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400">
-                {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-              </button>
-            </div>
-          ))}
-          {(!messages || messages.length === 0) && <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字。</p>}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const DropdownManager = ({ title, dbKey, items }) => {
-  const [newItem, setNewItem] = useState('');
-  const [draggedIdx, setDraggedIdx] = useState(null);
-  const safeItems = Array.isArray(items) ? items : [];
-
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!newItem.trim() || safeItems.includes(newItem.trim())) return;
-    const newArray = [...safeItems, newItem.trim()];
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
-    setNewItem('');
-  };
-
-  const handleRemove = async (itemToRemove) => {
-    if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
-    const newArray = safeItems.filter(i => i !== itemToRemove);
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
-  };
-
-  const handleDrop = async (e, dropIdx) => {
-    e.preventDefault();
-    if (draggedIdx === null || draggedIdx === dropIdx) return;
-    const newItems = [...safeItems];
-    const [moved] = newItems.splice(draggedIdx, 1);
-    newItems.splice(dropIdx, 0, moved);
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
-    setDraggedIdx(null);
-  };
-
-  return (
-    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 flex flex-col h-full">
-      <h4 className="font-bold text-sm mb-4 text-slate-700 dark:text-slate-200">{title}</h4>
-      <form onSubmit={handleAdd} className="flex mb-4 gap-2 shrink-0">
-        <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
-        <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"><Plus size={18}/></button>
-      </form>
-      <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
-        {safeItems.map((item, idx) => (
-          <li key={item} draggable onDragStart={(e) => { setDraggedIdx(idx); e.dataTransfer.effectAllowed = "move"; }} onDragOver={e => e.preventDefault()} onDrop={(e) => handleDrop(e, idx)} onDragEnd={() => setDraggedIdx(null)} className={`flex justify-between items-center bg-white dark:bg-slate-700 p-3 rounded-xl border border-slate-100 dark:border-slate-600 shadow-sm text-sm group ${draggedIdx === idx ? 'opacity-40' : ''}`}>
-            <div className="flex items-center flex-1 overflow-hidden">
-              <div className="cursor-grab text-slate-300 hover:text-indigo-500 mr-2 p-1"><Menu size={16} /></div>
-              <span className="text-slate-700 dark:text-slate-200 font-medium truncate">{item}</span>
-            </div>
-            <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-2"><Trash2 size={16}/></button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-};
-
-const CategoryMappingManager = ({ categories, mapping }) => {
-  const [localMap, setLocalMap] = useState({});
-  useEffect(() => setLocalMap(mapping || {}), [mapping]);
-  const handleSaveMapping = async () => {
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
-    alert("大類別設定已儲存成功！");
-  };
-  return (
-    <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h4 className="font-black text-slate-800 dark:text-slate-100 flex items-center"><Database size={18} className="mr-2 text-indigo-600"/> 大類別歸屬設定</h4>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">設定後，進階統計區將會自動合併顯示大類別數據</p>
-        </div>
-        <button onClick={handleSaveMapping} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm">儲存大類別設定</button>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {(Array.isArray(categories)?categories:[]).map(cat => (
-          <div key={cat} className="flex items-center bg-white dark:bg-slate-700 p-3 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500">
-             <span className="text-sm font-bold text-slate-600 dark:text-slate-300 w-1/2 truncate border-r border-slate-100 dark:border-slate-600 pr-2 mr-2" title={cat}>{cat}</span>
-             <input type="text" value={localMap[cat] || ''} onChange={e => setLocalMap(prev => ({ ...prev, [cat]: e.target.value }))} placeholder="輸入大類別" className="w-1/2 p-1 text-sm font-medium outline-none bg-transparent text-slate-800 dark:text-slate-100" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-
 // -------------------------------------------------
 // --- 主應用程式 App ---
 // -------------------------------------------------
@@ -322,14 +238,21 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
 
+  // Upload State
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState([]);
+
+  // Setup / Settings States
   const [channels, setChannels] = useState([]);
   const [categories, setCategories] = useState([]);
   const [statuses, setStatuses] = useState([]);
   const [progresses, setProgresses] = useState([]);
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
+  const [regions, setRegions] = useState([]); // 新增地區設定
+  const [slaTimeout, setSlaTimeout] = useState(24); // SLA 超時設定 (小時)
+  
   const [showCannedModal, setShowCannedModal] = useState(false);
-
   const [isImportingHistory, setIsImportingHistory] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState([]); 
 
@@ -350,15 +273,16 @@ export default function App() {
     }));
   }, [channels, progresses]);
 
+  // 進階複合篩選器 (歷史查詢)
+  const [isAdvFilterOpen, setIsAdvFilterOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [historyStartDate, setHistoryStartDate] = useState(getFirstDayOfMonth());
   const [historyEndDate, setHistoryEndDate] = useState(getLastDayOfMonth());
-  const [historyProgress, setHistoryProgress] = useState('全部');
+  const [advFilters, setAdvFilters] = useState({ assignee: '', progress: '全部', categories: [], statuses: [], channels: [], region: '' });
   const [sortConfig, setSortConfig] = useState({ key: 'receiveTime', direction: 'desc' });
 
   const [allRecordsSearchTerm, setAllRecordsSearchTerm] = useState('');
-
-  useEffect(() => { setSelectedTickets([]); }, [searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, allRecordsSearchTerm, categoryMapping]);
+  useEffect(() => { setSelectedTickets([]); }, [searchTerm, historyStartDate, historyEndDate, advFilters, sortConfig, allRecordsSearchTerm]);
 
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
@@ -368,7 +292,9 @@ export default function App() {
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
   const [maintainModal, setMaintainModal] = useState(null);
-  const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
+  // 新增 internalNotes state 於 maintainForm 中
+  const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '', internalNotesContent: '' });
+  const [maintainUploadQueue, setMaintainUploadQueue] = useState([]);
 
   const [institutions, setInstitutions] = useState([]);
   const [instMap, setInstMap] = useState({});
@@ -376,7 +302,8 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER });
+  // 使用者管理含地區
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER, region: '' });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
@@ -448,16 +375,64 @@ export default function App() {
         setChannels(data.channels || []); setCategories(data.categories || []);
         setStatuses(data.statuses || []); setProgresses(data.progresses || []);
         setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
+        setRegions(data.regions || ["北區", "中區", "南區", "東區", "高屏", "花東", "未知"]);
+        if (data.slaTimeout) setSlaTimeout(data.slaTimeout);
       } else {
-        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
+        const initialSettings = {
           channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}
-        });
+          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {},
+          regions: ["北區", "中區", "南區", "東區", "高屏", "花東", "未知"], slaTimeout: 24
+        };
+        setDoc(buildDocPath('cs_settings', 'dropdowns'), initialSettings);
       }
     });
 
     return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
   }, [firebaseUser]);
+
+  // --- Settings SLA Update ---
+  const handleUpdateSLA = async (val) => {
+    const newSla = parseInt(val, 10);
+    if (isNaN(newSla) || newSla < 1) return alert("請輸入有效的小時數");
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { slaTimeout: newSla }, { merge: true });
+    alert("SLA 逾期提醒時間已更新！");
+  };
+
+  // --- File Upload Logic ---
+  const handleFileSelect = async (e, queueSetter) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    setIsUploading(true);
+    
+    let uploadedResults = [];
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`檔案 ${file.name} 超過 5MB 限制，已略過。`);
+        continue;
+      }
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : 'public/data';
+        const fileRef = ref(storage, `${baseDbPath}/attachments/${Date.now()}_${file.name}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        uploadedResults.push({ name: file.name, url, type: file.type });
+      } catch (err) {
+        console.error("Upload failed", err);
+        alert(`檔案 ${file.name} 上傳失敗`);
+      }
+    }
+    
+    queueSetter(prev => [...prev, ...uploadedResults]);
+    setIsUploading(false);
+    e.target.value = null;
+  };
+
+  const removeUploadItem = (idx, queueSetter) => {
+    queueSetter(prev => prev.filter((_, i) => i !== idx));
+  };
+
 
   // --- Auth Handlers ---
   const handleLogin = async (e) => {
@@ -533,14 +508,16 @@ export default function App() {
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (dbUsers.some(u => u.username === newUser.username)) return alert('帳號名稱已存在');
     if (newUser.password.length < 6) return alert('密碼長度至少需要 6 個字元！');
+    if (!newUser.region) return alert('請為用戶指派負責地區！');
+
     try {
       const email = getEmailFromUsername(newUser.username);
       await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
       await secondaryAuth.signOut();
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, createdAt: new Date().toISOString() });
-      setNewUser({ username: '', password: '', role: ROLES.USER });
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, region: newUser.region, createdAt: new Date().toISOString() });
+      setNewUser({ username: '', password: '', role: ROLES.USER, region: '' });
       alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
     } catch(e) { 
         if (e.code === 'auth/operation-not-allowed') alert('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
@@ -565,7 +542,7 @@ export default function App() {
     } catch (e) { setPwdChangeMsg('❌ 密碼更新失敗：' + e.message); }
   };
 
-  const handleResetUserPassword = async (id, username) => {
+  const handleResetUserPassword = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     alert('【安全性升級】\n系統已全面導入 Firebase 原生 Auth。\n為保障資安，前端無法直接重設他人密碼。\n\n請至 Firebase Console > Authentication 手動重置密碼，也可以直接停用該帳號後重建。');
   };
@@ -641,12 +618,21 @@ export default function App() {
       const newTicketId = todayStr + String(maxSeq + 1).padStart(5, '0');
 
       const initialReplies = formData.replyContent ? [{ time: getFormatDate(), user: currentUser.username, content: formData.replyContent }] : [];
-      const submissionData = { ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], createdAt: new Date().toISOString() };
+      const submissionData = { 
+        ...formData, 
+        ticketId: newTicketId, 
+        replies: initialReplies, 
+        editLogs: [], 
+        attachments: uploadQueue, // 附加檔案
+        internalNotes: [], 
+        createdAt: new Date().toISOString() 
+      };
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
+      setUploadQueue([]); // 清空上傳列隊
       setFormData(prev => ({
         ...getInitialForm(currentUser.username, channels, progresses),
         channel: (Array.isArray(channels) && channels.includes(prev.channel)) ? prev.channel : (channels[0] || ''),
@@ -672,7 +658,8 @@ export default function App() {
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
-    setMaintainForm({ progress: ticket.progress, assignee: ticket.assignee || '', newReply: '', extraInfo: ticket.extraInfo || '' });
+    setMaintainForm({ progress: ticket.progress, assignee: ticket.assignee || '', newReply: '', extraInfo: ticket.extraInfo || '', internalNotesContent: '' });
+    setMaintainUploadQueue([]);
   };
 
   const handleRequestDelete = async () => {
@@ -703,6 +690,17 @@ export default function App() {
         const newReplyObj = { time: getFormatDate(), user: currentUser.username, content: maintainForm.newReply.trim() };
         updates.replies = [...(maintainModal.replies || []), newReplyObj];
         updates.replyContent = maintainForm.newReply.trim();
+      }
+
+      // 新增內部備註
+      if (maintainForm.internalNotesContent.trim()) {
+        const newNoteObj = { time: getFormatDate(), user: currentUser.username, content: maintainForm.internalNotesContent.trim() };
+        updates.internalNotes = [...(maintainModal.internalNotes || []), newNoteObj];
+      }
+
+      // 附加檔案更新
+      if (maintainUploadQueue.length > 0) {
+        updates.attachments = [...(maintainModal.attachments || []), ...maintainUploadQueue];
       }
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
@@ -897,16 +895,22 @@ export default function App() {
   const filteredInsts = useMemo(() => institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm)), [institutions, instSearchTerm]);
 
   const handleSort = (key) => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
-  const handleCategoryClick = (cat) => { setHistoryStartDate(dashStartDate); setHistoryEndDate(dashEndDate); setSearchTerm(cat); setActiveTab('list'); };
 
   const filteredAndSortedHistory = useMemo(() => {
     let result = tickets.filter(t => {
       const majorCat = categoryMapping[t.category] && categoryMapping[t.category].trim() !== '' ? categoryMapping[t.category].trim() : '未歸屬大類別';
       const matchSearch = searchTerm === '' || (t.ticketId||'').includes(searchTerm) || (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.category||'').includes(searchTerm) || majorCat.includes(searchTerm) || (t.receiver||'').includes(searchTerm);
-      const matchProgress = historyProgress === '全部' || (historyProgress === '未結案' ? t.progress !== '結案' : t.progress === historyProgress);
+      
+      const matchProgress = advFilters.progress === '全部' || (advFilters.progress === '未結案' ? t.progress !== '結案' : t.progress === advFilters.progress);
+      const matchAssignee = advFilters.assignee === '' || t.assignee === advFilters.assignee || t.receiver === advFilters.assignee;
+      const matchCat = advFilters.categories.length === 0 || advFilters.categories.includes(t.category);
+      const matchStat = advFilters.statuses.length === 0 || advFilters.statuses.includes(t.status);
+      const matchChan = advFilters.channels.length === 0 || advFilters.channels.includes(t.channel);
+      const matchRegion = advFilters.region === '' || userMap[t.receiver]?.region === advFilters.region || userMap[t.assignee]?.region === advFilters.region;
+
       let matchDate = true;
       if (historyStartDate && historyEndDate) matchDate = t.receiveTime.slice(0, 10) >= historyStartDate && t.receiveTime.slice(0, 10) <= historyEndDate;
-      return matchSearch && matchProgress && matchDate;
+      return matchSearch && matchProgress && matchDate && matchAssignee && matchCat && matchStat && matchChan && matchRegion;
     });
     result.sort((a, b) => {
       let valA = sortConfig.key === 'receiveTime' ? new Date(a[sortConfig.key] || '').getTime() : (a[sortConfig.key] || '');
@@ -916,7 +920,7 @@ export default function App() {
       return 0;
     });
     return result;
-  }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
+  }, [tickets, searchTerm, historyStartDate, historyEndDate, advFilters, sortConfig, categoryMapping, userMap]);
 
   const allRecordsFiltered = useMemo(() => {
     let result = tickets.filter(t => {
@@ -949,10 +953,10 @@ export default function App() {
   };
 
   const renderTicketTable = (dataList) => (
-    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible">
+    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible mt-6">
       <div className="max-md:overflow-x-auto min-h-[400px] pb-32">
         <table className="w-full text-left border-collapse relative">
-          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
+          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-30">
             <tr>
               {currentUser.role === ROLES.ADMIN && (
                 <th className="p-5 text-center w-12 rounded-tl-[2rem]">
@@ -974,14 +978,19 @@ export default function App() {
               dataList.map((t, index) => {
                 const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                 const latestReplyStr = getLatestReply(t.replies, t.replyContent);
+                const isBreached = checkSLA(t.receiveTime, t.progress, slaTimeout);
+                
                 return (
-                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50">
+                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-40 ${isBreached ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
                     {currentUser.role === ROLES.ADMIN && (
                       <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
                       </td>
                     )}
-                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
+                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">
+                      {isBreached && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 animate-pulse"></div>}
+                      {index + 1}
+                    </td>
                     <td className="p-5">
                       <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">{t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" /></div>
                       <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
@@ -990,6 +999,7 @@ export default function App() {
                     <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                        <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                        <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                       {/* Hover 顯示完整歷史紀錄 (向下顯示) */}
                        {fullHistoryStr && (
                          <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
                            <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
@@ -1002,7 +1012,12 @@ export default function App() {
                       <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
                       {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
                     </td>
-                    <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
+                    <td className="p-5 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-1">
+                        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400':'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400'}`}>{t.progress}</span>
+                        {isBreached && <span className="text-[9px] text-red-500 font-black animate-pulse flex items-center"><AlertCircle size={10} className="mr-0.5"/>超時</span>}
+                      </div>
+                    </td>
                   </tr>
                 );
               })
@@ -1027,9 +1042,22 @@ export default function App() {
     const safeCategories = Array.isArray(categories) ? categories : [];
     safeCategories.forEach(c => categoryData[c] = 0);
     
+    // Performance
+    const performanceByUser = {};
+    const performanceByRegion = {};
+    
     rangeTickets.forEach(t => {
       if (safeCategories.includes(t.category)) categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       else categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
+
+      if (t.progress === '結案') {
+        const handler = t.assignee || t.receiver;
+        if (handler) {
+           performanceByUser[handler] = (performanceByUser[handler] || 0) + 1;
+           const region = userMap[handler]?.region || '未分區';
+           performanceByRegion[region] = (performanceByRegion[region] || 0) + 1;
+        }
+      }
     });
 
     Object.keys(categoryData).forEach(cat => {
@@ -1054,8 +1082,8 @@ export default function App() {
       trendData.phoneToLine.push(monthTickets.filter(t => t.channel === '電話轉LINE').length);
     });
 
-    return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels };
-  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping]);
+    return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, performanceByUser, performanceByRegion };
+  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping, userMap]);
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
 
@@ -1126,7 +1154,7 @@ export default function App() {
             {!isPinned && <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={18} /></button>}
           </div>
         </div>
-        <div className="px-6 py-4 flex items-center space-x-3 shrink-0"><UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm" /><div><div className="font-bold text-sm dark:text-slate-200">{activeUser.username}</div><div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div></div></div>
+        <div className="px-6 py-4 flex items-center space-x-3 shrink-0"><UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm" /><div><div className="font-bold text-sm dark:text-slate-200">{activeUser.username}</div><div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5 flex items-center">{activeUser.role} {activeUser.region && <span className="ml-1 text-[8px] opacity-80 border-l border-slate-300 pl-1">({activeUser.region})</span>}</div></div></div>
         <div className="px-6 pb-2 shrink-0">
           <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors">
             <span className="flex items-center">{isDarkMode ? <Moon size={16} className="mr-2 text-indigo-400" /> : <Sun size={16} className="mr-2 text-amber-500" />}{isDarkMode ? '深色模式' : '淺色模式'}</span>
@@ -1204,8 +1232,27 @@ export default function App() {
                   </div>
                   <div className="space-y-6">
                     <div>
-                      <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">詳細問題描述 <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <div className="flex justify-between items-end mb-2">
+                        <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">詳細問題描述 <span className="text-red-500 dark:text-red-400">*</span></label>
+                        <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer border border-indigo-100 dark:border-indigo-800">
+                           {isUploading ? <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> : <Paperclip size={14} className="mr-1.5"/>}
+                           {isUploading ? '上傳中...' : '附加截圖或檔案'}
+                           <input type="file" multiple onChange={(e) => handleFileSelect(e, setUploadQueue)} disabled={isUploading} className="hidden" />
+                        </label>
+                      </div>
                       <textarea name="extraInfo" required minLength="2" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
+                      {/* 上傳列隊展示 */}
+                      {uploadQueue.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                          {uploadQueue.map((file, i) => (
+                            <div key={i} className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg group">
+                              {file.type?.startsWith('image/') ? <FileImage size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
+                              <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] mr-2">{file.name}</span>
+                              <button type="button" onClick={() => removeUploadItem(i, setUploadQueue)} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <div className="flex justify-between items-end mb-2">
@@ -1247,27 +1294,33 @@ export default function App() {
                </div>
                
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-                  {maintainTicketsList.map(t => (
-                    <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-500 transition-all group flex flex-col h-full relative">
+                  {maintainTicketsList.map(t => {
+                    const isBreached = checkSLA(t.receiveTime, t.progress, slaTimeout);
+                    return (
+                    <div key={t.id} onClick={() => openMaintainModal(t)} className={`bg-white dark:bg-slate-800 p-6 rounded-[2rem] border shadow-sm cursor-pointer hover:shadow-lg transition-all group flex flex-col h-full relative ${isBreached ? 'border-red-300 dark:border-red-800 shadow-red-100 dark:shadow-none hover:border-red-500' : 'border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500'}`}>
                       <div className="absolute top-4 right-6 text-[10px] font-mono text-slate-300 dark:text-slate-500">#{t.ticketId || t.id.slice(0,8)}</div>
                       <div className="flex justify-between items-start mb-4 mt-2">
-                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span>
-                         <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{new Date(t.receiveTime).toLocaleDateString()}</span>
+                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase flex items-center ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400':'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400'}`}>
+                           {t.progress}
+                         </span>
+                         {isBreached && <span className="text-[10px] font-black text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-1 rounded-lg animate-pulse flex items-center"><AlertCircle size={12} className="mr-1"/> 逾期</span>}
+                         {!isBreached && <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{new Date(t.receiveTime).toLocaleDateString()}</span>}
                       </div>
                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
+                      {t.attachments && t.attachments.length > 0 && <div className="text-[10px] text-indigo-400 font-bold mb-3 flex items-center"><Paperclip size={12} className="mr-1"/> 附 {t.attachments.length} 個檔案</div>}
                       <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
                         <div className="flex items-center text-slate-400 dark:text-slate-500"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" /><span>建檔</span></div>
                         {t.assignee && <div className="flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">負責</span></div>}
                       </div>
                     </div>
-                  ))}
+                  )})}
                   {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 dark:text-slate-500 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
                </div>
 
                {maintainModal && (
                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
-                   <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                   <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                      <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
                        <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><Edit size={20} className="mr-2 text-blue-600 dark:text-blue-400"/> 案件維護 - {maintainModal.instName}</h3>
                        <button onClick={() => setMaintainModal(null)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
@@ -1280,34 +1333,53 @@ export default function App() {
                          </div>
                          <textarea value={maintainForm.extraInfo} onChange={e => setMaintainForm({...maintainForm, extraInfo: e.target.value})} rows="3" className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="修改問題描述..."></textarea>
                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">提示：修改此處內容將會自動產生修改日誌，供管理員查核。</p>
+                         <AttachmentViewer attachments={maintainModal.attachments} />
                        </div>
                        
-                       <div>
-                         <div className="text-xs font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-3">答覆軌跡紀錄</div>
-                         {maintainModal.replies && maintainModal.replies.length > 0 ? (
-                           <div className="space-y-4">
-                             {maintainModal.replies.map((r, i) => (
-                               <div key={i} className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
-                                 <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-8 h-8 text-xs shrink-0" />
-                                 <div>
-                                   <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                   <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                         {/* 左側：對外回覆紀錄 */}
+                         <div>
+                           <div className="text-xs font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-3 flex items-center"><MessageCircle size={14} className="mr-1"/> 答覆軌跡紀錄</div>
+                           {maintainModal.replies && maintainModal.replies.length > 0 ? (
+                             <div className="space-y-4">
+                               {maintainModal.replies.map((r, i) => (
+                                 <div key={i} className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-4 rounded-2xl shadow-sm flex items-start space-x-3">
+                                   <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-8 h-8 text-xs shrink-0" />
+                                   <div>
+                                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                                     <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                   </div>
                                  </div>
-                               </div>
-                             ))}
-                           </div>
-                         ) : maintainModal.replyContent ? (
-                           <div className="relative flex items-start justify-end w-full pl-8 mb-6">
-                             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                               <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                               ))}
+                             </div>
+                           ) : maintainModal.replyContent ? (
+                             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl shadow-sm w-full relative">
                                <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄</div>
                                <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{maintainModal.replyContent}</div>
                              </div>
+                           ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic">尚無任何答覆紀錄</div>}
+                         </div>
+
+                         {/* 右側：內部專屬交接備註 (黃色區塊) */}
+                         <div className="bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 p-6 rounded-3xl h-full flex flex-col">
+                           <div className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-3 flex items-center"><FileText size={14} className="mr-1"/> 內部專屬交接備註</div>
+                           <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+                             {maintainModal.internalNotes && maintainModal.internalNotes.length > 0 ? (
+                               maintainModal.internalNotes.map((n, i) => (
+                                 <div key={i} className="bg-amber-100/50 dark:bg-amber-900/30 p-3 rounded-xl border border-amber-200 dark:border-amber-700/50">
+                                   <div className="text-[10px] font-bold text-amber-800 dark:text-amber-400 mb-1 flex justify-between"><span>{n.user}</span> <span className="text-amber-600/70 dark:text-amber-500/70 font-normal">{new Date(n.time).toLocaleString()}</span></div>
+                                   <div className="text-xs text-amber-900 dark:text-amber-200 whitespace-pre-wrap">{n.content}</div>
+                                 </div>
+                               ))
+                             ) : <div className="text-xs text-amber-600/50 dark:text-amber-500/50 text-center py-4">尚無內部交接紀錄</div>}
                            </div>
-                         ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic">尚無任何答覆紀錄</div>}
+                           <div className="shrink-0 mt-auto">
+                             <textarea value={maintainForm.internalNotesContent} onChange={e=>setMaintainForm({...maintainForm, internalNotesContent:e.target.value})} rows="2" className="w-full p-3 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 text-sm text-slate-800 dark:text-slate-200 placeholder-amber-400 dark:placeholder-amber-700" placeholder="撰寫內部備註 (客戶不可見)..."></textarea>
+                           </div>
+                         </div>
                        </div>
 
-                       <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-700">
+                       <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-700 mt-6">
                          <div className="grid grid-cols-2 gap-4">
                            <div>
                              <label className="text-xs font-black text-slate-800 dark:text-slate-200 mb-2 block">更新進度</label>
@@ -1326,18 +1398,36 @@ export default function App() {
                          </div>
                          <div>
                            <div className="flex justify-between items-end mb-2">
-                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">追加新答覆 / 註記</label>
-                             <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">追加新答覆紀錄</label>
+                             <div className="flex items-center space-x-2">
+                               <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer border border-indigo-100 dark:border-indigo-800">
+                                  {isUploading ? <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> : <Paperclip size={14} className="mr-1.5"/>} 附加檔案
+                                  <input type="file" multiple onChange={(e) => handleFileSelect(e, setMaintainUploadQueue)} disabled={isUploading} className="hidden" />
+                               </label>
+                               <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 罐頭文字</button>
+                             </div>
                            </div>
-                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入新的答覆，或點擊上方按鈕複製罐頭文字貼上..."></textarea>
+                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入要對外給予客戶的最新答覆..."></textarea>
+                           {maintainUploadQueue.length > 0 && (
+                             <div className="flex flex-wrap gap-2 mt-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                               <div className="w-full text-xs font-black text-indigo-600 dark:text-indigo-400 mb-1">本次準備上傳的新附件 ({maintainUploadQueue.length})</div>
+                               {maintainUploadQueue.map((file, i) => (
+                                 <div key={i} className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg group">
+                                   {file.type?.startsWith('image/') ? <FileImage size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
+                                   <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] mr-2">{file.name}</span>
+                                   <button type="button" onClick={() => removeUploadItem(i, setMaintainUploadQueue)} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
+                                 </div>
+                               ))}
+                             </div>
+                           )}
                          </div>
                        </form>
                      </div>
-                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
+                     <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-between shrink-0">
                        <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center"><Trash2 size={16} className="mr-1" /> 申請刪除</button>
                        <div>
                          <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消</button>
-                         <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
+                         <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新'}</button>
                        </div>
                      </div>
                    </div>
@@ -1377,15 +1467,44 @@ export default function App() {
                    <span className="text-slate-300 dark:text-slate-600 text-xs">至</span>
                    <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer w-32 [color-scheme:light] dark:[color-scheme:dark]"/>
                  </div>
-                 <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm font-bold text-sm text-slate-700 dark:text-slate-200 outline-none shrink-0">
-                   <option value="全部">全部進度</option><option value="未結案">未結案 (所有待處理)</option>
-                   {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
-                 </select>
                  <div className="relative flex-1">
                    <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
-                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                   <input type="text" placeholder="快速搜尋關鍵字..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                  </div>
+                 <button onClick={() => setIsAdvFilterOpen(!isAdvFilterOpen)} className={`px-4 py-2.5 rounded-2xl font-bold text-sm shadow-sm transition-colors flex items-center shrink-0 border ${isAdvFilterOpen ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700'}`}>
+                   <Filter size={16} className="mr-2"/> 進階篩選器
+                 </button>
                </div>
+
+               {/* 進階篩選面板 */}
+               {isAdvFilterOpen && (
+                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 animate-in slide-in-from-top-4">
+                   <div>
+                     <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">處理進度</label>
+                     <select value={advFilters.progress} onChange={e=>setAdvFilters({...advFilters, progress:e.target.value})} className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm font-bold text-slate-700 dark:text-slate-200">
+                       <option value="全部">全部進度</option><option value="未結案">未結案 (所有待處理)</option>
+                       {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
+                     </select>
+                   </div>
+                   <div>
+                     <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">負責人</label>
+                     <select value={advFilters.assignee} onChange={e=>setAdvFilters({...advFilters, assignee:e.target.value})} className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm font-bold text-slate-700 dark:text-slate-200">
+                       <option value="">不限</option>
+                       {dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                     </select>
+                   </div>
+                   <div>
+                     <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">負責地區</label>
+                     <select value={advFilters.region} onChange={e=>setAdvFilters({...advFilters, region:e.target.value})} className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm font-bold text-slate-700 dark:text-slate-200">
+                       <option value="">不限</option>
+                       {regions.map(r=><option key={r} value={r}>{r}</option>)}
+                     </select>
+                   </div>
+                   <div className="flex items-end">
+                     <button onClick={() => setAdvFilters({ assignee: '', progress: '全部', categories: [], statuses: [], channels: [], region: '' })} className="w-full p-2.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors text-sm">重置進階條件</button>
+                   </div>
+                 </div>
+               )}
                
                {renderTicketTable(filteredAndSortedHistory)}
              </div>
@@ -1483,13 +1602,59 @@ export default function App() {
                   <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
                   <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
                 </div>
-                <div onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setHistoryProgress('未結案'); setSearchTerm(''); setActiveTab('list'); }} className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group" title="點擊檢視所有待處理案件">
+                <div onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setAdvFilters(prev=>({...prev, progress:'未結案'})); setSearchTerm(''); setActiveTab('list'); }} className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group" title="點擊檢視所有待處理案件">
                   <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRightCircle className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
                   <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
                   <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
                   <div className="text-5xl md:text-6xl font-black text-blue-600 dark:text-blue-400 leading-none text-right">{dashboardStats.completionRate}%</div>
+                </div>
+              </div>
+
+              {/* 圖表區: 員工與地區績效 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center"><User size={20} className="mr-2 text-indigo-500"/> 員工結案績效排行</h3>
+                  <div className="space-y-4">
+                    {Object.entries(dashboardStats.performanceByUser).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([user, count], idx) => {
+                      const maxVal = Math.max(...Object.values(dashboardStats.performanceByUser), 1);
+                      const pct = (count / maxVal) * 100;
+                      return (
+                        <div key={user}>
+                          <div className="flex justify-between items-end mb-1">
+                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center">
+                              <span className="text-[10px] text-slate-400 w-4">{idx+1}.</span> {user}
+                              <span className="ml-2 text-[10px] font-normal text-slate-400">({userMap[user]?.region || '未分區'})</span>
+                            </span>
+                            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{count} 件</span>
+                          </div>
+                          <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2 overflow-hidden"><div className="bg-indigo-500 h-full rounded-full transition-all duration-1000" style={{ width: `${pct}%` }}></div></div>
+                        </div>
+                      )
+                    })}
+                    {Object.keys(dashboardStats.performanceByUser).length === 0 && <div className="text-sm text-slate-400 text-center py-4">區間內尚無結案資料</div>}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center"><MapPin size={20} className="mr-2 text-blue-500"/> 各區結案貢獻度</h3>
+                  <div className="space-y-4">
+                    {Object.entries(dashboardStats.performanceByRegion).sort((a,b)=>b[1]-a[1]).map(([region, count], idx) => {
+                      const maxVal = Math.max(...Object.values(dashboardStats.performanceByRegion), 1);
+                      const pct = (count / maxVal) * 100;
+                      return (
+                        <div key={region}>
+                          <div className="flex justify-between items-end mb-1">
+                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center"><span className="text-[10px] text-slate-400 w-4">{idx+1}.</span> {region}</span>
+                            <span className="text-sm font-black text-blue-600 dark:text-blue-400">{count} 件</span>
+                          </div>
+                          <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2 overflow-hidden"><div className="bg-blue-500 h-full rounded-full transition-all duration-1000" style={{ width: `${pct}%` }}></div></div>
+                        </div>
+                      )
+                    })}
+                    {Object.keys(dashboardStats.performanceByRegion).length === 0 && <div className="text-sm text-slate-400 text-center py-4">區間內尚無結案資料</div>}
+                  </div>
                 </div>
               </div>
 
@@ -1525,7 +1690,7 @@ export default function App() {
                         const barColorClass = categoryViewMode === 'detail' ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-blue-500 dark:bg-blue-400';
                         const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'group-hover:text-blue-600 dark:group-hover:text-blue-400';
                         return (
-                          <div key={cat} onClick={() => handleCategoryClick(cat)} title="點擊查看此分類歷史紀錄" className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500 cursor-pointer">
+                          <div key={cat} onClick={() => { setAdvFilters(prev=>({...prev, categories: [cat]})); setSearchTerm(''); setActiveTab('list'); }} title="點擊查看此分類歷史紀錄" className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500 cursor-pointer">
                             <div className="absolute -top-8 text-slate-900 dark:text-slate-800 bg-slate-100 dark:bg-slate-200 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">{count} 件</div>
                             <div className="w-10 bg-slate-100 dark:bg-slate-700 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner"><div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div></div>
                             <div className={`text-[12px] font-bold text-slate-500 dark:text-slate-400 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>{cat}</div>
@@ -1609,38 +1774,63 @@ export default function App() {
               {currentUser.role === ROLES.ADMIN && (
                 <>
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
-                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與權限管理</h3>
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與地區權限管理</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       <div className="bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
                         <h4 className="font-bold text-sm mb-4 dark:text-slate-200">建立新用戶</h4>
                         <form onSubmit={handleAddUser} className="space-y-4">
                           <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
-                          <input type="password" required placeholder="設定初始密碼" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
-                          <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold outline-none">
-                            <option value={ROLES.USER}>{ROLES.USER} (可新增/維護紀錄)</option>
-                            <option value={ROLES.VIEWER}>{ROLES.VIEWER} (僅能看不可改)</option>
-                            <option value={ROLES.ADMIN}>{ROLES.ADMIN} (系統全權限)</option>
-                          </select>
+                          <input type="password" required placeholder="設定初始密碼 (至少6碼)" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
+                          <div className="flex gap-4">
+                            <select value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})} className="flex-1 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold outline-none">
+                              <option value={ROLES.USER}>{ROLES.USER}</option>
+                              <option value={ROLES.VIEWER}>{ROLES.VIEWER}</option>
+                              <option value={ROLES.ADMIN}>{ROLES.ADMIN}</option>
+                            </select>
+                            <select required value={newUser.region} onChange={e=>setNewUser({...newUser, region:e.target.value})} className="flex-1 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold outline-none">
+                              <option value="" disabled>-- 選擇地區 --</option>
+                              {regions.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </div>
                           <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
                         </form>
                       </div>
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/地區</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
                               <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                <td className="p-4 flex items-center space-x-3 dark:text-slate-200"><UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" /><span>{u.username}</span></td>
+                                <td className="p-4 flex items-center space-x-3 dark:text-slate-200">
+                                  <UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" />
+                                  <div>
+                                    <div>{u.username}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{u.region || '未分區'}</div>
+                                  </div>
+                                </td>
                                 <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
-                                <td className="p-4 text-center"><button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button></td>
+                                <td className="p-4 text-center"><button onClick={handleResetUserPassword} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button></td>
                                 <td className="p-4 text-center">{u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* 系統整體設定 (SLA) */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Clock size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> SLA 逾期自動警示設定</h3>
+                    <div className="flex flex-col md:flex-row items-end gap-4">
+                      <div className="flex-1 w-full">
+                        <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">處理時效 (小時)</label>
+                        <input type="number" min="1" value={slaTimeout} onChange={e => setSlaTimeout(e.target.value)} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <p className="text-[10px] text-slate-400 mt-2">設定後，當案件超過此時間仍未「結案」，系統將自動亮起紅色閃爍警示。</p>
+                      </div>
+                      <button onClick={() => handleUpdateSLA(slaTimeout)} className="px-8 py-4 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md shrink-0 w-full md:w-auto">更新 SLA 標準</button>
                     </div>
                   </div>
 
@@ -1693,11 +1883,12 @@ export default function App() {
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                       <DropdownManager title="反映管道" dbKey="channels" items={channels} />
                       <DropdownManager title="業務類別" dbKey="categories" items={categories} />
                       <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
                       <DropdownManager title="處理進度" dbKey="progresses" items={progresses} />
+                      <DropdownManager title="負責地區 (員工分派用)" dbKey="regions" items={regions} />
                     </div>
                   </div>
                   <CategoryMappingManager categories={categories} mapping={categoryMapping} />
@@ -1706,10 +1897,13 @@ export default function App() {
             </div>
           )}
 
+          {/* Render Canned Modal in Root */}
+          {showCannedModal && <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />}
+          
           {/* Global View & Edit Modal */}
           {viewModalTicket && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}}>
-              <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
+              <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
                 <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
                   <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
                     <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
@@ -1735,9 +1929,10 @@ export default function App() {
                              </div>
                           </div>
                           <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
+                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400':'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400'}`}>
                               {viewModalTicket.progress}
                             </span>
+                            {checkSLA(viewModalTicket.receiveTime, viewModalTicket.progress, slaTimeout) && <span className="ml-2 text-[10px] font-black text-red-500 animate-pulse">逾期</span>}
                           </div>
                         </div>
                         
@@ -1746,48 +1941,64 @@ export default function App() {
                           <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
                         </div>
 
-                        <div>
-                          <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
-                          
-                          <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
-                            <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
-                              <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
-                                <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
-                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          <div>
+                            <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
+                            
+                            <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
+                              <div className="relative flex items-start justify-start md:w-full pr-8 mb-6">
+                                <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
+                                  <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
+                                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
+                                  <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
+                                  <AttachmentViewer attachments={viewModalTicket.attachments} />
+                                </div>
                               </div>
-                            </div>
 
-                            {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
-                              viewModalTicket.replies.map((r, i) => (
-                                <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
+                              {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
+                                viewModalTicket.replies.map((r, i) => (
+                                  <div key={i} className="relative flex items-start justify-end md:w-full md:ml-auto pl-8 mb-6">
+                                    <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
+                                      <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
+                                      <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
+                                        <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
+                                        客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                                      </div>
+                                      <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : viewModalTicket.replyContent ? (
+                                <div className="relative flex items-start justify-end md:w-full md:ml-auto pl-8 mb-6">
                                   <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
                                     <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
-                                      <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
-                                      客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                    <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
+                                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄</div>
+                                    <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
                                   </div>
                                 </div>
-                              ))
-                            ) : viewModalTicket.replyContent ? (
-                              <div className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                  <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                  <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄</div>
-                                  <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
+                              ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
+
+                              {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
+                                <div className="relative flex items-center justify-center pt-4">
+                                  <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center"><CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案</div>
                                 </div>
-                              </div>
-                            ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
-
-                            {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
-                              <div className="relative flex items-center justify-center pt-4">
-                                <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center"><CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案</div>
-                              </div>
-                            )}
-
+                              )}
+                            </div>
                           </div>
+
+                          <div className="bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 p-6 rounded-3xl h-full flex flex-col">
+                           <div className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-3 flex items-center"><FileText size={14} className="mr-1"/> 內部專屬交接備註</div>
+                           <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+                             {viewModalTicket.internalNotes && viewModalTicket.internalNotes.length > 0 ? (
+                               viewModalTicket.internalNotes.map((n, i) => (
+                                 <div key={i} className="bg-amber-100/50 dark:bg-amber-900/30 p-3 rounded-xl border border-amber-200 dark:border-amber-700/50">
+                                   <div className="text-[10px] font-bold text-amber-800 dark:text-amber-400 mb-1 flex justify-between"><span>{n.user}</span> <span className="text-amber-600/70 dark:text-amber-500/70 font-normal">{new Date(n.time).toLocaleString()}</span></div>
+                                   <div className="text-xs text-amber-900 dark:text-amber-200 whitespace-pre-wrap">{n.content}</div>
+                                 </div>
+                               ))
+                             ) : <div className="text-xs text-amber-600/50 dark:text-amber-500/50 text-center py-4">尚無內部交接紀錄</div>}
+                           </div>
+                         </div>
                         </div>
                       </>
                    ) : modalEditForm ? (
