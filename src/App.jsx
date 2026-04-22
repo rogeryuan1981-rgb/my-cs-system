@@ -4,7 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin
+  Menu, Eye, Moon, Sun, Camera
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -18,7 +18,7 @@ if (typeof window !== 'undefined') {
   window.tailwind.config.darkMode = 'class';
 }
 
-const APP_VERSION = "v3.6.5 (白畫面修復與高相容穩定版)";
+const APP_VERSION = "v3.6.5 (圖示降級與高穩定版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -91,7 +91,6 @@ const AttachmentViewer = ({ attachments = [] }) => {
         <a key={i} href={file.url} target="_blank" rel="noreferrer" className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group">
           {typeof file.type === 'string' && file.type.startsWith('image/') ? <Camera size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
           <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] group-hover:text-blue-600 dark:group-hover:text-blue-400">{file.name}</span>
-          <ArrowDown size={12} className="text-slate-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity -rotate-90" />
         </a>
       ))}
     </div>
@@ -117,7 +116,6 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
   
-  // 防呆：使用 reduce 取代 flatMap 以相容舊版瀏覽器
   const allData = datasets.reduce((acc, ds) => acc.concat(Array.isArray(ds.data) ? ds.data : []), []);
   if (allData.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
 
@@ -384,8 +382,6 @@ export default function App() {
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER, region: '' });
-  const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
-  const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
   const userMap = useMemo(() => { const map = {}; if (Array.isArray(dbUsers)) { dbUsers.forEach(u => { if (u && u.username) map[u.username] = u; }); } return map; }, [dbUsers]);
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
@@ -564,15 +560,6 @@ export default function App() {
     }
   };
 
-  const handleChangeOwnPassword = async (e) => {
-    e.preventDefault();
-    if (pwdChangeForm.newPwd !== pwdChangeForm.confirmPwd) return setPwdChangeMsg('❌ 兩次密碼不一致！');
-    try {
-      await updatePassword(auth.currentUser, pwdChangeForm.newPwd);
-      setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。'); setPwdChangeForm({ newPwd: '', confirmPwd: '' }); setTimeout(() => setPwdChangeMsg(''), 5000);
-    } catch (e) { setPwdChangeMsg('❌ 密碼更新失敗：' + e.message); }
-  };
-
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !activeUser) return;
@@ -729,7 +716,7 @@ export default function App() {
   const allEditLogs = useMemo(() => {
     let logs = [];
     tickets.forEach(t => { if (Array.isArray(t.editLogs) && t.editLogs.length > 0) t.editLogs.forEach(log => logs.push({ ...log, ticketId: t.ticketId, instName: t.instName, recordId: t.id })); });
-    return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
+    return logs.sort((a, b) => (new Date(b.time).getTime() || 0) - (new Date(a.time).getTime() || 0));
   }, [tickets]);
 
   const handleApproveDelete = async (ticketId, ticketInstName) => {
@@ -1005,6 +992,7 @@ export default function App() {
                     <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                        <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                        <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                       {/* Hover 顯示完整歷史紀錄 (向下顯示) */}
                        {fullHistoryStr && (
                          <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
                            <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
@@ -1157,7 +1145,7 @@ export default function App() {
         <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
           <div className="flex items-center space-x-3"><div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div><h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">客服中心</h1></div>
           <div className="flex items-center space-x-1 lg:hidden">
-            <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><Pin size={18} className={isPinned ? "" : "-rotate-45"} /></button>
+            <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><Lock size={18} className={isPinned ? "" : "opacity-50"} /></button>
             {!isPinned && <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={18} /></button>}
           </div>
         </div>
@@ -1310,7 +1298,7 @@ export default function App() {
                            {t.progress}
                          </span>
                          {isBreached && <span className="text-[10px] font-black text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-1 rounded-lg animate-pulse flex items-center"><AlertCircle size={12} className="mr-1"/> 逾期</span>}
-                         {!isBreached && <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{(t.receiveTime||'').slice(0, 10)}</span>}
+                         {!isBreached && <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{typeof t.receiveTime === 'string' ? t.receiveTime.slice(0, 10) : ''}</span>}
                       </div>
                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
