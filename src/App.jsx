@@ -4,8 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon,
-  Paperclip, FileImage, ExternalLink, MapPin, BarChart3, Filter
+  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -19,8 +18,7 @@ if (typeof window !== 'undefined') {
   window.tailwind.config.darkMode = 'class';
 }
 
-// --- System Variables ---
-const APP_VERSION = "v3.5.0 (SLA、附件與績效完整版)";
+const APP_VERSION = "v3.6.1 (RWD圖釘與效能修復版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -35,7 +33,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app); // 初始化 Storage
+const storage = getStorage(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 let secondaryApp;
@@ -44,29 +42,16 @@ const secondaryAuth = getAuth(secondaryApp);
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
-const getFormatDate = (date = new Date()) => {
-  const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-  return (new Date(date - tzOffset)).toISOString().slice(0, 16);
-};
-const getFirstDayOfMonth = () => {
-  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-};
-const getLastDayOfMonth = () => {
-  const d = new Date(); const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-};
-const getToday = () => {
-  const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const getFormatDate = (date = new Date()) => new Date(date - (new Date()).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const getFirstDayOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+const getLastDayOfMonth = () => { const d = new Date(); const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`; };
+const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const getEmailFromUsername = (username) => `${encodeURIComponent(username).replace(/%/g, '_')}@cs.local`.toLowerCase();
 
 const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => ({
-  receiveTime: getFormatDate(), callEndTime: '',
-  channel: Array.isArray(channelsArr) && channelsArr.length > 0 ? channelsArr[0] : '',
-  receiver: username, instCode: '', instName: '', instLevel: '', category: '', status: '',
-  extraInfo: '', questioner: '', replyContent: '', closeTime: '',
-  progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理',
-  assignee: '', replies: [], editLogs: [], attachments: [], internalNotes: []
+  receiveTime: getFormatDate(), callEndTime: '', channel: Array.isArray(channelsArr) && channelsArr.length > 0 ? channelsArr[0] : '',
+  receiver: username, instCode: '', instName: '', instLevel: '', category: '', status: '', extraInfo: '', questioner: '', replyContent: '', closeTime: '',
+  progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理', assignee: '', replies: [], editLogs: [], attachments: [], internalNotes: []
 });
 
 const formatRepliesHistory = (replies, fallbackContent) => {
@@ -74,41 +59,30 @@ const formatRepliesHistory = (replies, fallbackContent) => {
   return fallbackContent || '';
 };
 
-const getLatestReply = (replies, fallbackContent) => {
-  if (replies && replies.length > 0) return replies[replies.length - 1].content;
-  return fallbackContent || '';
-};
+const getLatestReply = (replies, fallbackContent) => replies && replies.length > 0 ? replies[replies.length - 1].content : (fallbackContent || '');
 
-// 計算 SLA 狀態
 const checkSLA = (receiveTime, progress, slaHours) => {
-  if (progress === '結案') return false; // 已結案不計超時
+  if (progress === '結案' || !receiveTime) return false; 
   const receiveDate = new Date(receiveTime).getTime();
-  const now = Date.now();
-  const limitMs = slaHours * 60 * 60 * 1000;
-  return (now - receiveDate) > limitMs;
+  return !isNaN(receiveDate) && (Date.now() - receiveDate) > (slaHours * 60 * 60 * 1000);
 };
 
-// --- Sub-Components ---
+// --- Common UI Components ---
 const UserAvatar = ({ username, photoURL, className = "w-8 h-8 text-xs" }) => {
   if (photoURL) return <img src={photoURL} alt={username} className={`rounded-full object-cover shadow-sm border border-slate-200 dark:border-slate-600 ${className}`} />;
-  return (
-    <div className={`rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 shadow-sm border border-blue-200 dark:border-blue-800 ${className}`}>
-      {username ? username.charAt(0).toUpperCase() : '?'}
-    </div>
-  );
+  return <div className={`rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 shadow-sm border border-blue-200 dark:border-blue-800 ${className}`}>{username ? username.charAt(0).toUpperCase() : '?'}</div>;
 };
 
-// 附件展示微型組件
 const AttachmentViewer = ({ attachments = [] }) => {
   if (!attachments || attachments.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-      <div className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 flex items-center"><Paperclip size={12} className="mr-1"/> 附加檔案</div>
+      <div className="w-full text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 flex items-center"><FileText size={12} className="mr-1"/> 附加檔案</div>
       {attachments.map((file, i) => (
         <a key={i} href={file.url} target="_blank" rel="noreferrer" className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group">
-          {file.type?.startsWith('image/') ? <FileImage size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
+          {file.type?.startsWith('image/') ? <Camera size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
           <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] group-hover:text-blue-600 dark:group-hover:text-blue-400">{file.name}</span>
-          <ExternalLink size={12} className="text-slate-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <ArrowDown size={12} className="text-slate-400 ml-2 opacity-0 group-hover:opacity-100 transition-opacity -rotate-135" />
         </a>
       ))}
     </div>
@@ -120,7 +94,7 @@ const EditField = ({ label, type="text", val, setVal, options }) => (
     <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{label}</div>
     {type === "select" ? (
       <select value={val||''} onChange={e=>setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
-         {options.map(o=><option key={typeof o === 'object' ? o.value : o} value={typeof o === 'object' ? o.value : o}>{typeof o === 'object' ? o.label : (o === '' ? '-- 未指定 --' : o)}</option>)}
+         {(options || []).map(o=><option key={typeof o === 'object' ? o.value : o} value={typeof o === 'object' ? o.value : o}>{typeof o === 'object' ? o.label : (o === '' ? '-- 未指定 --' : o)}</option>)}
       </select>
     ) : type === "textarea" ? (
       <textarea value={val||''} onChange={e=>setVal(e.target.value)} rows="3" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"></textarea>
@@ -130,7 +104,6 @@ const EditField = ({ label, type="text", val, setVal, options }) => (
   </div>
 );
 
-// 純原生 SVG 複合折線圖組件 (防重疊與動態放大)
 const LineChart = ({ datasets, labels, isDarkMode }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
@@ -161,10 +134,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
           {[0, 0.5, 1].map(ratio => {
             const y = height - paddingY - ratio * (height - paddingY * 2);
             return (
-              <g key={ratio}>
-                <line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
-                <text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text>
-              </g>
+              <g key={ratio}><line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" /><text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text></g>
             );
           })}
           {datasets.map((ds) => {
@@ -176,12 +146,9 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
             const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
             let dy = -12, dx = 0;
-            if (dsIdx === 0) dy = -22;
-            if (dsIdx === 1) dy = -10;
-            if (dsIdx === 2) { dy = 14; dx = 10; }
-            if (dsIdx === 3) { dy = 24; dx = -10; }
+            if (dsIdx === 0) dy = -22; if (dsIdx === 1) dy = -10;
+            if (dsIdx === 2) { dy = 14; dx = 10; } if (dsIdx === 3) { dy = 24; dx = -10; }
             if (y + dy > height - paddingY - 5) dy = -10;
-
             return (
               <g key={`point-${ds.label}-${i}`} onMouseEnter={() => setHoveredPoint({ dsIdx, i })} onMouseLeave={() => setHoveredPoint(null)} className="cursor-pointer">
                 <circle cx={x} cy={y} r="4" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="2" className="transition-all duration-200" />
@@ -190,9 +157,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             );
           }))}
           {hoveredPoint && (() => {
-            const { dsIdx, i } = hoveredPoint;
-            const ds = datasets[dsIdx];
-            const val = ds.data[i];
+            const { dsIdx, i } = hoveredPoint; const ds = datasets[dsIdx]; const val = ds.data[i];
             const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
             const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
             return (
@@ -208,6 +173,85 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
     </div>
   );
 };
+
+const CannedMessagesModal = ({ messages, onClose }) => {
+  const [copyId, setCopyId] = useState(null);
+  const handleCopy = (text, idx) => {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); setCopyId(idx); setTimeout(() => { setCopyId(null); onClose(); }, 500); } catch (err) { console.error('Copy failed', err); }
+    document.body.removeChild(ta);
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
+          <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-blue-600 dark:text-blue-400"/> 選擇罐頭回覆</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><X size={20}/></button>
+        </div>
+        <div className="p-6 space-y-3 overflow-y-auto flex-1">
+          {(Array.isArray(messages)?messages:[]).map((m, idx) => (
+            <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => handleCopy(m, idx)}>
+              <p className="text-sm text-slate-600 dark:text-slate-200 line-clamp-4 pr-6">{m}</p>
+              <button className="absolute top-2 right-2 p-1.5 bg-white dark:bg-slate-600 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400">
+                {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+              </button>
+            </div>
+          ))}
+          {(!messages || messages.length === 0) && <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字。</p>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DropdownManager = ({ title, dbKey, items }) => {
+  const [newItem, setNewItem] = useState('');
+  const [draggedIdx, setDraggedIdx] = useState(null);
+  const safeItems = Array.isArray(items) ? items : [];
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    if (!newItem.trim() || safeItems.includes(newItem.trim())) return;
+    const newArray = [...safeItems, newItem.trim()];
+    const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', 'cs_settings/dropdowns');
+    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+    setNewItem('');
+  };
+
+  const handleRemove = async (itemToRemove) => {
+    if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
+    const newArray = safeItems.filter(i => i !== itemToRemove);
+    const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', 'cs_settings/dropdowns');
+    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+  };
+
+  const handleDrop = async (e, dropIdx) => {
+    e.preventDefault();
+    if (draggedIdx === null || draggedIdx === dropIdx) return;
+    const newItems = [...safeItems]; const [moved] = newItems.splice(draggedIdx, 1); newItems.splice(dropIdx, 0, moved);
+    const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', 'cs_settings/dropdowns');
+    await setDoc(docRef, { [dbKey]: newItems }, { merge: true }); setDraggedIdx(null);
+  };
+
+  return (
+    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 flex flex-col h-full">
+      <h4 className="font-bold text-sm mb-4 text-slate-700 dark:text-slate-200">{title}</h4>
+      <form onSubmit={handleAdd} className="flex mb-4 gap-2 shrink-0">
+        <input type="text" value={newItem} onChange={e=>setNewItem(e.target.value)} className="flex-1 p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium" placeholder="新增項目..."/>
+        <button type="submit" className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"><Plus size={18}/></button>
+      </form>
+      <ul className="space-y-2 overflow-y-auto flex-1 pr-2 min-h-[150px]">
+        {safeItems.map((item, idx) => (
+          <li key={item} draggable onDragStart={(e) => { setDraggedIdx(idx); e.dataTransfer.effectAllowed = "move"; }} onDragOver={e => e.preventDefault()} onDrop={(e) => handleDrop(e, idx)} onDragEnd={() => setDraggedIdx(null)} className={`flex justify-between items-center bg-white dark:bg-slate-700 p-3 rounded-xl border border-slate-100 dark:border-slate-600 shadow-sm text-sm group ${draggedIdx === idx ? 'opacity-40' : ''}`}>
+            <div className="flex items-center flex-1 overflow-hidden"><div className="cursor-grab text-slate-300 hover:text-indigo-500 mr-2 p-1"><Menu size={16} /></div><span className="text-slate-700 dark:text-slate-200 font-medium truncate">{item}</span></div>
+            <button type="button" onClick={() => handleRemove(item)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-2"><Trash2 size={16}/></button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 
 // -------------------------------------------------
 // --- 主應用程式 App ---
@@ -238,19 +282,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
 
-  // Upload State
   const [isUploading, setIsUploading] = useState(false);
   const [uploadQueue, setUploadQueue] = useState([]);
 
-  // Setup / Settings States
   const [channels, setChannels] = useState([]);
   const [categories, setCategories] = useState([]);
   const [statuses, setStatuses] = useState([]);
   const [progresses, setProgresses] = useState([]);
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
-  const [regions, setRegions] = useState([]); // 新增地區設定
-  const [slaTimeout, setSlaTimeout] = useState(24); // SLA 超時設定 (小時)
+  const [regions, setRegions] = useState([]);
+  const [slaTimeout, setSlaTimeout] = useState(24); 
   
   const [showCannedModal, setShowCannedModal] = useState(false);
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -273,7 +315,6 @@ export default function App() {
     }));
   }, [channels, progresses]);
 
-  // 進階複合篩選器 (歷史查詢)
   const [isAdvFilterOpen, setIsAdvFilterOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [historyStartDate, setHistoryStartDate] = useState(getFirstDayOfMonth());
@@ -292,7 +333,6 @@ export default function App() {
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
   const [maintainModal, setMaintainModal] = useState(null);
-  // 新增 internalNotes state 於 maintainForm 中
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '', internalNotesContent: '' });
   const [maintainUploadQueue, setMaintainUploadQueue] = useState([]);
 
@@ -302,55 +342,40 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
-  // 使用者管理含地區
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER, region: '' });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
-  const userMap = useMemo(() => {
-    const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
-  }, [dbUsers]);
+  const userMap = useMemo(() => { const map = {}; dbUsers.forEach(u => map[u.username] = u); return map; }, [dbUsers]);
+  const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
-  // Auth State Sync
   useEffect(() => {
     if (firebaseUser && !firebaseUser.isAnonymous && dbUsers.length > 0) {
       const matchedUser = dbUsers.find(u => getEmailFromUsername(u.username) === firebaseUser.email);
       if (matchedUser) {
         setCurrentUser(matchedUser);
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
-      } else {
-        setCurrentUser(null);
-      }
-    } else if (!firebaseUser || firebaseUser.isAnonymous) {
-      setCurrentUser(null);
-    }
+      } else setCurrentUser(null);
+    } else if (!firebaseUser || firebaseUser.isAnonymous) setCurrentUser(null);
   }, [firebaseUser, dbUsers]);
 
-  const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
-
-  // --- Initialization ---
   useEffect(() => {
     if (!document.getElementById('xlsx-script')) {
       const script = document.createElement('script'); script.id = 'xlsx-script';
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
       document.body.appendChild(script);
     }
-    const unsubscribeAuth = onAuthStateChanged(auth, (fUser) => {
-      setFirebaseUser(fUser);
-      if (!fUser) {
-        const initAuth = async () => {
-          try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
-            else await signInAnonymously(auth);
-          } catch (error) { console.error("Firebase Auth Error:", error); }
-        };
-        initAuth();
-      }
-    });
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+        else await signInAnonymously(auth);
+      } catch (error) { console.error("Firebase Auth Error:", error); }
+    };
+    initAuth();
+    const unsubscribeAuth = onAuthStateChanged(auth, setFirebaseUser);
     return () => unsubscribeAuth();
   }, []);
 
-  // --- Data Fetching ---
   useEffect(() => {
     if (!firebaseUser) return;
     const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : []; 
@@ -390,51 +415,35 @@ export default function App() {
     return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
   }, [firebaseUser]);
 
-  // --- Settings SLA Update ---
   const handleUpdateSLA = async (val) => {
     const newSla = parseInt(val, 10);
     if (isNaN(newSla) || newSla < 1) return alert("請輸入有效的小時數");
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', 'cs_settings/dropdowns');
     await setDoc(docRef, { slaTimeout: newSla }, { merge: true });
     alert("SLA 逾期提醒時間已更新！");
   };
 
-  // --- File Upload Logic ---
   const handleFileSelect = async (e, queueSetter) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
     setIsUploading(true);
-    
     let uploadedResults = [];
     for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(`檔案 ${file.name} 超過 5MB 限制，已略過。`);
-        continue;
-      }
+      if (file.size > 5 * 1024 * 1024) { alert(`檔案 ${file.name} 超過 5MB 限制，已略過。`); continue; }
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : 'public/data';
         const fileRef = ref(storage, `${baseDbPath}/attachments/${Date.now()}_${file.name}`);
         await uploadBytes(fileRef, file);
         const url = await getDownloadURL(fileRef);
         uploadedResults.push({ name: file.name, url, type: file.type });
-      } catch (err) {
-        console.error("Upload failed", err);
-        alert(`檔案 ${file.name} 上傳失敗`);
-      }
+      } catch (err) { alert(`檔案 ${file.name} 上傳失敗`); }
     }
-    
     queueSetter(prev => [...prev, ...uploadedResults]);
-    setIsUploading(false);
-    e.target.value = null;
+    setIsUploading(false); e.target.value = null;
   };
 
-  const removeUploadItem = (idx, queueSetter) => {
-    queueSetter(prev => prev.filter((_, i) => i !== idx));
-  };
+  const removeUploadItem = (idx, queueSetter) => queueSetter(prev => prev.filter((_, i) => i !== idx));
 
-
-  // --- Auth Handlers ---
   const handleLogin = async (e) => {
     e.preventDefault();
     const email = getEmailFromUsername(loginForm.username);
@@ -457,18 +466,9 @@ export default function App() {
             setFormData(getInitialForm(legacyUser.username, channels, progresses));
             setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form');
             setAuthError('');
-          } catch (createErr) {
-            if (createErr.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-            else setAuthError('帳號升級失敗：' + createErr.message);
-          }
-        } else {
-          setAuthError('帳號或密碼錯誤');
-        }
-      } else if (err.code === 'auth/operation-not-allowed') {
-        setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-      } else {
-        setAuthError('登入失敗：' + err.message);
-      }
+          } catch (createErr) { setAuthError('帳號升級失敗：' + createErr.message); }
+        } else setAuthError('帳號或密碼錯誤');
+      } else setAuthError('登入失敗：' + err.message);
     }
   };
 
@@ -479,17 +479,10 @@ export default function App() {
     try {
       const email = getEmailFromUsername(loginForm.username);
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
-      
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, role: ROLES.ADMIN, createdAt: new Date().toISOString() });
-      
-      setAuthError('');
-      setActiveTab('form');
-      setFormData(getInitialForm(loginForm.username, channels, progresses));
-    } catch (e) { 
-      if (e.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-      else setAuthError('建立失敗：' + e.message); 
-    }
+      setAuthError(''); setActiveTab('form'); setFormData(getInitialForm(loginForm.username, channels, progresses));
+    } catch (e) { setAuthError('建立失敗：' + e.message); }
   };
 
   const handleLogout = async () => { 
@@ -498,9 +491,7 @@ export default function App() {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
       else await signInAnonymously(auth);
     } catch (e) {}
-    setCurrentUser(null); 
-    setLoginForm(prev => ({ ...prev, password: '' })); 
-    setActiveTab('form'); 
+    setCurrentUser(null); setLoginForm(prev => ({ ...prev, password: '' })); setActiveTab('form'); 
   };
 
   const handleAddUser = async (e) => {
@@ -509,25 +500,20 @@ export default function App() {
     if (dbUsers.some(u => u.username === newUser.username)) return alert('帳號名稱已存在');
     if (newUser.password.length < 6) return alert('密碼長度至少需要 6 個字元！');
     if (!newUser.region) return alert('請為用戶指派負責地區！');
-
     try {
       const email = getEmailFromUsername(newUser.username);
       await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
       await secondaryAuth.signOut();
-
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, region: newUser.region, createdAt: new Date().toISOString() });
       setNewUser({ username: '', password: '', role: ROLES.USER, region: '' });
-      alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
-    } catch(e) { 
-        if (e.code === 'auth/operation-not-allowed') alert('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-        else alert('新增失敗：' + e.message);
-    }
+      alert('用戶建立成功！');
+    } catch(e) { alert('新增失敗：' + e.message); }
   };
 
   const handleDeleteUser = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (window.confirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)')) {
+    if (window.confirm('確定要停用此使用者嗎？')) {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
     }
@@ -540,11 +526,6 @@ export default function App() {
       await updatePassword(auth.currentUser, pwdChangeForm.newPwd);
       setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。'); setPwdChangeForm({ newPwd: '', confirmPwd: '' }); setTimeout(() => setPwdChangeMsg(''), 5000);
     } catch (e) { setPwdChangeMsg('❌ 密碼更新失敗：' + e.message); }
-  };
-
-  const handleResetUserPassword = async () => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    alert('【安全性升級】\n系統已全面導入 Firebase 原生 Auth。\n為保障資安，前端無法直接重設他人密碼。\n\n請至 Firebase Console > Authentication 手動重置密碼，也可以直接停用該帳號後重建。');
   };
 
   const handleAvatarUpload = (e) => {
@@ -563,8 +544,7 @@ export default function App() {
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         try {
-          const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-          const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+          const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_users/${activeUser.id}`);
           await updateDoc(docRef, { photoURL: dataUrl });
           alert('個人圖像更新成功！');
         } catch (error) { alert('圖像更新失敗，請稍後再試。'); }
@@ -586,10 +566,7 @@ export default function App() {
   const handleInstCodeBlur = () => {
     if (!formData.instCode) return;
     const rawCode = formData.instCode.trim();
-    if (rawCode === '999') {
-      setFormData(prev => ({ ...prev, instCode: '999', instLevel: '', instName: prev.instName.includes('查無資料') ? '' : prev.instName }));
-      return;
-    }
+    if (rawCode === '999') { setFormData(prev => ({ ...prev, instCode: '999', instLevel: '', instName: prev.instName.includes('查無資料') ? '' : prev.instName })); return; }
     setIsLookingUp(true);
     setTimeout(() => {
       const paddedCode = rawCode.padStart(10, '0');
@@ -619,25 +596,19 @@ export default function App() {
 
       const initialReplies = formData.replyContent ? [{ time: getFormatDate(), user: currentUser.username, content: formData.replyContent }] : [];
       const submissionData = { 
-        ...formData, 
-        ticketId: newTicketId, 
-        replies: initialReplies, 
-        editLogs: [], 
-        attachments: uploadQueue, // 附加檔案
-        internalNotes: [], 
-        createdAt: new Date().toISOString() 
+        ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], 
+        attachments: uploadQueue, internalNotes: [], createdAt: new Date().toISOString() 
       };
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
-      setUploadQueue([]); // 清空上傳列隊
+      setUploadQueue([]);
       setFormData(prev => ({
         ...getInitialForm(currentUser.username, channels, progresses),
         channel: (Array.isArray(channels) && channels.includes(prev.channel)) ? prev.channel : (channels[0] || ''),
-        category: '', status: '',
-        progress: (Array.isArray(progresses) && progresses.includes(prev.progress)) ? prev.progress : (progresses[0] || '待處理')
+        category: '', status: '', progress: (Array.isArray(progresses) && progresses.includes(prev.progress)) ? prev.progress : (progresses[0] || '待處理')
       }));
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
     } catch (error) { setSubmitStatus({ type: 'error', msg: '儲存失敗。' }); }
@@ -666,8 +637,8 @@ export default function App() {
     const reason = window.prompt(`請輸入刪除案件「${maintainModal.instName || maintainModal.ticketId}」的申請原因：`);
     if (!reason) return;
     try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), { deleteRequest: { status: 'pending', reason: reason.trim(), requestedBy: currentUser.username, requestTime: getFormatDate() } });
+      const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_records/${maintainModal.id}`);
+      await updateDoc(docRef, { deleteRequest: { status: 'pending', reason: reason.trim(), requestedBy: currentUser.username, requestTime: getFormatDate() } });
       alert('刪除申請已送出，待管理員簽核。'); setMaintainModal(null);
     } catch (error) { alert("申請失敗：" + error.message); }
   };
@@ -685,26 +656,17 @@ export default function App() {
         updates.extraInfo = maintainForm.extraInfo;
         updates.editLogs = [...(maintainModal.editLogs || []), { time: getFormatDate(), user: currentUser.username, oldContent: maintainModal.extraInfo, newContent: maintainForm.extraInfo, type: 'extraInfo_edit' }];
       }
-
       if (maintainForm.newReply.trim()) {
-        const newReplyObj = { time: getFormatDate(), user: currentUser.username, content: maintainForm.newReply.trim() };
-        updates.replies = [...(maintainModal.replies || []), newReplyObj];
+        updates.replies = [...(maintainModal.replies || []), { time: getFormatDate(), user: currentUser.username, content: maintainForm.newReply.trim() }];
         updates.replyContent = maintainForm.newReply.trim();
       }
-
-      // 新增內部備註
       if (maintainForm.internalNotesContent.trim()) {
-        const newNoteObj = { time: getFormatDate(), user: currentUser.username, content: maintainForm.internalNotesContent.trim() };
-        updates.internalNotes = [...(maintainModal.internalNotes || []), newNoteObj];
+        updates.internalNotes = [...(maintainModal.internalNotes || []), { time: getFormatDate(), user: currentUser.username, content: maintainForm.internalNotesContent.trim() }];
       }
+      if (maintainUploadQueue.length > 0) updates.attachments = [...(maintainModal.attachments || []), ...maintainUploadQueue];
 
-      // 附加檔案更新
-      if (maintainUploadQueue.length > 0) {
-        updates.attachments = [...(maintainModal.attachments || []), ...maintainUploadQueue];
-      }
-
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), updates);
+      const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_records/${maintainModal.id}`);
+      await updateDoc(docRef, updates);
       setMaintainModal(null);
     } catch (error) { alert("更新失敗：" + error.message); }
   };
@@ -712,8 +674,8 @@ export default function App() {
   const handleModalSave = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), modalEditForm);
+      const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_records/${modalEditForm.id}`);
+      await updateDoc(docRef, modalEditForm);
       alert('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
     } catch (error) { alert('修改失敗：' + error.message); }
   };
@@ -721,17 +683,15 @@ export default function App() {
   const pendingDeleteRequests = useMemo(() => tickets.filter(t => t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
   const allEditLogs = useMemo(() => {
     let logs = [];
-    tickets.forEach(t => {
-      if (Array.isArray(t.editLogs) && t.editLogs.length > 0) t.editLogs.forEach(log => logs.push({ ...log, ticketId: t.ticketId, instName: t.instName, recordId: t.id }));
-    });
+    tickets.forEach(t => { if (Array.isArray(t.editLogs) && t.editLogs.length > 0) t.editLogs.forEach(log => logs.push({ ...log, ticketId: t.ticketId, instName: t.instName, recordId: t.id })); });
     return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
   }, [tickets]);
 
   const handleApproveDelete = async (ticketId, ticketInstName) => {
     if (!window.confirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？此操作無法復原。`)) return;
     try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId));
+      const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_records/${ticketId}`);
+      await deleteDoc(docRef);
       alert('已成功核准並刪除該筆紀錄。');
     } catch (error) { alert('刪除失敗：' + error.message); }
   };
@@ -740,10 +700,8 @@ export default function App() {
     const rejectReason = window.prompt('請輸入退回此刪除申請的理由：');
     if (rejectReason === null) return;
     try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
-        'deleteRequest.status': 'rejected', 'deleteRequest.rejectReason': rejectReason.trim(), 'deleteRequest.rejectedBy': currentUser.username, 'deleteRequest.rejectTime': getFormatDate()
-      });
+      const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `cs_records/${ticketId}`);
+      await updateDoc(docRef, { 'deleteRequest.status': 'rejected', 'deleteRequest.rejectReason': rejectReason.trim(), 'deleteRequest.rejectedBy': currentUser.username, 'deleteRequest.rejectTime': getFormatDate() });
     } catch (error) {}
   };
 
@@ -841,8 +799,8 @@ export default function App() {
 
   const handleDeleteInst = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
+    const docRef = doc(db, typeof __app_id !== 'undefined' ? `artifacts/${appId}/public/data` : '', `mohw_institutions/${id}`);
+    await deleteDoc(docRef);
   };
 
   const handleClearAllInsts = async () => {
@@ -999,7 +957,6 @@ export default function App() {
                     <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                        <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                        <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                       {/* Hover 顯示完整歷史紀錄 (向下顯示) */}
                        {fullHistoryStr && (
                          <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
                            <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
@@ -1036,13 +993,15 @@ export default function App() {
     
     const startDateObj = new Date(`${dashStartDate}T00:00:00`);
     const endDateObj = new Date(`${dashEndDate}T23:59:59.999`);
-    const rangeTickets = tickets.filter(t => new Date(t.receiveTime) >= startDateObj && new Date(t.receiveTime) <= endDateObj);
+    const rangeTickets = tickets.filter(t => {
+      const td = new Date(t.receiveTime);
+      return !isNaN(td) && td >= startDateObj && td <= endDateObj;
+    });
 
     const categoryData = {}; const aggregatedCategoryData = {};
     const safeCategories = Array.isArray(categories) ? categories : [];
     safeCategories.forEach(c => categoryData[c] = 0);
     
-    // Performance
     const performanceByUser = {};
     const performanceByRegion = {};
     
@@ -1075,7 +1034,7 @@ export default function App() {
 
     const trendData = { total: [], phone: [], line: [], phoneToLine: [] };
     monthLabels.forEach(monthStr => {
-      const monthTickets = tickets.filter(t => t.receiveTime.substring(0, 7) === monthStr && (trendCategory === '全類別' || t.category === trendCategory));
+      const monthTickets = tickets.filter(t => t.receiveTime && t.receiveTime.substring(0, 7) === monthStr && (trendCategory === '全類別' || t.category === trendCategory));
       trendData.total.push(monthTickets.length);
       trendData.phone.push(monthTickets.filter(t => t.channel === '電話').length);
       trendData.line.push(monthTickets.filter(t => t.channel === 'LINE').length);
@@ -1154,7 +1113,7 @@ export default function App() {
             {!isPinned && <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={18} /></button>}
           </div>
         </div>
-        <div className="px-6 py-4 flex items-center space-x-3 shrink-0"><UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm" /><div><div className="font-bold text-sm dark:text-slate-200">{activeUser.username}</div><div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5 flex items-center">{activeUser.role} {activeUser.region && <span className="ml-1 text-[8px] opacity-80 border-l border-slate-300 pl-1">({activeUser.region})</span>}</div></div></div>
+        <div className="px-6 py-4 flex items-center space-x-3 shrink-0"><UserAvatar username={activeUser?.username} photoURL={activeUser?.photoURL} className="w-10 h-10 text-sm" /><div><div className="font-bold text-sm dark:text-slate-200">{activeUser?.username}</div><div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5 flex items-center">{activeUser?.role} {activeUser?.region && <span className="ml-1 text-[8px] opacity-80 border-l border-slate-300 pl-1">({activeUser?.region})</span>}</div></div></div>
         <div className="px-6 pb-2 shrink-0">
           <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors">
             <span className="flex items-center">{isDarkMode ? <Moon size={16} className="mr-2 text-indigo-400" /> : <Sun size={16} className="mr-2 text-amber-500" />}{isDarkMode ? '深色模式' : '淺色模式'}</span>
@@ -1235,18 +1194,17 @@ export default function App() {
                       <div className="flex justify-between items-end mb-2">
                         <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">詳細問題描述 <span className="text-red-500 dark:text-red-400">*</span></label>
                         <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer border border-indigo-100 dark:border-indigo-800">
-                           {isUploading ? <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> : <Paperclip size={14} className="mr-1.5"/>}
+                           {isUploading ? <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> : <Upload size={14} className="mr-1.5"/>}
                            {isUploading ? '上傳中...' : '附加截圖或檔案'}
                            <input type="file" multiple onChange={(e) => handleFileSelect(e, setUploadQueue)} disabled={isUploading} className="hidden" />
                         </label>
                       </div>
                       <textarea name="extraInfo" required minLength="2" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
-                      {/* 上傳列隊展示 */}
                       {uploadQueue.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
                           {uploadQueue.map((file, i) => (
                             <div key={i} className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg group">
-                              {file.type?.startsWith('image/') ? <FileImage size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
+                              {file.type?.startsWith('image/') ? <Camera size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
                               <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] mr-2">{file.name}</span>
                               <button type="button" onClick={() => removeUploadItem(i, setUploadQueue)} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
                             </div>
@@ -1308,7 +1266,7 @@ export default function App() {
                       </div>
                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
-                      {t.attachments && t.attachments.length > 0 && <div className="text-[10px] text-indigo-400 font-bold mb-3 flex items-center"><Paperclip size={12} className="mr-1"/> 附 {t.attachments.length} 個檔案</div>}
+                      {t.attachments && t.attachments.length > 0 && <div className="text-[10px] text-indigo-400 font-bold mb-3 flex items-center"><FileText size={12} className="mr-1"/> 附 {t.attachments.length} 個檔案</div>}
                       <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
                         <div className="flex items-center text-slate-400 dark:text-slate-500"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" /><span>建檔</span></div>
                         {t.assignee && <div className="flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">負責</span></div>}
@@ -1401,7 +1359,7 @@ export default function App() {
                              <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">追加新答覆紀錄</label>
                              <div className="flex items-center space-x-2">
                                <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer border border-indigo-100 dark:border-indigo-800">
-                                  {isUploading ? <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> : <Paperclip size={14} className="mr-1.5"/>} 附加檔案
+                                  {isUploading ? <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> : <Upload size={14} className="mr-1.5"/>} 附加檔案
                                   <input type="file" multiple onChange={(e) => handleFileSelect(e, setMaintainUploadQueue)} disabled={isUploading} className="hidden" />
                                </label>
                                <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 罐頭文字</button>
@@ -1413,7 +1371,7 @@ export default function App() {
                                <div className="w-full text-xs font-black text-indigo-600 dark:text-indigo-400 mb-1">本次準備上傳的新附件 ({maintainUploadQueue.length})</div>
                                {maintainUploadQueue.map((file, i) => (
                                  <div key={i} className="flex items-center px-3 py-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg group">
-                                   {file.type?.startsWith('image/') ? <FileImage size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
+                                   {file.type?.startsWith('image/') ? <Camera size={14} className="text-indigo-500 mr-2" /> : <FileText size={14} className="text-slate-500 mr-2" />}
                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px] mr-2">{file.name}</span>
                                    <button type="button" onClick={() => removeUploadItem(i, setMaintainUploadQueue)} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
                                  </div>
@@ -1467,16 +1425,19 @@ export default function App() {
                    <span className="text-slate-300 dark:text-slate-600 text-xs">至</span>
                    <input type="date" value={historyEndDate} onChange={e=>setHistoryEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer w-32 [color-scheme:light] dark:[color-scheme:dark]"/>
                  </div>
+                 <select value={historyProgress} onChange={e=>setHistoryProgress(e.target.value)} className="bg-white dark:bg-slate-800 px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm font-bold text-sm text-slate-700 dark:text-slate-200 outline-none shrink-0">
+                   <option value="全部">全部進度</option><option value="未結案">未結案 (所有待處理)</option>
+                   {(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}
+                 </select>
                  <div className="relative flex-1">
                    <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
                    <input type="text" placeholder="快速搜尋關鍵字..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                  </div>
                  <button onClick={() => setIsAdvFilterOpen(!isAdvFilterOpen)} className={`px-4 py-2.5 rounded-2xl font-bold text-sm shadow-sm transition-colors flex items-center shrink-0 border ${isAdvFilterOpen ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700'}`}>
-                   <Filter size={16} className="mr-2"/> 進階篩選器
+                   <List size={16} className="mr-2"/> 進階篩選器
                  </button>
                </div>
 
-               {/* 進階篩選面板 */}
                {isAdvFilterOpen && (
                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 animate-in slide-in-from-top-4">
                    <div>
@@ -1497,7 +1458,7 @@ export default function App() {
                      <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">負責地區</label>
                      <select value={advFilters.region} onChange={e=>setAdvFilters({...advFilters, region:e.target.value})} className="w-full p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl outline-none text-sm font-bold text-slate-700 dark:text-slate-200">
                        <option value="">不限</option>
-                       {regions.map(r=><option key={r} value={r}>{r}</option>)}
+                       {(regions || []).map(r=><option key={r} value={r}>{r}</option>)}
                      </select>
                    </div>
                    <div className="flex items-end">
@@ -1638,7 +1599,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center"><MapPin size={20} className="mr-2 text-blue-500"/> 各區結案貢獻度</h3>
+                  <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center"><Database size={20} className="mr-2 text-blue-500"/> 各區結案貢獻度</h3>
                   <div className="space-y-4">
                     {Object.entries(dashboardStats.performanceByRegion).sort((a,b)=>b[1]-a[1]).map(([region, count], idx) => {
                       const maxVal = Math.max(...Object.values(dashboardStats.performanceByRegion), 1);
@@ -1789,7 +1750,7 @@ export default function App() {
                             </select>
                             <select required value={newUser.region} onChange={e=>setNewUser({...newUser, region:e.target.value})} className="flex-1 p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold outline-none">
                               <option value="" disabled>-- 選擇地區 --</option>
-                              {regions.map(r => <option key={r} value={r}>{r}</option>)}
+                              {(regions || []).map(r => <option key={r} value={r}>{r}</option>)}
                             </select>
                           </div>
                           <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
@@ -1798,7 +1759,7 @@ export default function App() {
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/地區</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/地區</th><th className="p-4">權限</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
@@ -1811,7 +1772,6 @@ export default function App() {
                                   </div>
                                 </td>
                                 <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
-                                <td className="p-4 text-center"><button onClick={handleResetUserPassword} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button></td>
                                 <td className="p-4 text-center">{u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}</td>
                               </tr>
                             ))}
@@ -1821,7 +1781,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 系統整體設定 (SLA) */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Clock size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> SLA 逾期自動警示設定</h3>
                     <div className="flex flex-col md:flex-row items-end gap-4">
@@ -1862,7 +1821,7 @@ export default function App() {
                       </div>
                       <div className="flex-1 overflow-auto">
                         <table className="w-full text-left border-collapse">
-                          <thead className="bg-white dark:bg-slate-800 sticky top-0 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
+                          <thead className="bg-white dark:bg-slate-800 sticky top-0 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest z-10">
                             <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-xs font-medium">
@@ -1879,7 +1838,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 表單下拉選單維護 */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
@@ -1897,9 +1855,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Render Canned Modal in Root */}
-          {showCannedModal && <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />}
-          
           {/* Global View & Edit Modal */}
           {viewModalTicket && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}}>
