@@ -4,7 +4,8 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon
+  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon,
+  Timer, MapPin, Users
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -18,7 +19,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.0.0 (原生Auth資安升級版)";
+const APP_VERSION = "v3.1.0 (進階統計與逾期追蹤版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -328,6 +329,7 @@ export default function App() {
   const [progresses, setProgresses] = useState([]);
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
+  const [overdueHours, setOverdueHours] = useState(24);
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -448,10 +450,11 @@ export default function App() {
         setChannels(data.channels || []); setCategories(data.categories || []);
         setStatuses(data.statuses || []); setProgresses(data.progresses || []);
         setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
+        setOverdueHours(data.overdueHours || 24);
       } else {
         setDoc(buildDocPath('cs_settings', 'dropdowns'), {
           channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}
+          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24
         });
       }
     });
@@ -539,7 +542,7 @@ export default function App() {
       await secondaryAuth.signOut();
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, createdAt: new Date().toISOString() });
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, createdAt: new Date().toISOString(), region: '' });
       setNewUser({ username: '', password: '', role: ROLES.USER });
       alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
     } catch(e) { 
@@ -565,9 +568,26 @@ export default function App() {
     } catch (e) { setPwdChangeMsg('❌ 密碼更新失敗：' + e.message); }
   };
 
-  const handleResetUserPassword = async (id, username) => {
+  const handleUpdateUserRegion = async (id, regionValue) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    alert('【安全性升級】\n系統已全面導入 Firebase 原生 Auth。\n為保障資安，前端無法直接重設他人密碼。\n\n請至 Firebase Console > Authentication 手動重置密碼，也可以直接停用該帳號後重建。');
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { region: regionValue.trim() });
+    } catch (e) {
+      console.error("更新地區失敗", e);
+    }
+  };
+
+  const handleSaveOverdueHours = async () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { overdueHours }, { merge: true });
+      alert("逾期判定時數已成功更新！");
+    } catch (e) {
+      alert("更新失敗：" + e.message);
+    }
   };
 
   const handleAvatarUpload = (e) => {
@@ -1027,9 +1047,22 @@ export default function App() {
     const safeCategories = Array.isArray(categories) ? categories : [];
     safeCategories.forEach(c => categoryData[c] = 0);
     
+    const assigneeData = {};
+    const regionData = {};
+
     rangeTickets.forEach(t => {
       if (safeCategories.includes(t.category)) categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       else categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
+
+      // Calculate for Assignee & Region stats
+      if (t.assignee) {
+        assigneeData[t.assignee] = (assigneeData[t.assignee] || 0) + 1;
+        const userRegion = userMap[t.assignee]?.region || '未設定地區';
+        regionData[userRegion] = (regionData[userRegion] || 0) + 1;
+      } else {
+        assigneeData['未指派'] = (assigneeData['未指派'] || 0) + 1;
+        regionData['未指派'] = (regionData['未指派'] || 0) + 1;
+      }
     });
 
     Object.keys(categoryData).forEach(cat => {
@@ -1054,8 +1087,33 @@ export default function App() {
       trendData.phoneToLine.push(monthTickets.filter(t => t.channel === '電話轉LINE').length);
     });
 
-    return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels };
-  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping]);
+    return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
+  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping, userMap]);
+
+  const renderHorizontalBar = (dataObj, title, icon) => {
+    const sorted = Object.entries(dataObj).sort((a, b) => b[1] - a[1]);
+    const max = Math.max(...Object.values(dataObj), 1);
+    return (
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+        <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100">{icon} {title}</h3>
+        {sorted.length === 0 ? (
+           <div className="h-32 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500">尚無資料</div>
+        ) : (
+           <div className="space-y-4 max-h-[250px] overflow-y-auto pr-2">
+             {sorted.map(([name, count]) => (
+               <div key={name} className="flex items-center group">
+                 <span className="w-20 md:w-24 truncate text-sm font-bold text-slate-600 dark:text-slate-300" title={name}>{name}</span>
+                 <div className="flex-1 bg-slate-100 dark:bg-slate-700 rounded-full h-3.5 mx-3 md:mx-4 overflow-hidden relative">
+                   <div className="bg-gradient-to-r from-blue-400 to-blue-500 dark:from-indigo-500 dark:to-indigo-400 h-full rounded-full transition-all duration-1000 ease-out group-hover:brightness-110" style={{ width: `${(count/max)*100}%` }}></div>
+                 </div>
+                 <span className="w-10 text-right text-sm font-black text-slate-700 dark:text-slate-200">{count}</span>
+               </div>
+             ))}
+           </div>
+        )}
+      </div>
+    );
+  };
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
 
@@ -1247,22 +1305,28 @@ export default function App() {
                </div>
                
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-                  {maintainTicketsList.map(t => (
-                    <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-500 transition-all group flex flex-col h-full relative">
-                      <div className="absolute top-4 right-6 text-[10px] font-mono text-slate-300 dark:text-slate-500">#{t.ticketId || t.id.slice(0,8)}</div>
-                      <div className="flex justify-between items-start mb-4 mt-2">
-                         <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span>
-                         <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{new Date(t.receiveTime).toLocaleDateString()}</span>
-                      </div>
-                      <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
-                      <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
-                        <div className="flex items-center text-slate-400 dark:text-slate-500"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" /><span>建檔</span></div>
-                        {t.assignee && <div className="flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">負責</span></div>}
-                      </div>
-                    </div>
-                  ))}
-                  {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 dark:text-slate-500 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
+                 {maintainTicketsList.map(t => {
+                   const isOverdue = t.progress !== '結案' && ((new Date().getTime() - new Date(t.receiveTime).getTime()) / 3600000) > overdueHours;
+                   return (
+                     <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-500 transition-all group flex flex-col h-full relative overflow-hidden">
+                       <div className="absolute top-4 right-6 flex items-center space-x-2">
+                         {isOverdue && <span className="animate-pulse bg-red-600 text-white px-2 py-0.5 rounded-md text-[10px] font-black shadow-sm">逾期</span>}
+                         <span className="text-[10px] font-mono text-slate-300 dark:text-slate-500">#{t.ticketId || t.id.slice(0,8)}</span>
+                       </div>
+                       <div className="flex justify-between items-start mb-4 mt-2">
+                          <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span>
+                          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</span>
+                       </div>
+                       <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
+                       <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo}</p>
+                       <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs font-bold">
+                         <div className="flex items-center text-slate-400 dark:text-slate-500"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" /><span>建檔</span></div>
+                         {t.assignee && <div className="flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold">負責</span></div>}
+                       </div>
+                     </div>
+                   );
+                 })}
+                 {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 dark:text-slate-500 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
                </div>
 
                {maintainModal && (
@@ -1536,7 +1600,13 @@ export default function App() {
                 )}
               </div>
 
-              {/* 圖表區 2: 線型圖 (月趨勢) */}
+              {/* 圖表區 2: 負責人與地區分佈 (新增進階統計) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {renderHorizontalBar(dashboardStats.assigneeData, '處理人員案件統計', <Users size={20} className="mr-2 text-indigo-500 dark:text-indigo-400"/>)}
+                {renderHorizontalBar(dashboardStats.regionData, '負責地區服務分佈', <MapPin size={20} className="mr-2 text-emerald-500 dark:text-emerald-400"/>)}
+              </div>
+
+              {/* 圖表區 3: 線型圖 (月趨勢) */}
               <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div className="flex justify-between items-center mb-8">
                   <div>
@@ -1598,6 +1668,18 @@ export default function App() {
                 </div>
               </div>
 
+              {currentUser.role === ROLES.ADMIN && (
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Timer size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統參數設定</h3>
+                  <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4">
+                    <label className="text-sm font-bold text-slate-700 dark:text-slate-300">逾期判定時數 (小時)：</label>
+                    <input type="number" min="1" value={overdueHours} onChange={e => setOverdueHours(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
+                    <button onClick={handleSaveOverdueHours} className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-all">儲存參數</button>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
+                </div>
+              )}
+
               {currentUser.role !== ROLES.VIEWER && (
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
@@ -1627,14 +1709,22 @@ export default function App() {
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4 text-center">密碼重置</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">地區歸屬 (修改後點空白處)</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
                               <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                 <td className="p-4 flex items-center space-x-3 dark:text-slate-200"><UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" /><span>{u.username}</span></td>
                                 <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
-                                <td className="p-4 text-center"><button onClick={()=>handleResetUserPassword(u.id, u.username)} className="text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors">重置</button></td>
+                                <td className="p-4">
+                                  <input 
+                                    type="text" 
+                                    defaultValue={u.region || ''} 
+                                    onBlur={(e) => handleUpdateUserRegion(u.id, e.target.value)} 
+                                    placeholder="輸入負責地區..." 
+                                    className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                  />
+                                </td>
                                 <td className="p-4 text-center">{u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}</td>
                               </tr>
                             ))}
@@ -1837,6 +1927,22 @@ export default function App() {
     </div>
   );
 }
+
+// Helper component for forced-edit mode
+const EditField = ({ label, val, setVal, type = "text", options = [] }) => (
+  <div>
+    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-1">{label}</label>
+    {type === "select" ? (
+      <select value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+        {options.map(o => <option key={o} value={o}>{o || '未指定'}</option>)}
+      </select>
+    ) : type === "textarea" ? (
+      <textarea value={val || ''} onChange={e => setVal(e.target.value)} rows="4" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+    ) : (
+      <input type={type} value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+    )}
+  </div>
+);
 
 const container = document.getElementById('root');
 if (container) {
