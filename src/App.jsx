@@ -1062,7 +1062,7 @@ export default function App() {
       const role = userMap[effectiveAssignee]?.role;
       if (role === ROLES.USER) {
         assigneeData[effectiveAssignee] = (assigneeData[effectiveAssignee] || 0) + 1;
-        const userRegion = userMap[effectiveAssignee]?.region || '未設定地區';
+        const userRegion = userMap[effectiveAssignee]?.region || '未設定群組';
         regionData[userRegion] = (regionData[userRegion] || 0) + 1;
       }
     });
@@ -1583,10 +1583,10 @@ export default function App() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <div>
                     <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">人員與地區分佈</h3>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">案件處理狀況統計</h3>
                       <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
                         <button onClick={() => setPersonnelViewMode('assignee')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'assignee' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>處理人員</button>
-                        <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>負責地區</button>
+                        <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>群組</button>
                       </div>
                     </div>
                   </div>
@@ -1717,7 +1717,7 @@ export default function App() {
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">地區歸屬 (修改後點空白處)</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">群組歸屬 (修改後點空白處)</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
@@ -1730,7 +1730,7 @@ export default function App() {
                                       type="text" 
                                       defaultValue={u.region || ''} 
                                       onBlur={(e) => handleUpdateUserRegion(u.id, e.target.value)} 
-                                      placeholder="輸入負責地區..." 
+                                      placeholder="輸入群組..." 
                                       className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs"
                                     />
                                   ) : (
