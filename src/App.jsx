@@ -10,6 +10,7 @@ import {
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 // --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
 if (typeof window !== 'undefined') {
@@ -19,7 +20,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.3.0 (設定區分層版)";
+const APP_VERSION = "v3.5.0 (整合 LINE 通知綁定版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -34,6 +35,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Secondary App for Admin to create users without logging themselves out
@@ -385,7 +387,8 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER });
+  // 新增 lineUserId 欄位預設值
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
@@ -549,8 +552,15 @@ export default function App() {
       await secondaryAuth.signOut();
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: newUser.username, role: newUser.role, createdAt: new Date().toISOString(), region: '' });
-      setNewUser({ username: '', password: '', role: ROLES.USER });
+      // 儲存時將 lineUserId 寫入資料庫
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
+        username: newUser.username, 
+        role: newUser.role, 
+        createdAt: new Date().toISOString(), 
+        region: '',
+        lineUserId: newUser.lineUserId.trim()
+      });
+      setNewUser({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
       alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
     } catch(e) { 
         if (e.code === 'auth/operation-not-allowed') alert('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
@@ -585,6 +595,17 @@ export default function App() {
     }
   };
 
+  // 新增：處理 LINE UID 更新的函式
+  const handleUpdateUserLineId = async (id, lineIdValue) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
+    } catch (e) {
+      console.error("更新 LINE UID 失敗", e);
+    }
+  };
+
   const handleSaveOverdueHours = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
@@ -613,11 +634,17 @@ export default function App() {
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         try {
+          const storageRef = ref(storage, `avatars/${appId}/${activeUser.id}_${Date.now()}.jpg`);
+          await uploadString(storageRef, dataUrl, 'data_url');
+          const downloadUrl = await getDownloadURL(storageRef);
+
           const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
           const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
-          await updateDoc(docRef, { photoURL: dataUrl });
-          alert('個人圖像更新成功！');
-        } catch (error) { alert('圖像更新失敗，請稍後再試。'); }
+          await updateDoc(docRef, { photoURL: downloadUrl });
+          alert('個人圖像更新成功！已儲存至 Cloud Storage。');
+        } catch (error) { 
+          alert('圖像更新失敗，請稍後再試。錯誤原因：' + error.message); 
+        }
       };
       img.src = event.target.result;
     };
@@ -668,7 +695,7 @@ export default function App() {
       const newTicketId = todayStr + String(maxSeq + 1).padStart(5, '0');
 
       const initialReplies = formData.replyContent ? [{ time: getFormatDate(), user: currentUser.username, content: formData.replyContent }] : [];
-      const submissionData = { ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], createdAt: new Date().toISOString() };
+      const submissionData = { ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], createdAt: new Date().toISOString(), isDeleted: false };
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
@@ -687,6 +714,7 @@ export default function App() {
   const maintainTicketsList = useMemo(() => {
     if (!currentUser) return [];
     let result = tickets.filter(t => {
+      if (t.isDeleted) return false;
       const matchSearch = maintainSearchTerm ? ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
       if (currentUser.role === ROLES.ADMIN) return maintainSearchTerm ? matchSearch : t.progress !== '結案'; 
       const isMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
@@ -747,21 +775,27 @@ export default function App() {
     } catch (error) { alert('修改失敗：' + error.message); }
   };
 
-  const pendingDeleteRequests = useMemo(() => tickets.filter(t => t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
+  const pendingDeleteRequests = useMemo(() => tickets.filter(t => !t.isDeleted && t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
   const allEditLogs = useMemo(() => {
     let logs = [];
     tickets.forEach(t => {
+      if (t.isDeleted) return;
       if (Array.isArray(t.editLogs) && t.editLogs.length > 0) t.editLogs.forEach(log => logs.push({ ...log, ticketId: t.ticketId, instName: t.instName, recordId: t.id }));
     });
     return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
   }, [tickets]);
 
   const handleApproveDelete = async (ticketId, ticketInstName) => {
-    if (!window.confirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？此操作無法復原。`)) return;
+    if (!window.confirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`)) return;
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId));
-      alert('已成功核准並刪除該筆紀錄。');
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
+        isDeleted: true,
+        deletedAt: getFormatDate(),
+        deletedBy: currentUser.username,
+        'deleteRequest.status': 'approved'
+      });
+      alert('已成功邏輯刪除該筆紀錄。');
     } catch (error) { alert('刪除失敗：' + error.message); }
   };
 
@@ -778,17 +812,21 @@ export default function App() {
 
   const handleBatchDeleteTickets = async () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
-    if (window.confirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？此操作無法復原。`)) {
+    if (window.confirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`)) {
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         let batch = writeBatch(db); let count = 0;
         for (let i = 0; i < selectedTickets.length; i++) {
-          batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]));
+          batch.update(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]), {
+             isDeleted: true,
+             deletedAt: getFormatDate(),
+             deletedBy: currentUser.username
+          });
           count++;
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        setSelectedTickets([]); alert(`成功刪除 ${selectedTickets.length} 筆紀錄。`);
+        setSelectedTickets([]); alert(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
       } catch (error) { alert("批次刪除失敗：" + error.message); }
     }
   };
@@ -797,7 +835,10 @@ export default function App() {
     if (!window.XLSX) return alert("Excel 模組尚未載入完成，請稍後再試。");
     const targetData = activeTab === 'all-records' ? allRecordsFiltered : filteredAndSortedHistory;
     if (targetData.length === 0) return alert("目前沒有資料可以匯出。");
+    if (targetData.length > 5000) return alert("為確保系統效能與避免瀏覽器崩潰，單次匯出不可超過 5000 筆！請嘗試縮小日期或查詢範圍。");
+
     const exportData = targetData.map(t => ({
+      '狀態標記': t.isDeleted ? '已刪除' : '正常',
       '案件號': t.ticketId || '', '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
       '反映管道': t.channel || '', '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '', '院所名稱': t.instName || '',
       '醫療層級': t.instLevel || '', '提問人資訊': t.questioner || '', '業務類別': t.category || '', '案件狀態': t.status || '',
@@ -831,6 +872,12 @@ export default function App() {
           const rawTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
           if (rawTime && row['反映管道'] && row['業務類別'] && row['案件狀態'] && row['處理進度'] && row['建檔人']) validRows.push(row);
         });
+
+        if (validRows.length > 5000) {
+          alert('單次匯入筆數超過 5000 筆！為確保系統不中斷，請將檔案拆分後再進行匯入。');
+          return;
+        }
+
         let added = 0; let batch = writeBatch(db); let count = 0;
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         for (const row of validRows) {
@@ -844,7 +891,7 @@ export default function App() {
             instLevel: String(row['醫療層級'] || '').trim(), questioner: String(row['提問人資訊'] || '').trim(),
             category: String(row['業務類別']).trim(), status: String(row['案件狀態']).trim(), progress: String(row['處理進度']).trim(),
             receiver: String(row['建檔人']).trim(), assignee: String(row['指定處理人'] || '').trim(), extraInfo: String(row['詳細問題描述'] || '').trim(),
-            replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || '').trim(), closeTime: cTime, replies: [], createdAt: new Date().toISOString(), isImported: true
+            replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || '').trim(), closeTime: cTime, replies: [], createdAt: new Date().toISOString(), isImported: true, isDeleted: false
           };
           batch.set(baseDbPath.length ? doc(collection(db, ...baseDbPath, 'cs_records')) : doc(collection(db, 'cs_records')), recordData);
           count++; added++;
@@ -928,6 +975,7 @@ export default function App() {
 
   const filteredAndSortedHistory = useMemo(() => {
     let result = tickets.filter(t => {
+      if (t.isDeleted) return false;
       const majorCat = categoryMapping[t.category] && categoryMapping[t.category].trim() !== '' ? categoryMapping[t.category].trim() : '未歸屬大類別';
       const matchSearch = searchTerm === '' || (t.ticketId||'').includes(searchTerm) || (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.category||'').includes(searchTerm) || majorCat.includes(searchTerm) || (t.receiver||'').includes(searchTerm);
       const matchProgress = historyProgress === '全部' || (historyProgress === '未結案' ? t.progress !== '結案' : t.progress === historyProgress);
@@ -1002,18 +1050,21 @@ export default function App() {
                 const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
                 const latestReplyStr = getLatestReply(t.replies, t.replyContent);
                 return (
-                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className="hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50">
+                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50 ${t.isDeleted ? 'opacity-50' : ''}`}>
                     {currentUser.role === ROLES.ADMIN && (
                       <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
+                        <input type="checkbox" disabled={t.isDeleted} className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
                       </td>
                     )}
                     <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
                     <td className="p-5">
-                      <div className="font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">{t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" /></div>
+                      <div className={`font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center ${t.isDeleted ? 'line-through' : ''}`}>
+                        {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
+                      </div>
                       <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                      {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
                     </td>
-                    <td className="p-5"><div className="text-slate-800 dark:text-slate-200">{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
+                    <td className="p-5"><div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
                     <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                        <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                        <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
@@ -1041,18 +1092,18 @@ export default function App() {
   );
 
   const dashboardStats = useMemo(() => {
-    const total = tickets.length;
-    const pending = tickets.filter(t => t.progress !== '結案').length;
-    const resolved = tickets.filter(t => t.progress === '結案').length;
+    const total = tickets.filter(t => !t.isDeleted).length;
+    const pending = tickets.filter(t => !t.isDeleted && t.progress !== '結案').length;
+    const resolved = tickets.filter(t => !t.isDeleted && t.progress === '結案').length;
     const completionRate = total ? Math.round((resolved/total)*100) : 0;
     
     const startDateObj = new Date(`${dashStartDate}T00:00:00`);
     const endDateObj = new Date(`${dashEndDate}T23:59:59.999`);
-    const rangeTickets = tickets.filter(t => new Date(t.receiveTime) >= startDateObj && new Date(t.receiveTime) <= endDateObj);
+    const rangeTickets = tickets.filter(t => !t.isDeleted && new Date(t.receiveTime) >= startDateObj && new Date(t.receiveTime) <= endDateObj);
 
     const personnelStartObj = new Date(`${personnelStartDate}T00:00:00`);
     const personnelEndObj = new Date(`${personnelEndDate}T23:59:59.999`);
-    const personnelRangeTickets = tickets.filter(t => new Date(t.receiveTime) >= personnelStartObj && new Date(t.receiveTime) <= personnelEndObj);
+    const personnelRangeTickets = tickets.filter(t => !t.isDeleted && new Date(t.receiveTime) >= personnelStartObj && new Date(t.receiveTime) <= personnelEndObj);
 
     const categoryData = {}; const aggregatedCategoryData = {};
     const safeCategories = Array.isArray(categories) ? categories : [];
@@ -1092,7 +1143,7 @@ export default function App() {
 
     const trendData = { total: [], phone: [], line: [], phoneToLine: [] };
     monthLabels.forEach(monthStr => {
-      const monthTickets = tickets.filter(t => t.receiveTime.substring(0, 7) === monthStr && (trendCategory === '全類別' || t.category === trendCategory));
+      const monthTickets = tickets.filter(t => !t.isDeleted && t.receiveTime.substring(0, 7) === monthStr && (trendCategory === '全類別' || t.category === trendCategory));
       trendData.total.push(monthTickets.length);
       trendData.phone.push(monthTickets.filter(t => t.channel === '電話').length);
       trendData.line.push(monthTickets.filter(t => t.channel === 'LINE').length);
@@ -1107,8 +1158,7 @@ export default function App() {
 
   if (!currentUser) {
     const isFirstTime = dbUsers.length === 0;
-    const sortedLoginUsers = [...dbUsers].sort((a, b) => ({ [ROLES.USER]: 1, [ROLES.VIEWER]: 2, [ROLES.ADMIN]: 3 }[a.role] || 99) - ({ [ROLES.USER]: 1, [ROLES.VIEWER]: 2, [ROLES.ADMIN]: 3 }[b.role] || 99));
-
+    
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900 relative overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 dark:bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
@@ -1117,25 +1167,22 @@ export default function App() {
           <div className="text-center mb-10">
             <div className="bg-blue-600 dark:bg-blue-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 dark:shadow-none"><Shield size={32} className="text-white"/></div>
             <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">系統存取驗證</h2>
-            <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請選擇您的帳號並輸入密碼'}</p>
+            <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請輸入您的帳號密碼'}</p>
             <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold tracking-widest">{APP_VERSION}</div>
           </div>
           <form onSubmit={isFirstTime ? handleCreateFirstAdmin : handleLogin} className="space-y-6">
             {isFirstTime ? (
               <>
-                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">建立管理員帳號</label><input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500"/></div>
-                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">設定密碼</label><input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500"/></div>
+                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">建立管理員帳號</label><input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500" autoComplete="username"/></div>
+                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">設定密碼</label><input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500" autoComplete="new-password"/></div>
               </>
             ) : (
               <>
                 <div>
                   <label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">帳號</label>
-                  <select required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold">
-                    <option value="" disabled>請選擇使用者...</option>
-                    {sortedLoginUsers.map(u => <option key={u.id} value={u.username}>{u.username} ({u.role})</option>)}
-                  </select>
+                  <input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold placeholder-slate-400 dark:placeholder-slate-500" placeholder="請輸入帳號" autoComplete="username"/>
                 </div>
-                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">密碼</label><input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500"/></div>
+                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">密碼</label><input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500" autoComplete="current-password"/></div>
               </>
             )}
             {authError && <p className="text-sm text-red-500 dark:text-red-400 font-bold text-center animate-pulse">{authError}</p>}
@@ -1739,13 +1786,14 @@ export default function App() {
                             <option value={ROLES.VIEWER}>{ROLES.VIEWER} (僅能看不可改)</option>
                             <option value={ROLES.ADMIN}>{ROLES.ADMIN} (系統全權限)</option>
                           </select>
+                          <input type="text" placeholder="綁定 LINE UID (U開頭... 非必填)" value={newUser.lineUserId || ''} onChange={e=>setNewUser({...newUser, lineUserId:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
                           <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
                         </form>
                       </div>
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">群組歸屬 (修改後點空白處)</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">群組歸屬</th><th className="p-4">LINE UID (修改後點空白)</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
@@ -1759,7 +1807,20 @@ export default function App() {
                                       defaultValue={u.region || ''} 
                                       onBlur={(e) => handleUpdateUserRegion(u.id, e.target.value)} 
                                       placeholder="輸入群組..." 
-                                      className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                      className="w-full min-w-[80px] p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                    />
+                                  ) : (
+                                    <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
+                                  )}
+                                </td>
+                                <td className="p-4">
+                                  {u.role === ROLES.USER ? (
+                                    <input 
+                                      type="text" 
+                                      defaultValue={u.lineUserId || ''} 
+                                      onBlur={(e) => handleUpdateUserLineId(u.id, e.target.value)} 
+                                      placeholder="輸入 LINE UID..." 
+                                      className="w-full min-w-[120px] p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono"
                                     />
                                   ) : (
                                     <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
