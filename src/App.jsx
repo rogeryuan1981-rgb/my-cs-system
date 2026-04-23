@@ -19,7 +19,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.2.0";
+const APP_VERSION = "v3.3.0 (設定區分層版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -364,9 +364,15 @@ export default function App() {
 
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
+  
+  const [personnelStartDate, setPersonnelStartDate] = useState(getFirstDayOfMonth());
+  const [personnelEndDate, setPersonnelEndDate] = useState(getLastDayOfMonth());
+  
   const [trendCategory, setTrendCategory] = useState('全類別');
   const [categoryViewMode, setCategoryViewMode] = useState('detail');
-  const [personnelViewMode, setPersonnelViewMode] = useState('assignee'); // 新增：處理人員/地區切換
+  const [personnelViewMode, setPersonnelViewMode] = useState('assignee');
+
+  const [settingsTab, setSettingsTab] = useState('general');
 
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
@@ -1044,6 +1050,10 @@ export default function App() {
     const endDateObj = new Date(`${dashEndDate}T23:59:59.999`);
     const rangeTickets = tickets.filter(t => new Date(t.receiveTime) >= startDateObj && new Date(t.receiveTime) <= endDateObj);
 
+    const personnelStartObj = new Date(`${personnelStartDate}T00:00:00`);
+    const personnelEndObj = new Date(`${personnelEndDate}T23:59:59.999`);
+    const personnelRangeTickets = tickets.filter(t => new Date(t.receiveTime) >= personnelStartObj && new Date(t.receiveTime) <= personnelEndObj);
+
     const categoryData = {}; const aggregatedCategoryData = {};
     const safeCategories = Array.isArray(categories) ? categories : [];
     safeCategories.forEach(c => categoryData[c] = 0);
@@ -1054,11 +1064,11 @@ export default function App() {
     rangeTickets.forEach(t => {
       if (safeCategories.includes(t.category)) categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       else categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
+    });
 
-      // 修正邏輯：未指定負責人之紀錄，就是原紀錄建立者
+    personnelRangeTickets.forEach(t => {
       const effectiveAssignee = t.assignee || t.receiver;
       
-      // 僅針對一般使用者 (排除管理員與紀錄檢視者) 進行統計
       const role = userMap[effectiveAssignee]?.role;
       if (role === ROLES.USER) {
         assigneeData[effectiveAssignee] = (assigneeData[effectiveAssignee] || 0) + 1;
@@ -1090,7 +1100,7 @@ export default function App() {
     });
 
     return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
-  }, [tickets, dashStartDate, dashEndDate, trendCategory, categories, categoryMapping, userMap]);
+  }, [tickets, dashStartDate, dashEndDate, personnelStartDate, personnelEndDate, trendCategory, categories, categoryMapping, userMap]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
@@ -1590,6 +1600,12 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
+                    <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                    <input type="date" value={personnelStartDate} onChange={e=>setPersonnelStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                    <span className="text-slate-300 dark:text-slate-500">~</span>
+                    <input type="date" value={personnelEndDate} onChange={e=>setPersonnelEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                  </div>
                 </div>
                 
                 {Object.keys(personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData).length === 0 ? (
@@ -1645,60 +1661,72 @@ export default function App() {
           {/* TAB 5: SETTINGS (系統設定區) */}
           {activeTab === 'settings' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8 max-w-[1400px] mx-auto">
-              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">系統設定區</h2>
-
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><User size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 個人帳號設定</h3>
-                <div className="flex flex-col md:flex-row gap-8 items-start">
-                  <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
-                    <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
-                    <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
-                      <Camera size={14} className="mr-1.5"/> 更換個人圖像
-                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                    </label>
-                    <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">系統設定區</h2>
+                {currentUser.role === ROLES.ADMIN && (
+                  <div className="flex bg-slate-200/50 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <button onClick={() => setSettingsTab('general')} className={`px-5 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center ${settingsTab === 'general' ? 'bg-white dark:bg-slate-600 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}><User size={16} className="mr-2"/>一般設定</button>
+                    <button onClick={() => setSettingsTab('system')} className={`px-5 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center ${settingsTab === 'system' ? 'bg-white dark:bg-slate-600 shadow text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}><Settings size={16} className="mr-2"/>系統參數設定</button>
                   </div>
-
-                  <form onSubmit={handleChangeOwnPassword} className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">新密碼</label>
-                      <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">確認新密碼</label>
-                      <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
-                    </div>
-                    <div className="md:col-span-2">
-                      <button type="submit" className="w-full md:w-auto px-10 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-black dark:hover:bg-slate-500 transition-all shadow-lg active:scale-95">更新密碼</button>
-                      {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'}`}>{pwdChangeMsg}</p>}
-                    </div>
-                  </form>
-                </div>
+                )}
               </div>
 
-              {currentUser.role === ROLES.ADMIN && (
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
-                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Timer size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統參數設定</h3>
-                  <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4">
-                    <label className="text-sm font-bold text-slate-700 dark:text-slate-300">逾期判定時數 (小時)：</label>
-                    <input type="number" min="1" value={overdueHours} onChange={e => setOverdueHours(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
-                    <button onClick={handleSaveOverdueHours} className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-all">儲存參數</button>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
-                </div>
-              )}
-
-              {currentUser.role !== ROLES.VIEWER && (
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
-                  <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
-                  <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
-                </div>
-              )}
-
-              {currentUser.role === ROLES.ADMIN && (
+              {(settingsTab === 'general' || currentUser.role !== ROLES.ADMIN) && (
                 <>
-                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><User size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 個人帳號設定</h3>
+                    <div className="flex flex-col md:flex-row gap-8 items-start">
+                      <div className="flex flex-col items-center space-y-4 p-6 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-slate-50 dark:bg-slate-700/30 shrink-0 w-full md:w-48">
+                        <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-20 h-20 text-3xl" />
+                        <label className="cursor-pointer flex items-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/50 transition-colors w-full justify-center">
+                          <Camera size={14} className="mr-1.5"/> 更換個人圖像
+                          <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                        </label>
+                        <p className="text-[9px] text-slate-400 dark:text-slate-500 text-center leading-tight">建議上傳正方形圖片<br/>(系統會自動壓縮)</p>
+                      </div>
+
+                      <form onSubmit={handleChangeOwnPassword} className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                        <div>
+                          <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">新密碼</label>
+                          <input type="password" required value={pwdChangeForm.newPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, newPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="輸入新密碼"/>
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">確認新密碼</label>
+                          <input type="password" required value={pwdChangeForm.confirmPwd} onChange={e=>setPwdChangeForm({...pwdChangeForm, confirmPwd: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
+                        </div>
+                        <div className="md:col-span-2">
+                          <button type="submit" className="w-full md:w-auto px-10 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-black dark:hover:bg-slate-500 transition-all shadow-lg active:scale-95">更新密碼</button>
+                          {pwdChangeMsg && <p className={`mt-4 text-sm font-bold ${pwdChangeMsg.includes('❌') ? 'text-red-500 dark:text-red-400 animate-pulse' : 'text-green-600 dark:text-green-400'}`}>{pwdChangeMsg}</p>}
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+
+                  {currentUser.role !== ROLES.VIEWER && (
+                    <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+                      <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
+                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {settingsTab === 'system' && currentUser.role === ROLES.ADMIN && (
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8">
+                  {/* System Parameters (Overdue Hours) */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Timer size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統逾期參數設定</h3>
+                    <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4">
+                      <label className="text-sm font-bold text-slate-700 dark:text-slate-300">逾期判定時數 (小時)：</label>
+                      <input type="number" min="1" value={overdueHours} onChange={e => setOverdueHours(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
+                      <button onClick={handleSaveOverdueHours} className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-all">儲存參數</button>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
+                  </div>
+
+                  {/* Users Management */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與權限管理</h3>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       <div className="bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
@@ -1746,7 +1774,8 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                  {/* Insts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="space-y-8">
                       <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                         <h3 className="font-black mb-6 text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest flex items-center"><Plus size={18} className="mr-2 text-blue-600 dark:text-blue-400"/> 單筆新增院所</h3>
@@ -1791,8 +1820,8 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 表單下拉選單維護 */}
-                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                  {/* Dropdowns */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mt-8">
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
@@ -1803,7 +1832,7 @@ export default function App() {
                     </div>
                   </div>
                   <CategoryMappingManager categories={categories} mapping={categoryMapping} />
-                </>
+                </div>
               )}
             </div>
           )}
