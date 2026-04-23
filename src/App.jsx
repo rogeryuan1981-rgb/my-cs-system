@@ -19,7 +19,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.2.0 (進階圖表切換與邏輯修正版)";
+const APP_VERSION = "v3.2.0";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -1583,7 +1583,7 @@ export default function App() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <div>
                     <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">案件處理狀況統計</h3>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">案件處理人員統計</h3>
                       <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
                         <button onClick={() => setPersonnelViewMode('assignee')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'assignee' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>處理人員</button>
                         <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>群組</button>
