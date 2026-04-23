@@ -11,6 +11,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
 if (typeof window !== 'undefined') {
@@ -20,7 +21,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.5.0 (整合 LINE 通知綁定版)";
+const APP_VERSION = "v3.6.0 (手動觸發通知版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -36,6 +37,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Secondary App for Admin to create users without logging themselves out
@@ -375,6 +377,7 @@ export default function App() {
   const [personnelViewMode, setPersonnelViewMode] = useState('assignee');
 
   const [settingsTab, setSettingsTab] = useState('general');
+  const [isTriggering, setIsTriggering] = useState(false); // 控制手動觸發按鈕狀態
 
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
@@ -387,7 +390,6 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
   
-  // 新增 lineUserId 欄位預設值
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
@@ -552,7 +554,6 @@ export default function App() {
       await secondaryAuth.signOut();
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      // 儲存時將 lineUserId 寫入資料庫
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
         username: newUser.username, 
         role: newUser.role, 
@@ -595,7 +596,6 @@ export default function App() {
     }
   };
 
-  // 新增：處理 LINE UID 更新的函式
   const handleUpdateUserLineId = async (id, lineIdValue) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
@@ -615,6 +615,23 @@ export default function App() {
       alert("逾期判定時數已成功更新！");
     } catch (e) {
       alert("更新失敗：" + e.message);
+    }
+  };
+
+  // 觸發後端 manualTriggerOverdue 函式
+  const handleManualTrigger = async () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (!window.confirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)")) return;
+    
+    setIsTriggering(true);
+    try {
+      const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
+      const res = await triggerFn();
+      alert(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
+    } catch (error) {
+      alert("觸發失敗，請確認後端是否已更新成功：" + error.message);
+    } finally {
+      setIsTriggering(false);
     }
   };
 
@@ -1761,13 +1778,17 @@ export default function App() {
 
               {settingsTab === 'system' && currentUser.role === ROLES.ADMIN && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8">
-                  {/* System Parameters (Overdue Hours) */}
+                  {/* System Parameters (Overdue Hours & Manual Trigger) */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Timer size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統逾期參數設定</h3>
                     <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4">
                       <label className="text-sm font-bold text-slate-700 dark:text-slate-300">逾期判定時數 (小時)：</label>
                       <input type="number" min="1" value={overdueHours} onChange={e => setOverdueHours(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
                       <button onClick={handleSaveOverdueHours} className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-all">儲存參數</button>
+                      <button onClick={handleManualTrigger} disabled={isTriggering} className="w-full md:w-auto px-6 py-3 bg-amber-500 text-white rounded-xl hover:bg-amber-600 shadow-md font-black text-sm transition-all disabled:opacity-50 flex items-center justify-center">
+                        {isTriggering ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div> : null}
+                        強制觸發推播
+                      </button>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
                   </div>
