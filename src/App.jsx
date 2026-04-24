@@ -334,6 +334,7 @@ export default function App() {
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
   const [overdueHours, setOverdueHours] = useState(24);
+  const [holidays, setHolidays] = useState([]); // 新增國定假日狀態
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -379,6 +380,9 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState('general');
   const [isTriggering, setIsTriggering] = useState(false); // 控制手動觸發按鈕狀態
 
+  const [newHoliday, setNewHoliday] = useState({ start: '', end: '', note: '' }); // 新增假日設定表單
+  const [leaveForm, setLeaveForm] = useState({ start: '', end: '', delegate: '' }); // 新增請假代理表單
+
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
   const [maintainModal, setMaintainModal] = useState(null);
@@ -414,6 +418,17 @@ export default function App() {
   }, [firebaseUser, dbUsers]);
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
+
+  // 載入當前使用者的請假設定
+  useEffect(() => {
+    if (activeUser) {
+      setLeaveForm({
+        start: activeUser.leaveStart || '',
+        end: activeUser.leaveEnd || '',
+        delegate: activeUser.delegateUser || ''
+      });
+    }
+  }, [activeUser]);
 
   // --- Initialization ---
   useEffect(() => {
@@ -463,10 +478,11 @@ export default function App() {
         setStatuses(data.statuses || []); setProgresses(data.progresses || []);
         setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
         setOverdueHours(data.overdueHours || 24);
+        setHolidays(data.holidays || []);
       } else {
         setDoc(buildDocPath('cs_settings', 'dropdowns'), {
           channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24
+          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: []
         });
       }
     });
@@ -615,6 +631,67 @@ export default function App() {
       alert("逾期判定時數已成功更新！");
     } catch (e) {
       alert("更新失敗：" + e.message);
+    }
+  };
+
+  const handleAddHoliday = async (e) => {
+    e.preventDefault();
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (!newHoliday.start || !newHoliday.end || !newHoliday.note) return alert("請填寫完整放假資訊");
+    if (newHoliday.start > newHoliday.end) return alert("開始日期不能晚於結束日期");
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      const updatedHolidays = [...holidays, newHoliday].sort((a,b) => a.start.localeCompare(b.start));
+      await setDoc(docRef, { holidays: updatedHolidays }, { merge: true });
+      setNewHoliday({ start: '', end: '', note: '' });
+      alert('國定假日新增成功！');
+    } catch(e) {
+      alert("新增假日失敗：" + e.message);
+    }
+  };
+
+  const handleRemoveHoliday = async (idx) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (!window.confirm("確定要刪除此假日設定嗎？")) return;
+    try {
+      const newHolidays = holidays.filter((_, i) => i !== idx);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { holidays: newHolidays }, { merge: true });
+    } catch (e) {
+      alert("刪除失敗：" + e.message);
+    }
+  };
+
+  const handleSaveLeave = async (e) => {
+    e.preventDefault();
+    if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return alert("請假開始日期不能晚於結束日期");
+    if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return alert("請選擇案件代理人");
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+      await updateDoc(docRef, {
+        leaveStart: leaveForm.start,
+        leaveEnd: leaveForm.end,
+        delegateUser: leaveForm.delegate
+      });
+      alert('代理人設定已儲存成功！休假期間系統會自動將您的案件推播轉給代理人。');
+    } catch (error) {
+      alert('儲存代理失敗：' + error.message);
+    }
+  };
+
+  const handleClearLeave = async () => {
+    if (!window.confirm("確定要清除代理人設定並恢復自己接收通知嗎？")) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+      await updateDoc(docRef, { leaveStart: '', leaveEnd: '', delegateUser: '' });
+      setLeaveForm({ start: '', end: '', delegate: '' });
+      alert('已成功解除代理設定！');
+    } catch (error) {
+      alert('清除失敗：' + error.message);
     }
   };
 
@@ -846,6 +923,27 @@ export default function App() {
         setSelectedTickets([]); alert(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
       } catch (error) { alert("批次刪除失敗：" + error.message); }
     }
+  };
+
+  // 新增：徹底刪除 (Hard Delete) 函式
+  const handleBatchHardDeleteTickets = async () => {
+    if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
+    const confirmText = window.prompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`);
+    if (confirmText !== 'DELETE') {
+      if (confirmText !== null) alert('驗證碼不符，已取消徹底刪除操作。');
+      return;
+    }
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      let batch = writeBatch(db); let count = 0;
+      for (let i = 0; i < selectedTickets.length; i++) {
+        batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]));
+        count++;
+        if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
+      }
+      if (count > 0) await batch.commit();
+      setSelectedTickets([]); alert(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`);
+    } catch (error) { alert("徹底刪除失敗：" + error.message); }
   };
 
   const handleExportExcel = () => {
@@ -1517,7 +1615,10 @@ export default function App() {
                  </div>
                  <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
                    {selectedTickets.length > 0 && (
-                     <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in"><Trash2 size={16} /><span className="hidden md:inline">刪除 ({selectedTickets.length})</span></button>
+                     <>
+                       <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in" title="標記為已刪除，保留於系統軌跡"><Trash2 size={16} /><span className="hidden md:inline">邏輯刪除 ({selectedTickets.length})</span></button>
+                       <button onClick={handleBatchHardDeleteTickets} className="flex items-center justify-center space-x-2 bg-slate-900 dark:bg-black text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-slate-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in" title="從資料庫徹底抹除，不留任何軌跡"><X size={16} /><span className="hidden md:inline">徹底刪除 ({selectedTickets.length})</span></button>
+                     </>
                    )}
                    <button onClick={handleExportExcel} className="flex items-center justify-center space-x-2 bg-green-600 dark:bg-green-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 dark:hover:bg-green-600 transition-colors font-bold text-sm shrink-0"><Download size={16} /><span className="hidden md:inline">匯出全部</span></button>
                    <div className="relative flex-1 xl:w-72">
@@ -1766,6 +1867,32 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8 mt-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><UserPlus size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 請假與代理人設定</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">當您設定了休假區間與代理人後，在該區間內，系統會自動將您的逾期案件推播轉發給代理人。</p>
+                    <form onSubmit={handleSaveLeave} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end bg-slate-50 dark:bg-slate-700/30 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假開始日期</label>
+                        <input type="date" value={leaveForm.start} onChange={e=>setLeaveForm({...leaveForm, start: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假結束日期</label>
+                        <input type="date" value={leaveForm.end} onChange={e=>setLeaveForm({...leaveForm, end: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">選擇代理人</label>
+                        <select value={leaveForm.delegate} onChange={e=>setLeaveForm({...leaveForm, delegate: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
+                          <option value="">-- 無代理人 --</option>
+                          {dbUsers.filter(u => u.username !== activeUser.username).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex space-x-3">
+                        <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-md active:scale-95 text-sm">儲存代理</button>
+                        <button type="button" onClick={handleClearLeave} className="px-6 py-4 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-100 dark:hover:bg-slate-600 transition-all border border-slate-200 dark:border-slate-600 text-sm shadow-sm">清除</button>
+                      </div>
+                    </form>
+                  </div>
+
                   {currentUser.role !== ROLES.VIEWER && (
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
                       <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
@@ -1791,6 +1918,46 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
+                  </div>
+
+                  {/* Holidays Management */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Calendar size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 國定假日與停發推播區間</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手動強制推播）。</p>
+                    
+                    <form onSubmit={handleAddHoliday} className="flex flex-col md:flex-row gap-4 items-end mb-8 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">開始日期</label>
+                        <input type="date" required value={newHoliday.start} onChange={e=>setNewHoliday({...newHoliday, start: e.target.value})} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none [color-scheme:light] dark:[color-scheme:dark]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">結束日期</label>
+                        <input type="date" required value={newHoliday.end} onChange={e=>setNewHoliday({...newHoliday, end: e.target.value})} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none [color-scheme:light] dark:[color-scheme:dark]" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">休假事由</label>
+                        <input type="text" required value={newHoliday.note} onChange={e=>setNewHoliday({...newHoliday, note: e.target.value})} placeholder="例如: 中秋連假" className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <button type="submit" className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-black shadow-md shrink-0">新增假期</button>
+                    </form>
+
+                    <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 max-h-[300px]">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 tracking-widest z-10">
+                          <tr><th className="p-4">開始日期</th><th className="p-4">結束日期</th><th className="p-4">事由</th><th className="p-4 text-center">刪除</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
+                          {holidays.length === 0 ? <tr><td colSpan="4" className="p-8 text-center text-slate-400 dark:text-slate-500 font-bold">目前無設定任何國定假日</td></tr> : holidays.map((h, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <td className="p-4 font-mono text-slate-600 dark:text-slate-300">{h.start}</td>
+                              <td className="p-4 font-mono text-slate-600 dark:text-slate-300">{h.end}</td>
+                              <td className="p-4 text-slate-800 dark:text-slate-200 font-bold">{h.note}</td>
+                              <td className="p-4 text-center"><button onClick={()=>handleRemoveHoliday(idx)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   {/* Users Management */}
