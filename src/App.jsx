@@ -433,10 +433,11 @@ export default function App() {
     const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
   }, [dbUsers]);
 
-  // --- 現代化提示系統與強制改密碼 State ---
+// --- 現代化提示系統與強制改密碼 State ---
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [confirmDialog, setConfirmDialog] = useState({ show: false, msg: '', onConfirm: null });
   const [showForcePwdModal, setShowForcePwdModal] = useState(false);
+  const [forcePwdForm, setForcePwdForm] = useState({ newPwd: '', confirmPwd: '' }); // ✅ 修復：補上漏掉的密碼表單狀態
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -447,14 +448,14 @@ export default function App() {
     setConfirmDialog({ show: true, msg, onConfirm: onConfirmCallback });
   };
 
-  // Auth State Sync (補上重整自動攔截檢查密碼)
+  // Auth State Sync
   useEffect(() => {
     if (firebaseUser && !firebaseUser.isAnonymous && dbUsers.length > 0) {
       const matchedUser = dbUsers.find(u => getEmailFromUsername(u.username) === firebaseUser.email);
       if (matchedUser) {
         setCurrentUser(matchedUser);
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
-        // 修正 1：重整時檢查是否需要強制改密碼
+        
         if (matchedUser.forcePasswordChange) {
           setShowForcePwdModal(true);
         } else {
@@ -512,7 +513,7 @@ export default function App() {
       snap.docs.forEach(doc => {
         const data = doc.data();
         if (data.isChunk && data.payload) {
-          try { JSON.parse(data.payload).forEach(item => { instList.push({ id: doc.id, isChunk: true, ...item }); map[item.code] = { name: item.name, level: item.level }; }); } catch (e) {}
+          try { JSON.parse(data.payload).forEach(item => { instListList.push({ id: doc.id, isChunk: true, ...item }); map[item.code] = { name: item.name, level: item.level }; }); } catch (e) {}
         } else { instList.push({ id: doc.id, isChunk: false, ...data }); map[data.code] = { name: data.name, level: data.level }; }
       });
       setInstitutions(instList); setInstMap(map);
@@ -537,6 +538,7 @@ export default function App() {
   }, [firebaseUser]);
 
   // --- Auth Handlers ---
+  // ✅ 修復：移除了重複的 handleForceChangePassword，只保留這一個正確的
   const handleForceChangePassword = async (e) => {
     e.preventDefault();
     if (forcePwdForm.newPwd !== forcePwdForm.confirmPwd) return showToast('兩次密碼不一致', 'error');
