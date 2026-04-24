@@ -537,8 +537,7 @@ export default function App() {
     return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
   }, [firebaseUser]);
 
-  // --- Auth Handlers ---
-  // ✅ 修復：移除了重複的 handleForceChangePassword，只保留這一個正確的
+// --- Auth Handlers ---
   const handleForceChangePassword = async (e) => {
     e.preventDefault();
     if (forcePwdForm.newPwd !== forcePwdForm.confirmPwd) return showToast('兩次密碼不一致', 'error');
@@ -558,10 +557,11 @@ export default function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const email = getEmailFromUsername(loginForm.username);
+    const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
+    const email = getEmailFromUsername(trimmedUsername);
     try {
       await signInWithEmailAndPassword(auth, email, loginForm.password);
-      const matchedUser = dbUsers.find(u => u.username === loginForm.username);
+      const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
         setFormData(getInitialForm(matchedUser.username, channels, progresses));
@@ -572,10 +572,13 @@ export default function App() {
           setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
         }
         setAuthError('');
+      } else {
+        setAuthError('登入成功，但資料庫無您的權限紀錄，請聯絡管理員。');
+        await auth.signOut();
       }
     } catch (err) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
-        const legacyUser = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
           try {
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
@@ -588,7 +591,7 @@ export default function App() {
             else setAuthError('帳號升級失敗：' + createErr.message);
           }
         } else {
-          setAuthError('帳號或密碼錯誤');
+          setAuthError('❌ 帳號或密碼錯誤！請確認大小寫與是否有空白。');
         }
       } else if (err.code === 'auth/operation-not-allowed') {
         setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
@@ -603,16 +606,21 @@ export default function App() {
     if (dbUsers.length > 0) return;
     if (loginForm.password.length < 6) return setAuthError('密碼長度至少需要 6 個字元！');
     try {
-      const email = getEmailFromUsername(loginForm.username);
+      const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除空白
+      const email = getEmailFromUsername(trimmedUsername);
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      // 系統第一位最高權限不用強制修改密碼
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, role: ROLES.ADMIN, createdAt: new Date().toISOString(), forcePasswordChange: false });
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
+        username: trimmedUsername, 
+        role: ROLES.ADMIN, 
+        createdAt: new Date().toISOString(), 
+        forcePasswordChange: false 
+      });
       
       setAuthError('');
       setActiveTab('form');
-      setFormData(getInitialForm(loginForm.username, channels, progresses));
+      setFormData(getInitialForm(trimmedUsername, channels, progresses));
     } catch (e) { 
       if (e.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
       else setAuthError('建立失敗：' + e.message); 
@@ -633,26 +641,28 @@ export default function App() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (dbUsers.some(u => u.username === newUser.username)) return showToast('帳號名稱已存在', 'error');
+    const trimmedUsername = newUser.username.trim(); // ✅ 自動清除空白
+    if (dbUsers.some(u => u.username === trimmedUsername)) return showToast('帳號名稱已存在', 'error');
     if (newUser.password.length < 6) return showToast('密碼長度至少需要 6 個字元！', 'error');
     try {
-      const email = getEmailFromUsername(newUser.username);
+      const email = getEmailFromUsername(trimmedUsername);
       await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
       await secondaryAuth.signOut();
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
-        username: newUser.username, 
+        username: trimmedUsername, 
         role: newUser.role, 
         createdAt: new Date().toISOString(), 
         region: '',
         lineUserId: newUser.lineUserId.trim(),
-        forcePasswordChange: true // 確保新建立的帳號必須改密碼
+        forcePasswordChange: true
       });
       setNewUser({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
-      showToast('用戶建立成功，已綁定 Firebase 核心 Auth！');
+      showToast(`用戶「${trimmedUsername}」建立成功！`);
     } catch(e) { 
-        if (e.code === 'auth/operation-not-allowed') showToast('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！', 'error');
+        if (e.code === 'auth/operation-not-allowed') showToast('❌ 請至後台啟用「電子郵件」登入', 'error');
+        else if (e.code === 'auth/email-already-in-use') showToast('❌ 此帳號名稱曾被建立且底層尚未刪除，請換一個名稱', 'error');
         else showToast('新增失敗：' + e.message, 'error');
     }
   };
