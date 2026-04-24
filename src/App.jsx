@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
 import { 
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
@@ -1405,10 +1406,7 @@ export default function App() {
                     {formData.progress !== '結案' && (
                       <div className="animate-in zoom-in-95 duration-200">
                         <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
-                          <option value="">-- 未指定 --</option>
-                          {dbUsers.filter(u => u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
-                        </select>
+                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500"><option value="">-- 未指定 --</option>{dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}</select>
                       </div>
                     )}
                   </div>
@@ -1535,8 +1533,7 @@ export default function App() {
                              <div>
                                <label className="text-xs font-black text-red-600 dark:text-red-400 mb-2 block">指派後續處理人</label>
                                <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 bg-white dark:bg-slate-700 border-2 border-red-200 dark:border-red-900/50 rounded-xl font-bold text-red-700 dark:text-red-400 outline-none">
-                                 <option value="">-- 未指定 --</option>
-                                 {dbUsers.filter(u => u.role === ROLES.USER).map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                                 <option value="">-- 未指定 --</option>{dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
                                </select>
                              </div>
                            ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 dark:text-slate-500 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 rounded-xl"/></div>}
@@ -1886,7 +1883,7 @@ export default function App() {
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">選擇代理人</label>
                         <select value={leaveForm.delegate} onChange={e=>setLeaveForm({...leaveForm, delegate: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
                           <option value="">-- 無代理人 --</option>
-                          {dbUsers.filter(u => u.username !== activeUser.username && u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                          {dbUsers.filter(u => u.username !== activeUser.username).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
                       </div>
                       <div className="flex space-x-3">
@@ -2181,7 +2178,7 @@ export default function App() {
                            <EditField label="案件狀態" type="select" val={modalEditForm.status} setVal={(v) => setModalEditForm({...modalEditForm, status: v})} options={statuses} />
                            <EditField label="當前進度" type="select" val={modalEditForm.progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} options={progresses} />
                            <EditField label="建檔人" val={modalEditForm.receiver} setVal={(v) => setModalEditForm({...modalEditForm, receiver: v})} />
-                           <EditField label="負責人" type="select" val={modalEditForm.assignee} setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} options={['', ...dbUsers.filter(u => u.role === ROLES.USER).map(u => u.username)]} />
+                           <EditField label="負責人" type="select" val={modalEditForm.assignee} setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} options={['', ...dbUsers.map(u => u.username)]} />
                            <EditField label="接收時間" type="datetime-local" val={modalEditForm.receiveTime} setVal={(v) => setModalEditForm({...modalEditForm, receiveTime: v})} />
                            <EditField label="結案時間" type="datetime-local" val={modalEditForm.closeTime} setVal={(v) => setModalEditForm({...modalEditForm, closeTime: v})} />
                          </div>
@@ -2236,3 +2233,9 @@ const EditField = ({ label, val, setVal, type = "text", options = [] }) => (
     )}
   </div>
 );
+
+const container = document.getElementById('root');
+if (container) {
+  const root = createRoot(container);
+  root.render(<App />);
+}
