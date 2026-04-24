@@ -20,7 +20,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.7";
+const APP_VERSION = "v3.8 (全面現代化提示版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -209,7 +209,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
   );
 };
 
-const DropdownManager = ({ title, dbKey, items }) => {
+const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
   const [newItem, setNewItem] = useState('');
   const [draggedIdx, setDraggedIdx] = useState(null);
   const safeItems = Array.isArray(items) ? items : [];
@@ -222,14 +222,17 @@ const DropdownManager = ({ title, dbKey, items }) => {
     const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
     await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
     setNewItem('');
+    showToast(`成功新增「${newItem.trim()}」`);
   };
 
-  const handleRemove = async (itemToRemove) => {
-    if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
-    const newArray = safeItems.filter(i => i !== itemToRemove);
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+  const handleRemove = (itemToRemove) => {
+    showConfirm(`確定要刪除「${itemToRemove}」嗎？`, async () => {
+      const newArray = safeItems.filter(i => i !== itemToRemove);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+      showToast(`已刪除「${itemToRemove}」`);
+    });
   };
 
   const handleDrop = async (e, dropIdx) => {
@@ -266,14 +269,14 @@ const DropdownManager = ({ title, dbKey, items }) => {
   );
 };
 
-const CategoryMappingManager = ({ categories, mapping }) => {
+const CategoryMappingManager = ({ categories, mapping, showToast }) => {
   const [localMap, setLocalMap] = useState({});
   useEffect(() => setLocalMap(mapping || {}), [mapping]);
   const handleSaveMapping = async () => {
     const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
     const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
     await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
-    alert("大類別設定已儲存成功！");
+    showToast("大類別設定已儲存成功！");
   };
   return (
     <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
@@ -295,6 +298,7 @@ const CategoryMappingManager = ({ categories, mapping }) => {
     </div>
   );
 };
+
 // -------------------------------------------------
 // --- 加入防抖 Hook ---
 // -------------------------------------------------
@@ -343,7 +347,7 @@ export default function App() {
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
   const [overdueHours, setOverdueHours] = useState(24);
-  const [holidays, setHolidays] = useState([]); // 新增國定假日狀態
+  const [holidays, setHolidays] = useState([]); 
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -374,18 +378,18 @@ export default function App() {
 
   const [allRecordsSearchTerm, setAllRecordsSearchTerm] = useState('');
 
-  // --- 新增：防抖狀態 ---
+  // --- 防抖狀態 ---
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const debouncedAllRecordsSearchTerm = useDebounce(allRecordsSearchTerm, 300);
   
-  // --- 新增：分頁狀態 ---
+  // --- 分頁狀態 ---
   const [historyPage, setHistoryPage] = useState(1);
   const [allRecordsPage, setAllRecordsPage] = useState(1);
   const ITEMS_PER_PAGE = 50;
 
   useEffect(() => { 
     setSelectedTickets([]); 
-    setHistoryPage(1); // 條件改變時回到第一頁
+    setHistoryPage(1); 
   }, [debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
 
   useEffect(() => { 
@@ -404,12 +408,13 @@ export default function App() {
   const [personnelViewMode, setPersonnelViewMode] = useState('assignee');
 
   const [settingsTab, setSettingsTab] = useState('general');
-  const [isTriggering, setIsTriggering] = useState(false); // 控制手動觸發按鈕狀態
+  const [isTriggering, setIsTriggering] = useState(false); 
 
-  const [newHoliday, setNewHoliday] = useState({ start: '', end: '', note: '' }); // 新增假日設定表單
-  const [leaveForm, setLeaveForm] = useState({ start: '', end: '', delegate: '' }); // 新增請假代理表單
+  const [newHoliday, setNewHoliday] = useState({ start: '', end: '', note: '' }); 
+  const [leaveForm, setLeaveForm] = useState({ start: '', end: '', delegate: '' }); 
 
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
+  const debouncedMaintainSearchTerm = useDebounce(maintainSearchTerm, 300);
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
   const [maintainModal, setMaintainModal] = useState(null);
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
@@ -428,13 +433,33 @@ export default function App() {
     const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
   }, [dbUsers]);
 
-  // Auth State Sync
+  // --- 現代化提示系統與強制改密碼 State ---
+  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+  const [confirmDialog, setConfirmDialog] = useState({ show: false, msg: '', onConfirm: null });
+  const [showForcePwdModal, setShowForcePwdModal] = useState(false);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ show: true, msg, type });
+    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
+  };
+  
+  const showConfirm = (msg, onConfirmCallback) => {
+    setConfirmDialog({ show: true, msg, onConfirm: onConfirmCallback });
+  };
+
+  // Auth State Sync (補上重整自動攔截檢查密碼)
   useEffect(() => {
     if (firebaseUser && !firebaseUser.isAnonymous && dbUsers.length > 0) {
       const matchedUser = dbUsers.find(u => getEmailFromUsername(u.username) === firebaseUser.email);
       if (matchedUser) {
         setCurrentUser(matchedUser);
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
+        // 修正 1：重整時檢查是否需要強制改密碼
+        if (matchedUser.forcePasswordChange) {
+          setShowForcePwdModal(true);
+        } else {
+          setShowForcePwdModal(false);
+        }
       } else {
         setCurrentUser(null);
       }
@@ -445,14 +470,9 @@ export default function App() {
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
-  // 載入當前使用者的請假設定
   useEffect(() => {
     if (activeUser) {
-      setLeaveForm({
-        start: activeUser.leaveStart || '',
-        end: activeUser.leaveEnd || '',
-        delegate: activeUser.delegateUser || ''
-      });
+      setLeaveForm({ start: activeUser.leaveStart || '', end: activeUser.leaveEnd || '', delegate: activeUser.delegateUser || '' });
     }
   }, [activeUser]);
 
@@ -516,27 +536,15 @@ export default function App() {
     return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
   }, [firebaseUser]);
 
-  // --- 現代化提示系統與強制改密碼 State ---
-  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
-  const [confirmDialog, setConfirmDialog] = useState({ show: false, msg: '', onConfirm: null });
-  const [showForcePwdModal, setShowForcePwdModal] = useState(false);
-  const [forcePwdForm, setForcePwdForm] = useState({ newPwd: '', confirmPwd: '' });
-
-  const showToast = (msg, type = 'success') => {
-    setToast({ show: true, msg, type });
-    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
-  };
-  const showConfirm = (msg, onConfirmCallback) => {
-    setConfirmDialog({ show: true, msg, onConfirm: onConfirmCallback });
-  };
-
+  // --- Auth Handlers ---
   const handleForceChangePassword = async (e) => {
     e.preventDefault();
     if (forcePwdForm.newPwd !== forcePwdForm.confirmPwd) return showToast('兩次密碼不一致', 'error');
     if (forcePwdForm.newPwd.length < 6) return showToast('密碼長度需至少 6 碼', 'error');
     try {
       await updatePassword(auth.currentUser, forcePwdForm.newPwd);
-      const docRef = typeof __app_id !== 'undefined' ? doc(db, 'artifacts', appId, 'public', 'data', 'cs_users', currentUser.id) : doc(db, 'cs_users', currentUser.id);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', currentUser.id) : doc(db, 'cs_users', currentUser.id);
       await updateDoc(docRef, { forcePasswordChange: false });
       showToast('密碼設定成功，歡迎使用系統！');
       setShowForcePwdModal(false);
@@ -545,7 +553,7 @@ export default function App() {
       showToast('密碼更新失敗: ' + error.message, 'error');
     }
   };
-  // --- Auth Handlers ---
+
   const handleLogin = async (e) => {
     e.preventDefault();
     const email = getEmailFromUsername(loginForm.username);
@@ -597,7 +605,8 @@ export default function App() {
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, role: ROLES.ADMIN, createdAt: new Date().toISOString() });
+      // 系統第一位最高權限不用強制修改密碼
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, role: ROLES.ADMIN, createdAt: new Date().toISOString(), forcePasswordChange: false });
       
       setAuthError('');
       setActiveTab('form');
@@ -622,8 +631,8 @@ export default function App() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (dbUsers.some(u => u.username === newUser.username)) return alert('帳號名稱已存在');
-    if (newUser.password.length < 6) return alert('密碼長度至少需要 6 個字元！');
+    if (dbUsers.some(u => u.username === newUser.username)) return showToast('帳號名稱已存在', 'error');
+    if (newUser.password.length < 6) return showToast('密碼長度至少需要 6 個字元！', 'error');
     try {
       const email = getEmailFromUsername(newUser.username);
       await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
@@ -636,22 +645,23 @@ export default function App() {
         createdAt: new Date().toISOString(), 
         region: '',
         lineUserId: newUser.lineUserId.trim(),
-        forcePasswordChange: true
+        forcePasswordChange: true // 確保新建立的帳號必須改密碼
       });
       setNewUser({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
-      alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
+      showToast('用戶建立成功，已綁定 Firebase 核心 Auth！');
     } catch(e) { 
-        if (e.code === 'auth/operation-not-allowed') alert('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-        else alert('新增失敗：' + e.message);
+        if (e.code === 'auth/operation-not-allowed') showToast('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！', 'error');
+        else showToast('新增失敗：' + e.message, 'error');
     }
   };
 
-  const handleDeleteUser = async (id) => {
+  const handleDeleteUser = (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (window.confirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)')) {
+    showConfirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)', async () => {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
-    }
+      showToast('用戶已成功停用');
+    });
   };
 
   const handleChangeOwnPassword = async (e) => {
@@ -689,46 +699,48 @@ export default function App() {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
       await setDoc(docRef, { overdueHours }, { merge: true });
-      alert("逾期判定時數已成功更新！");
+      showToast("逾期判定時數已成功更新！");
     } catch (e) {
-      alert("更新失敗：" + e.message);
+      showToast("更新失敗：" + e.message, 'error');
     }
   };
 
   const handleAddHoliday = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!newHoliday.start || !newHoliday.end || !newHoliday.note) return alert("請填寫完整放假資訊");
-    if (newHoliday.start > newHoliday.end) return alert("開始日期不能晚於結束日期");
+    if (!newHoliday.start || !newHoliday.end || !newHoliday.note) return showToast("請填寫完整放假資訊", 'error');
+    if (newHoliday.start > newHoliday.end) return showToast("開始日期不能晚於結束日期", 'error');
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
       const updatedHolidays = [...holidays, newHoliday].sort((a,b) => a.start.localeCompare(b.start));
       await setDoc(docRef, { holidays: updatedHolidays }, { merge: true });
       setNewHoliday({ start: '', end: '', note: '' });
-      alert('國定假日新增成功！');
+      showToast('國定假日新增成功！');
     } catch(e) {
-      alert("新增假日失敗：" + e.message);
+      showToast("新增假日失敗：" + e.message, 'error');
     }
   };
 
-  const handleRemoveHoliday = async (idx) => {
+  const handleRemoveHoliday = (idx) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!window.confirm("確定要刪除此假日設定嗎？")) return;
-    try {
-      const newHolidays = holidays.filter((_, i) => i !== idx);
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-      await setDoc(docRef, { holidays: newHolidays }, { merge: true });
-    } catch (e) {
-      alert("刪除失敗：" + e.message);
-    }
+    showConfirm("確定要刪除此假日設定嗎？", async () => {
+      try {
+        const newHolidays = holidays.filter((_, i) => i !== idx);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+        await setDoc(docRef, { holidays: newHolidays }, { merge: true });
+        showToast("假日設定已移除");
+      } catch (e) {
+        showToast("刪除失敗：" + e.message, 'error');
+      }
+    });
   };
 
   const handleSaveLeave = async (e) => {
     e.preventDefault();
-    if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return alert("請假開始日期不能晚於結束日期");
-    if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return alert("請選擇案件代理人");
+    if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return showToast("請假開始日期不能晚於結束日期", 'error');
+    if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return showToast("請選擇案件代理人", 'error');
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
@@ -737,46 +749,46 @@ export default function App() {
         leaveEnd: leaveForm.end,
         delegateUser: leaveForm.delegate
       });
-      alert('代理人設定已儲存成功！休假期間系統會自動將您的案件推播轉給代理人。');
+      showToast('代理人設定已儲存成功！休假期間系統會自動將您的案件推播轉給代理人。');
     } catch (error) {
-      alert('儲存代理失敗：' + error.message);
+      showToast('儲存代理失敗：' + error.message, 'error');
     }
   };
 
-  const handleClearLeave = async () => {
-    if (!window.confirm("確定要清除代理人設定並恢復自己接收通知嗎？")) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
-      await updateDoc(docRef, { leaveStart: '', leaveEnd: '', delegateUser: '' });
-      setLeaveForm({ start: '', end: '', delegate: '' });
-      alert('已成功解除代理設定！');
-    } catch (error) {
-      alert('清除失敗：' + error.message);
-    }
+  const handleClearLeave = () => {
+    showConfirm("確定要清除代理人設定並恢復自己接收通知嗎？", async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+        await updateDoc(docRef, { leaveStart: '', leaveEnd: '', delegateUser: '' });
+        setLeaveForm({ start: '', end: '', delegate: '' });
+        showToast('已成功解除代理設定！');
+      } catch (error) {
+        showToast('清除失敗：' + error.message, 'error');
+      }
+    });
   };
 
-  // 觸發後端 manualTriggerOverdue 函式
-  const handleManualTrigger = async () => {
+  const handleManualTrigger = () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!window.confirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)")) return;
-    
-    setIsTriggering(true);
-    try {
-      const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
-      const res = await triggerFn();
-      alert(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
-    } catch (error) {
-      alert("觸發失敗，請確認後端是否已更新成功：" + error.message);
-    } finally {
-      setIsTriggering(false);
-    }
+    showConfirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)", async () => {
+      setIsTriggering(true);
+      try {
+        const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
+        const res = await triggerFn();
+        showToast(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
+      } catch (error) {
+        showToast("觸發失敗，請確認後端是否已更新成功：" + error.message, 'error');
+      } finally {
+        setIsTriggering(false);
+      }
+    });
   };
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !activeUser) return;
-    if (!file.type.startsWith('image/')) return alert('請上傳圖片檔案！');
+    if (!file.type.startsWith('image/')) return showToast('請上傳圖片檔案！', 'error');
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -796,9 +808,9 @@ export default function App() {
           const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
           const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
           await updateDoc(docRef, { photoURL: downloadUrl });
-          alert('個人圖像更新成功！已儲存至 Cloud Storage。');
+          showToast('個人圖像更新成功！已儲存至 Cloud Storage。');
         } catch (error) { 
-          alert('圖像更新失敗，請稍後再試。錯誤原因：' + error.message); 
+          showToast('圖像更新失敗，請稍後再試。錯誤原因：' + error.message, 'error'); 
         }
       };
       img.src = event.target.result;
@@ -870,15 +882,15 @@ export default function App() {
     if (!currentUser) return [];
     let result = tickets.filter(t => {
       if (t.isDeleted) return false;
-      const matchSearch = maintainSearchTerm ? ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
-      if (currentUser.role === ROLES.ADMIN) return maintainSearchTerm ? matchSearch : t.progress !== '結案'; 
+      const matchSearch = debouncedMaintainSearchTerm ? ((t.ticketId || '').includes(debouncedMaintainSearchTerm) || (t.instName || '').includes(debouncedMaintainSearchTerm)) : true;
+      if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : t.progress !== '結案'; 
       const isMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
       const isUnresolved = t.progress !== '結案';
-      return maintainSearchTerm ? isMine && isUnresolved && matchSearch : isMine && isUnresolved;
+      return debouncedMaintainSearchTerm ? isMine && isUnresolved && matchSearch : isMine && isUnresolved;
     });
     result.sort((a, b) => maintainSortOrder === 'asc' ? new Date(a.receiveTime).getTime() - new Date(b.receiveTime).getTime() : new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
     return result;
-  }, [tickets, currentUser, maintainSearchTerm, maintainSortOrder]);
+  }, [tickets, currentUser, debouncedMaintainSearchTerm, maintainSortOrder]);
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
@@ -891,13 +903,13 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), { deleteRequest: { status: 'pending', reason: reason.trim(), requestedBy: currentUser.username, requestTime: getFormatDate() } });
-      alert('刪除申請已送出，待管理員簽核。'); setMaintainModal(null);
-    } catch (error) { alert("申請失敗：" + error.message); }
+      showToast('刪除申請已送出，待管理員簽核。'); setMaintainModal(null);
+    } catch (error) { showToast("申請失敗：" + error.message, 'error'); }
   };
 
   const handleMaintainSubmit = async (e) => {
     e.preventDefault();
-    if (currentUser?.role === ROLES.VIEWER) return alert("無權限");
+    if (currentUser?.role === ROLES.VIEWER) return showToast("無權限", 'error');
     try {
       const updates = { progress: maintainForm.progress };
       if (maintainForm.progress === '結案' && maintainModal.progress !== '結案') updates.closeTime = getFormatDate();
@@ -917,8 +929,9 @@ export default function App() {
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), updates);
+      showToast('案件維護更新成功！');
       setMaintainModal(null);
-    } catch (error) { alert("更新失敗：" + error.message); }
+    } catch (error) { showToast("更新失敗：" + error.message, 'error'); }
   };
 
   const handleModalSave = async () => {
@@ -926,8 +939,8 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), modalEditForm);
-      alert('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
-    } catch (error) { alert('修改失敗：' + error.message); }
+      showToast('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
+    } catch (error) { showToast('修改失敗：' + error.message, 'error'); }
   };
 
   const pendingDeleteRequests = useMemo(() => tickets.filter(t => !t.isDeleted && t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
@@ -940,18 +953,19 @@ export default function App() {
     return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
   }, [tickets]);
 
-  const handleApproveDelete = async (ticketId, ticketInstName) => {
-    if (!window.confirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`)) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
-        isDeleted: true,
-        deletedAt: getFormatDate(),
-        deletedBy: currentUser.username,
-        'deleteRequest.status': 'approved'
-      });
-      alert('已成功邏輯刪除該筆紀錄。');
-    } catch (error) { alert('刪除失敗：' + error.message); }
+  const handleApproveDelete = (ticketId, ticketInstName) => {
+    showConfirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`, async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
+          isDeleted: true,
+          deletedAt: getFormatDate(),
+          deletedBy: currentUser.username,
+          'deleteRequest.status': 'approved'
+        });
+        showToast('已成功邏輯刪除該筆紀錄。');
+      } catch (error) { showToast('刪除失敗：' + error.message, 'error'); }
+    });
   };
 
   const handleRejectDelete = async (ticketId) => {
@@ -962,36 +976,37 @@ export default function App() {
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
         'deleteRequest.status': 'rejected', 'deleteRequest.rejectReason': rejectReason.trim(), 'deleteRequest.rejectedBy': currentUser.username, 'deleteRequest.rejectTime': getFormatDate()
       });
-    } catch (error) {}
+      showToast('已退回該刪除申請。');
+    } catch (error) { showToast('退回失敗：' + error.message, 'error');}
   };
 
-  const handleBatchDeleteTickets = async () => {
+  const handleBatchDeleteTickets = () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
-    if (window.confirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`)) {
+    showConfirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`, async () => {
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         let batch = writeBatch(db); let count = 0;
         for (let i = 0; i < selectedTickets.length; i++) {
           batch.update(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]), {
-             isDeleted: true,
-             deletedAt: getFormatDate(),
-             deletedBy: currentUser.username
+              isDeleted: true,
+              deletedAt: getFormatDate(),
+              deletedBy: currentUser.username
           });
           count++;
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        setSelectedTickets([]); alert(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
-      } catch (error) { alert("批次刪除失敗：" + error.message); }
-    }
+        setSelectedTickets([]); showToast(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
+      } catch (error) { showToast("批次刪除失敗：" + error.message, 'error'); }
+    });
   };
 
-  // 新增：徹底刪除 (Hard Delete) 函式
+  // 徹底刪除 (Hard Delete) 函式 (因為需要輸入 DELETE 防呆，這裡保留 prompt)
   const handleBatchHardDeleteTickets = async () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
     const confirmText = window.prompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`);
     if (confirmText !== 'DELETE') {
-      if (confirmText !== null) alert('驗證碼不符，已取消徹底刪除操作。');
+      if (confirmText !== null) showToast('驗證碼不符，已取消徹底刪除操作。', 'error');
       return;
     }
     try {
@@ -1003,15 +1018,15 @@ export default function App() {
         if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
       }
       if (count > 0) await batch.commit();
-      setSelectedTickets([]); alert(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`);
-    } catch (error) { alert("徹底刪除失敗：" + error.message); }
+      setSelectedTickets([]); showToast(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`);
+    } catch (error) { showToast("徹底刪除失敗：" + error.message, 'error'); }
   };
 
   const handleExportExcel = () => {
-    if (!window.XLSX) return alert("Excel 模組尚未載入完成，請稍後再試。");
+    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
     const targetData = activeTab === 'all-records' ? allRecordsFiltered : filteredAndSortedHistory;
-    if (targetData.length === 0) return alert("目前沒有資料可以匯出。");
-    if (targetData.length > 5000) return alert("為確保系統效能與避免瀏覽器崩潰，單次匯出不可超過 5000 筆！請嘗試縮小日期或查詢範圍。");
+    if (targetData.length === 0) return showToast("目前沒有資料可以匯出。", 'error');
+    if (targetData.length > 5000) return showToast("為確保系統效能，單次匯出不可超過 5000 筆！請嘗試縮小範圍。", 'error');
 
     const exportData = targetData.map(t => ({
       '狀態標記': t.isDeleted ? '已刪除' : '正常',
@@ -1024,10 +1039,11 @@ export default function App() {
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
     window.XLSX.writeFile(wb, `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`);
+    showToast('匯出成功！');
   };
 
   const handleDownloadTemplate = () => {
-    if (!window.XLSX) return alert("Excel 模組尚未載入完成，請稍後再試。");
+    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
     const headers = ['案件號', '接收時間(YYYY-MM-DD HH:mm)', '反映管道', '院所代碼', '院所名稱', '醫療層級', '提問人資訊', '業務類別', '案件狀態', '處理進度', '建檔人', '指定處理人', '詳細問題描述', '回覆內容(完整紀錄)', '結案時間(YYYY-MM-DD HH:mm)'];
     const ws = window.XLSX.utils.aoa_to_sheet([headers]); const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, "匯入範本"); window.XLSX.writeFile(wb, "歷史紀錄匯入範本.xlsx");
@@ -1050,7 +1066,7 @@ export default function App() {
         });
 
         if (validRows.length > 5000) {
-          alert('單次匯入筆數超過 5000 筆！為確保系統不中斷，請將檔案拆分後再進行匯入。');
+          showToast('單次匯入筆數超過 5000 筆！請將檔案拆分後再進行匯入。', 'error');
           return;
         }
 
@@ -1074,8 +1090,8 @@ export default function App() {
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        alert(`成功匯入 ${added} 筆歷史紀錄！`);
-      } catch (error) { alert("匯入發生未預期錯誤，請確認檔案格式是否正確。"); } finally { setIsImportingHistory(false); e.target.value = null; }
+        showToast(`成功匯入 ${added} 筆歷史紀錄！`);
+      } catch (error) { showToast("匯入發生未預期錯誤，請確認檔案格式是否正確。", 'error'); } finally { setIsImportingHistory(false); e.target.value = null; }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -1087,8 +1103,8 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
-      setNewInst({ code: '', name: '', level: '診所' }); setInstSubmitMsg('單筆新增成功！'); setTimeout(() => setInstSubmitMsg(''), 3000);
-    } catch (e) {}
+      setNewInst({ code: '', name: '', level: '診所' }); showToast('院所單筆新增成功！');
+    } catch (e) { showToast('新增失敗', 'error'); }
   };
 
   const handleDeleteInst = async (id) => {
@@ -1097,15 +1113,18 @@ export default function App() {
     await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
   };
 
-  const handleClearAllInsts = async () => {
-    if (currentUser?.role !== ROLES.ADMIN || !window.confirm('確定要清空所有院所資料嗎？')) return;
-    setIsImporting(true);
-    try {
-      const batch = writeBatch(db);
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      institutions.forEach(inst => batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id)));
-      await batch.commit();
-    } catch (e) {} finally { setIsImporting(false); }
+  const handleClearAllInsts = () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    showConfirm('確定要清空所有院所資料嗎？此操作不可逆！', async () => {
+      setIsImporting(true);
+      try {
+        const batch = writeBatch(db);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        institutions.forEach(inst => batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id)));
+        await batch.commit();
+        showToast('已清空所有院所資料');
+      } catch (e) { showToast('清空失敗', 'error'); } finally { setIsImporting(false); }
+    });
   };
 
   const handleFileUpload = async (e) => {
@@ -1139,7 +1158,8 @@ export default function App() {
           batch.set(baseDbPath.length ? doc(collection(db, ...baseDbPath, 'mohw_institutions')) : doc(collection(db, 'mohw_institutions')), { isChunk: true, payload: JSON.stringify(chunkData) });
           await batch.commit();
         }
-      } catch (error) {} finally { setIsImporting(false); e.target.value = null; }
+        showToast('院所資料批次匯入完成！');
+      } catch (error) { showToast('匯入失敗，請確認格式', 'error'); } finally { setIsImporting(false); e.target.value = null; }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -1167,7 +1187,7 @@ export default function App() {
       return 0;
     });
     return result;
-  }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
+  }, [tickets, debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
 
   const allRecordsFiltered = useMemo(() => {
     let result = tickets.filter(t => {
@@ -1183,7 +1203,7 @@ export default function App() {
       return 0;
     });
     return result;
-  }, [tickets, allRecordsSearchTerm, sortConfig, categoryMapping]);
+  }, [tickets, debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
 
   const renderSortHeader = (label, sortKey, align = 'left', isFirst = false, isLast = false) => {
     const isActive = sortConfig.key === sortKey;
@@ -1268,7 +1288,6 @@ export default function App() {
             </tbody>
           </table>
         </div>
-        {/* 新增分頁控制器 UI */}
         {dataList.length > 0 && (
           <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
             <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -1980,7 +1999,7 @@ export default function App() {
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
                       <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
-                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
+                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   )}
                 </>
@@ -2006,7 +2025,7 @@ export default function App() {
                   {/* Holidays Management */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Calendar size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 國定假日與停發推播區間</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手動強制推播）。</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手手動強制推播）。</p>
                     
                     <form onSubmit={handleAddHoliday} className="flex flex-col md:flex-row gap-4 items-end mb-8 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
                       <div>
@@ -2157,144 +2176,19 @@ export default function App() {
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-                      <DropdownManager title="反映管道" dbKey="channels" items={channels} />
-                      <DropdownManager title="業務類別" dbKey="categories" items={categories} />
-                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
-                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} />
+                      <DropdownManager title="反映管道" dbKey="channels" items={channels} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="業務類別" dbKey="categories" items={categories} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   </div>
-                  <CategoryMappingManager categories={categories} mapping={categoryMapping} />
+                  <CategoryMappingManager categories={categories} mapping={categoryMapping} showToast={showToast} />
                 </div>
               )}
             </div>
           )}
 
-          {/* Global View & Edit Modal */}
-          {viewModalTicket && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}}>
-              <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
-                  <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
-                    <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
-                    {currentUser?.role === ROLES.ADMIN && !isEditingModal && (
-                       <button onClick={() => { setModalEditForm(viewModalTicket); setIsEditingModal(true); }} className="ml-4 px-3 py-1.5 bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors flex items-center">
-                         <Edit size={14} className="mr-1" /> 強制修改
-                       </button>
-                    )}
-                  </h3>
-                  <button onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
-                </div>
-                
-                <div className="p-8 overflow-y-auto flex-1 space-y-8">
-                   {!isEditingModal ? (
-                      <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">建檔人</div>
-                             <div className="flex items-center text-sm font-bold text-slate-700 dark:text-slate-200 mt-1">
-                                <UserAvatar username={viewModalTicket.receiver} photoURL={userMap[viewModalTicket.receiver]?.photoURL} className="w-5 h-5 text-[10px] mr-1.5" />
-                                {viewModalTicket.receiver}
-                             </div>
-                          </div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
-                              {viewModalTicket.progress}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
-                        </div>
-
-                        <div>
-                          <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
-                          
-                          <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
-                            <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
-                              <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
-                                <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
-                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
-                              </div>
-                            </div>
-
-                            {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
-                              viewModalTicket.replies.map((r, i) => (
-                                <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                  <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                    <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
-                                      <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
-                                      客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                    <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
-                                  </div>
-                                </div>
-                              ))
-                            ) : viewModalTicket.replyContent ? (
-                              <div className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                  <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                  <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄</div>
-                                  <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
-                                </div>
-                              </div>
-                            ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
-
-                            {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
-                              <div className="relative flex items-center justify-center pt-4">
-                                <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center"><CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案</div>
-                              </div>
-                            )}
-
-                          </div>
-                        </div>
-                      </>
-                   ) : modalEditForm ? (
-                       <div className="space-y-6">
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                           <EditField label="反映管道" type="select" val={modalEditForm.channel} setVal={(v) => setModalEditForm({...modalEditForm, channel: v})} options={channels} />
-                           <EditField label="業務類別" type="select" val={modalEditForm.category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} options={categories} />
-                           <EditField label="案件狀態" type="select" val={modalEditForm.status} setVal={(v) => setModalEditForm({...modalEditForm, status: v})} options={statuses} />
-                           <EditField label="當前進度" type="select" val={modalEditForm.progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} options={progresses} />
-                           <EditField label="建檔人" val={modalEditForm.receiver} setVal={(v) => setModalEditForm({...modalEditForm, receiver: v})} />
-                           <EditField label="負責人" type="select" val={modalEditForm.assignee} setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} options={['', ...dbUsers.filter(u => u.role === ROLES.USER).map(u => u.username)]} />
-                           <EditField label="接收時間" type="datetime-local" val={modalEditForm.receiveTime} setVal={(v) => setModalEditForm({...modalEditForm, receiveTime: v})} />
-                           <EditField label="結案時間" type="datetime-local" val={modalEditForm.closeTime} setVal={(v) => setModalEditForm({...modalEditForm, closeTime: v})} />
-                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 mt-4">
-                           <div>
-                             <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所名稱 / 代碼</div>
-                             <div className="flex space-x-2">
-                               <input type="text" value={modalEditForm.instName || ''} onChange={e=>setModalEditForm({...modalEditForm, instName: e.target.value})} className="w-2/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="名稱"/>
-                               <input type="text" value={modalEditForm.instCode || ''} onChange={e=>setModalEditForm({...modalEditForm, instCode: e.target.value})} className="w-1/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono" placeholder="代碼"/>
-                             </div>
-                           </div>
-                           <EditField label="提問人資訊" val={modalEditForm.questioner} setVal={(v) => setModalEditForm({...modalEditForm, questioner: v})} />
-                         </div>
-                         <div className="mt-4"><EditField label="詳細問題描述 (首筆)" type="textarea" val={modalEditForm.extraInfo} setVal={(v) => setModalEditForm({...modalEditForm, extraInfo: v})} /></div>
-                         <div className="mt-4"><EditField label="初步回覆內容 (首筆)" type="textarea" val={modalEditForm.replyContent} setVal={(v) => setModalEditForm({...modalEditForm, replyContent: v})} /></div>
-                       </div>
-                   ) : null}
-                   </div>
-                   <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
-                     {isEditingModal ? (
-                       <>
-                         <button onClick={() => setIsEditingModal(false)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消修改</button>
-                         <button onClick={handleModalSave} className="px-8 py-3 bg-red-600 text-white font-black rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200 dark:shadow-none flex items-center"><Save size={16} className="mr-2"/>儲存修改</button>
-                       </>
-                     ) : (
-                       <button onClick={() => setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 dark:bg-slate-600 text-white font-black rounded-xl hover:bg-slate-900 dark:hover:bg-slate-500 transition-colors shadow-lg shadow-slate-200 dark:shadow-none">關閉檢視</button>
-                     )}
-                   </div>
-                 </div>
-               </div>
-             )}
-
-{/* Canned Messages Modal */}
+          {/* Canned Messages Modal */}
           {showCannedModal && (
             <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />
           )}
