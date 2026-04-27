@@ -2240,29 +2240,112 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
               </div>
             </div>
           )}
-            {/* ▼ 補上這一段：案件檢視彈窗 ▼ */}
-                  {viewModalTicket && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" onClick={() => setViewModalTicket(null)}>
-                       <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-                           <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-                               <h3 className="font-black text-lg dark:text-white">案件詳細紀錄 - {viewModalTicket.ticketId}</h3>
-                               <button onClick={() => setViewModalTicket(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"><X size={20} className="text-slate-500"/></button>
-                           </div>
-                           <div className="p-8 overflow-y-auto flex-1 space-y-6">
-                               <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900 p-5 rounded-3xl border border-slate-100 dark:border-slate-800">
-                                   <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">醫療院所</span><span className="font-black text-sm dark:text-slate-200">{viewModalTicket.instName || '(無)'}</span></div>
-                                   <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">反映時間</span><span className="font-black text-sm dark:text-slate-200">{new Date(viewModalTicket.receiveTime).toLocaleString()}</span></div>
-                               </div>
-                               <div className="space-y-2"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">問題描述</span><div className="p-5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-3xl text-sm leading-relaxed dark:text-slate-300">{viewModalTicket.extraInfo}</div></div>
-                               <div className="space-y-2"><span className="text-[10px] font-black text-blue-400 uppercase tracking-widest block ml-1">回覆軌跡</span><div className="p-5 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 rounded-3xl text-sm leading-relaxed whitespace-pre-wrap dark:text-blue-300">{formatRepliesHistory(viewModalTicket.replies, viewModalTicket.replyContent)}</div></div>
-                           </div>
-                           <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-                             <button onClick={() => setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 dark:bg-slate-600 text-white rounded-xl font-black hover:bg-slate-700 transition-colors">關閉檢視</button>
-                           </div>
+{/* 案件檢視與強制維護彈窗 */}
+      {viewModalTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-8 bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => { setViewModalTicket(null); setIsEditingModal(false); }}>
+          <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
+             
+             {/* 彈窗標頭 */}
+             <div className="p-6 md:p-8 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50 rounded-t-[2.5rem] shrink-0">
+               <div>
+                 <h3 className="font-black text-2xl text-slate-800 dark:text-white flex items-center">
+                   案件詳細紀錄 <span className="ml-4 px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-lg text-sm font-bold shadow-inner">{viewModalTicket.ticketId}</span>
+                 </h3>
+                 <p className="text-sm font-bold text-slate-400 mt-2">建檔時間：{new Date(viewModalTicket.createdAt || viewModalTicket.receiveTime).toLocaleString()}</p>
+               </div>
+               <button onClick={() => { setViewModalTicket(null); setIsEditingModal(false); }} className="p-3 bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-full transition-colors shadow-sm"><X size={24} className="text-slate-500 dark:text-slate-300"/></button>
+             </div>
+
+             {/* 彈窗內容區 */}
+             <div className="p-6 md:p-8 overflow-y-auto flex-1 space-y-8 bg-white dark:bg-slate-800">
+               {!isEditingModal ? (
+                  // --- 檢視模式 (精緻排版) ---
+                  <div className="space-y-6 animate-in fade-in">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                       <InfoCard label="反映管道" value={viewModalTicket.channel} />
+                       <InfoCard label="業務類別" value={viewModalTicket.category} />
+                       <InfoCard label="負責同仁" value={viewModalTicket.assignee || viewModalTicket.receiver} />
+                       <InfoCard label="當前狀態" value={viewModalTicket.progress} isHighlight={viewModalTicket.progress === '結案'} />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <InfoCard label="醫療院所" value={`${viewModalTicket.instName || '(無)'} ${viewModalTicket.instCode ? `(${viewModalTicket.instCode})` : ''}`} />
+                       <InfoCard label="反映時間" value={new Date(viewModalTicket.receiveTime).toLocaleString()} />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 block">客戶反映內容</label>
+                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-[1.5rem] text-sm leading-relaxed dark:text-slate-200 whitespace-pre-wrap shadow-inner">
+                          {viewModalTicket.extraInfo || '無內容'}
                        </div>
                     </div>
-                  )}
-              {/* ▲ 彈窗結束 ▲ */}
+                    <div className="space-y-2">
+                       <label className="text-xs font-black text-blue-500 uppercase tracking-widest ml-1 flex items-center"><MessageCircle size={16} className="mr-1.5"/> 回覆軌跡</label>
+                       <div className="p-6 bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-[1.5rem] text-sm leading-relaxed whitespace-pre-wrap dark:text-blue-200 shadow-inner">
+                          {formatRepliesHistory(viewModalTicket.replies, viewModalTicket.replyContent) || '尚未有回覆紀錄'}
+                       </div>
+                    </div>
+                  </div>
+               ) : (
+                  // --- 強制維護模式 (編輯表單) ---
+                  <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                    <div className="p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl flex items-center text-orange-700 dark:text-orange-400 text-sm font-bold shadow-sm">
+                      <AlertTriangle size={20} className="mr-3 shrink-0" /> 
+                      您正在進行強制維護，修改後將覆蓋雲端原始資料，並留下編輯紀錄。
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-900/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-700">
+                      <EditField label="反映管道" val={modalEditForm?.channel} setVal={(v) => setModalEditForm({...modalEditForm, channel: v})} type="select" options={channels} />
+                      <EditField label="業務類別" val={modalEditForm?.category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} type="select" options={categories} />
+                      <EditField label="院所代碼" val={modalEditForm?.instCode} setVal={(v) => setModalEditForm({...modalEditForm, instCode: v})} />
+                      <EditField label="院所名稱" val={modalEditForm?.instName} setVal={(v) => setModalEditForm({...modalEditForm, instName: v})} />
+                      <EditField label="當前進度" val={modalEditForm?.progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} type="select" options={progresses} />
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 space-y-6">
+                      <EditField label="反映內容" val={modalEditForm?.extraInfo} setVal={(v) => setModalEditForm({...modalEditForm, extraInfo: v})} type="textarea" />
+                      <EditField label="初步回覆" val={modalEditForm?.replyContent} setVal={(v) => setModalEditForm({...modalEditForm, replyContent: v})} type="textarea" />
+                    </div>
+                  </div>
+               )}
+             </div>
+             
+             {/* 彈窗底部按鈕區 */}
+             <div className="p-6 md:p-8 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0 rounded-b-[2.5rem]">
+                {currentUser?.role === ROLES.ADMIN ? (
+                   !isEditingModal ? (
+                      <button onClick={() => { setModalEditForm({...viewModalTicket}); setIsEditingModal(true); }} className="px-6 py-4 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-2xl font-black hover:bg-orange-200 transition-colors flex items-center shadow-sm">
+                        <Edit size={18} className="mr-2"/> 強制維護
+                      </button>
+                   ) : (
+                      <button onClick={() => setIsEditingModal(false)} className="px-6 py-4 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-300 transition-colors shadow-sm">
+                        取消編輯
+                      </button>
+                   )
+                ) : <div></div>}
+                
+                <div className="flex space-x-3">
+                   {!isEditingModal ? (
+                      <button onClick={() => setViewModalTicket(null)} className="px-10 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-slate-700 transition-colors shadow-lg shadow-slate-200 dark:shadow-none">關閉視窗</button>
+                   ) : (
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(db, 'cs_records', viewModalTicket.id), {
+                              ...modalEditForm,
+                              editLogs: [...(viewModalTicket.editLogs || []), { time: new Date().toISOString(), user: currentUser.username, action: '強制維護' }]
+                            });
+                            showToast('資料已強制更新', 'success');
+                            setIsEditingModal(false);
+                            setViewModalTicket(null);
+                          } catch (e) { showToast('更新失敗', 'error'); }
+                        }} 
+                        className="px-10 py-4 bg-green-600 text-white rounded-2xl font-black hover:bg-green-700 transition-colors flex items-center shadow-lg shadow-green-200 dark:shadow-none"
+                      >
+                        <Save size={20} className="mr-2" /> 儲存變更
+                      </button>
+                   )}
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
         </div>
       </div>
     </div>
