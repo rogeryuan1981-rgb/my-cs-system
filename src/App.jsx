@@ -12,9 +12,19 @@ import {
 } from 'lucide-react';
 
 // =============================================================================
-// 1. Firebase 初始化 (遵循單一檔案規範，整合所有配置)
+// 1. Firebase 初始化 (修正 ReferenceError)
 // =============================================================================
-const firebaseConfig = JSON.parse(__firebase_config);
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : {
+      apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
+      authDomain: "customerservice-1f9c0.firebaseapp.com",
+      projectId: "customerservice-1f9c0",
+      storageBucket: "customerservice-1f9c0.firebasestorage.app",
+      messagingSenderId: "34677415846",
+      appId: "1:34677415846:web:880d8fafafbb66ad6fb967"
+    };
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
