@@ -797,7 +797,7 @@ export default function App() {
 
   const handleManualTrigger = () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    showConfirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)", async () => {
+    showConfirm("確定要現在「立即掃描並發送」逾期通知嗎？", async () => {
       setIsTriggering(true);
       try {
         const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
