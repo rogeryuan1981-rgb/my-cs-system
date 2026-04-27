@@ -1312,17 +1312,28 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   const paginatedData = data.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   if (!paginatedData || paginatedData.length === 0) {
-    return <tr><td colSpan={isSelectable ? "6" : "5"} className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td></tr>;
+    return (
+      <tr>
+        <td colSpan={isSelectable ? "6" : "5"} className="p-20 text-center text-slate-400 font-black text-lg">
+          查無相關歷史紀錄
+        </td>
+      </tr>
+    );
   }
 
   return paginatedData.map(t => {
-    const activeHandler = t.assignee || t.receiver || "系統自動";
-    const displayText = (t.assignee && t.assignee !== t.receiver) ? `${t.receiver} / ${t.assignee}` : (t.receiver || "系統自動");
+    // 【修正點】決定頭像顯示誰：優先處理人 (assignee)，若無則必有建檔人 (receiver)
+    const avatarUser = t.assignee || t.receiver;
+    
+    // 【修正點】決定文字顯示邏輯：決不出現系統自動
+    const hasAssignee = t.assignee && t.assignee !== t.receiver;
 
     return (
-      <tr key={t.id} className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer" onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }}>
-        
-        {/* ▼▼▼ 這是新增的勾選框 (只有在紀錄資料區才會顯示) ▼▼▼ */}
+      <tr 
+        key={t.id} 
+        className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer" 
+        onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }}
+      >
         {isSelectable && (
           <td className="p-6 align-middle text-center" onClick={(e) => e.stopPropagation()}>
             <input 
@@ -1336,33 +1347,46 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
             />
           </td>
         )}
-        {/* ▲▲▲ 勾選框結束 ▲▲▲ */}
 
         <td className="p-6 align-middle">
           <div className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
           <div className="text-xs font-bold text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
         </td>
+
         <td className="p-6 align-middle">
           <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
           <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
         </td>
+
         <td className="p-6 align-middle">
           <div className="flex items-center space-x-3">
-            <UserAvatar username={activeHandler} photoURL={userMap[activeHandler]?.photoURL} className="w-8 h-8" />
+            <UserAvatar username={avatarUser} photoURL={userMap[avatarUser]?.photoURL} className="w-8 h-8" />
             <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-              {t.assignee && t.assignee !== t.receiver ? (
-                <><span className="text-slate-400">{t.receiver}</span><span className="mx-1 text-slate-300">/</span><span className="text-blue-600 dark:text-blue-400">{t.assignee}</span></>
-              ) : displayText}
+              {hasAssignee ? (
+                <>
+                  <span className="text-slate-400">{t.receiver}</span>
+                  <span className="mx-1 text-slate-300">/</span>
+                  <span className="text-blue-600 dark:text-blue-400">{t.assignee}</span>
+                </>
+              ) : (
+                t.receiver // 至少顯示建檔人，絕不顯示系統自動
+              )}
             </span>
           </div>
         </td>
+
         <td className="p-6 align-middle">
-          <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : t.isDeleted ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+          <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${
+            t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
+            t.isDeleted ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 
+            'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+          }`}>
             {t.isDeleted ? '已作廢 (邏輯刪除)' : (t.progress || '待處理')}
           </span>
         </td>
+
         <td className="p-6 align-middle text-center">
-          <button onClick={(e) => { e.stopPropagation(); setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }} className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
+          <button className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
             <Eye size={20}/>
           </button>
         </td>
