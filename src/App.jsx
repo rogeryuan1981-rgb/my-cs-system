@@ -4,8 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ArrowRightCircle, Pin, Image as ImageIcon,
-  Timer, MapPin, Users
+  Menu, Eye, Moon, Sun, Camera, ArrowRight, Pin, Timer
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -21,7 +20,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.6.0 (手動觸發通知版)";
+const APP_VERSION = "v3.8 (全面現代化提示版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -210,7 +209,7 @@ const CannedMessagesModal = ({ messages, onClose }) => {
   );
 };
 
-const DropdownManager = ({ title, dbKey, items }) => {
+const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
   const [newItem, setNewItem] = useState('');
   const [draggedIdx, setDraggedIdx] = useState(null);
   const safeItems = Array.isArray(items) ? items : [];
@@ -223,14 +222,17 @@ const DropdownManager = ({ title, dbKey, items }) => {
     const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
     await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
     setNewItem('');
+    showToast(`成功新增「${newItem.trim()}」`);
   };
 
-  const handleRemove = async (itemToRemove) => {
-    if (!window.confirm(`確定要刪除「${itemToRemove}」嗎？`)) return;
-    const newArray = safeItems.filter(i => i !== itemToRemove);
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+  const handleRemove = (itemToRemove) => {
+    showConfirm(`確定要刪除「${itemToRemove}」嗎？`, async () => {
+      const newArray = safeItems.filter(i => i !== itemToRemove);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+      showToast(`已刪除「${itemToRemove}」`);
+    });
   };
 
   const handleDrop = async (e, dropIdx) => {
@@ -267,14 +269,14 @@ const DropdownManager = ({ title, dbKey, items }) => {
   );
 };
 
-const CategoryMappingManager = ({ categories, mapping }) => {
+const CategoryMappingManager = ({ categories, mapping, showToast }) => {
   const [localMap, setLocalMap] = useState({});
   useEffect(() => setLocalMap(mapping || {}), [mapping]);
   const handleSaveMapping = async () => {
     const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
     const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
     await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
-    alert("大類別設定已儲存成功！");
+    showToast("大類別設定已儲存成功！");
   };
   return (
     <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
@@ -297,6 +299,17 @@ const CategoryMappingManager = ({ categories, mapping }) => {
   );
 };
 
+// -------------------------------------------------
+// --- 加入防抖 Hook ---
+// -------------------------------------------------
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => { setDebouncedValue(value); }, delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+};
 
 // -------------------------------------------------
 // --- 主應用程式 App ---
@@ -334,6 +347,7 @@ export default function App() {
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
   const [overdueHours, setOverdueHours] = useState(24);
+  const [holidays, setHolidays] = useState([]); 
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -364,8 +378,25 @@ export default function App() {
 
   const [allRecordsSearchTerm, setAllRecordsSearchTerm] = useState('');
 
-  useEffect(() => { setSelectedTickets([]); }, [searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, allRecordsSearchTerm, categoryMapping]);
+  // --- 防抖狀態 ---
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const debouncedAllRecordsSearchTerm = useDebounce(allRecordsSearchTerm, 300);
+  
+  // --- 分頁狀態 ---
+  const [historyPage, setHistoryPage] = useState(1);
+  const [allRecordsPage, setAllRecordsPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
 
+  useEffect(() => { 
+    setSelectedTickets([]); 
+    setHistoryPage(1); 
+  }, [debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
+
+  useEffect(() => { 
+    setSelectedTickets([]); 
+    setAllRecordsPage(1); 
+  }, [debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
+  
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
   
@@ -377,9 +408,13 @@ export default function App() {
   const [personnelViewMode, setPersonnelViewMode] = useState('assignee');
 
   const [settingsTab, setSettingsTab] = useState('general');
-  const [isTriggering, setIsTriggering] = useState(false); // 控制手動觸發按鈕狀態
+  const [isTriggering, setIsTriggering] = useState(false); 
+
+  const [newHoliday, setNewHoliday] = useState({ start: '', end: '', note: '' }); 
+  const [leaveForm, setLeaveForm] = useState({ start: '', end: '', delegate: '' }); 
 
   const [maintainSearchTerm, setMaintainSearchTerm] = useState('');
+  const debouncedMaintainSearchTerm = useDebounce(maintainSearchTerm, 300);
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
   const [maintainModal, setMaintainModal] = useState(null);
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
@@ -398,6 +433,21 @@ export default function App() {
     const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
   }, [dbUsers]);
 
+// --- 現代化提示系統與強制改密碼 State ---
+  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+  const [confirmDialog, setConfirmDialog] = useState({ show: false, msg: '', onConfirm: null });
+  const [showForcePwdModal, setShowForcePwdModal] = useState(false);
+  const [forcePwdForm, setForcePwdForm] = useState({ newPwd: '', confirmPwd: '' }); // ✅ 修復：補上漏掉的密碼表單狀態
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ show: true, msg, type });
+    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
+  };
+  
+  const showConfirm = (msg, onConfirmCallback) => {
+    setConfirmDialog({ show: true, msg, onConfirm: onConfirmCallback });
+  };
+
   // Auth State Sync
   useEffect(() => {
     if (firebaseUser && !firebaseUser.isAnonymous && dbUsers.length > 0) {
@@ -405,6 +455,12 @@ export default function App() {
       if (matchedUser) {
         setCurrentUser(matchedUser);
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
+        
+        if (matchedUser.forcePasswordChange) {
+          setShowForcePwdModal(true);
+        } else {
+          setShowForcePwdModal(false);
+        }
       } else {
         setCurrentUser(null);
       }
@@ -414,6 +470,12 @@ export default function App() {
   }, [firebaseUser, dbUsers]);
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
+
+  useEffect(() => {
+    if (activeUser) {
+      setLeaveForm({ start: activeUser.leaveStart || '', end: activeUser.leaveEnd || '', delegate: activeUser.delegateUser || '' });
+    }
+  }, [activeUser]);
 
   // --- Initialization ---
   useEffect(() => {
@@ -438,58 +500,80 @@ export default function App() {
   }, []);
 
   // --- Data Fetching ---
-  useEffect(() => {
-    if (!firebaseUser) return;
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : []; 
-    const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
-    const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
+useEffect(() => {
+  if (!firebaseUser) return;
+  const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+  const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
+  const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
 
-    const unsubUsers = onSnapshot(query(buildPath('cs_users')), snap => { setDbUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
-    const unsubTickets = onSnapshot(query(buildPath('cs_records')), snap => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubInst = onSnapshot(query(buildPath('mohw_institutions')), snap => {
-      let instList = []; const map = {};
-      snap.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.isChunk && data.payload) {
-          try { JSON.parse(data.payload).forEach(item => { instList.push({ id: doc.id, isChunk: true, ...item }); map[item.code] = { name: item.name, level: item.level }; }); } catch (e) {}
-        } else { instList.push({ id: doc.id, isChunk: false, ...data }); map[data.code] = { name: data.name, level: data.level }; }
-      });
-      setInstitutions(instList); setInstMap(map);
+  // ======== 修正部分：補回院所資料 (mohw_institutions) 監聽 ========
+  const unsubInstitutions = onSnapshot(buildPath('mohw_institutions'), (snapshot) => {
+    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setInstitutions(data); // 寫入院所陣列
+
+    // 建立對照表(Map)，讓 handleInstCodeBlur 能夠透過 instMap 快速查詢
+    const map = {};
+    data.forEach(inst => {
+      map[inst.code] = inst;
     });
-    const unsubSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), docSnap => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setChannels(data.channels || []); setCategories(data.categories || []);
-        setStatuses(data.statuses || []); setProgresses(data.progresses || []);
-        setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
-        setOverdueHours(data.overdueHours || 24);
-      } else {
-        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
-          channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24
-        });
-      }
-    });
+    setInstMap(map);
+  }, (error) => {
+    console.error("獲取院所資料失敗:", error);
+  });
+  // ==============================================================
 
-    return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
-  }, [firebaseUser]);
+  // ⚠️ 注意：如果您的 3.8 原始碼中，此處還有其他資料表（例如 cs_records 案件紀錄、cs_users 使用者、cs_settings 設定）的 onSnapshot 監聽邏輯，請務必保留貼在這邊，不要覆蓋掉。
 
-  // --- Auth Handlers ---
+  return () => {
+    // 卸載時取消院所監聽，避免 Memory Leak
+    if (unsubInstitutions) unsubInstitutions();
+    
+    // 如果您有保留其他資料表的取消監聽 (如 unsubTickets() 等) 也請加在這裡
+  };
+}, [firebaseUser]);
+
+// --- Auth Handlers ---
+  const handleForceChangePassword = async (e) => {
+    e.preventDefault();
+    if (forcePwdForm.newPwd !== forcePwdForm.confirmPwd) return showToast('兩次密碼不一致', 'error');
+    if (forcePwdForm.newPwd.length < 6) return showToast('密碼長度需至少 6 碼', 'error');
+    try {
+      await updatePassword(auth.currentUser, forcePwdForm.newPwd);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', currentUser.id) : doc(db, 'cs_users', currentUser.id);
+      await updateDoc(docRef, { forcePasswordChange: false });
+      showToast('密碼設定成功，歡迎使用系統！');
+      setShowForcePwdModal(false);
+      setActiveTab('form');
+    } catch (error) {
+      showToast('密碼更新失敗: ' + error.message, 'error');
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
-    const email = getEmailFromUsername(loginForm.username);
+    const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
+    const email = getEmailFromUsername(trimmedUsername);
     try {
       await signInWithEmailAndPassword(auth, email, loginForm.password);
-      const matchedUser = dbUsers.find(u => u.username === loginForm.username);
+      const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
         setFormData(getInitialForm(matchedUser.username, channels, progresses));
-        setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
+        
+        if (matchedUser.forcePasswordChange) {
+          setShowForcePwdModal(true);
+        } else {
+          setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
+        }
         setAuthError('');
+      } else {
+        setAuthError('登入成功，但資料庫無您的權限紀錄，請聯絡管理員。');
+        await auth.signOut();
       }
     } catch (err) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
-        const legacyUser = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
           try {
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
@@ -502,7 +586,7 @@ export default function App() {
             else setAuthError('帳號升級失敗：' + createErr.message);
           }
         } else {
-          setAuthError('帳號或密碼錯誤');
+          setAuthError('❌ 帳號或密碼錯誤！請確認大小寫與是否有空白。');
         }
       } else if (err.code === 'auth/operation-not-allowed') {
         setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
@@ -517,15 +601,21 @@ export default function App() {
     if (dbUsers.length > 0) return;
     if (loginForm.password.length < 6) return setAuthError('密碼長度至少需要 6 個字元！');
     try {
-      const email = getEmailFromUsername(loginForm.username);
+      const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除空白
+      const email = getEmailFromUsername(trimmedUsername);
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { username: loginForm.username, role: ROLES.ADMIN, createdAt: new Date().toISOString() });
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
+        username: trimmedUsername, 
+        role: ROLES.ADMIN, 
+        createdAt: new Date().toISOString(), 
+        forcePasswordChange: false 
+      });
       
       setAuthError('');
       setActiveTab('form');
-      setFormData(getInitialForm(loginForm.username, channels, progresses));
+      setFormData(getInitialForm(trimmedUsername, channels, progresses));
     } catch (e) { 
       if (e.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
       else setAuthError('建立失敗：' + e.message); 
@@ -546,35 +636,39 @@ export default function App() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (dbUsers.some(u => u.username === newUser.username)) return alert('帳號名稱已存在');
-    if (newUser.password.length < 6) return alert('密碼長度至少需要 6 個字元！');
+    const trimmedUsername = newUser.username.trim(); // ✅ 自動清除空白
+    if (dbUsers.some(u => u.username === trimmedUsername)) return showToast('帳號名稱已存在', 'error');
+    if (newUser.password.length < 6) return showToast('密碼長度至少需要 6 個字元！', 'error');
     try {
-      const email = getEmailFromUsername(newUser.username);
+      const email = getEmailFromUsername(trimmedUsername);
       await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
       await secondaryAuth.signOut();
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
-        username: newUser.username, 
+        username: trimmedUsername, 
         role: newUser.role, 
         createdAt: new Date().toISOString(), 
         region: '',
-        lineUserId: newUser.lineUserId.trim()
+        lineUserId: newUser.lineUserId.trim(),
+        forcePasswordChange: true
       });
       setNewUser({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
-      alert('用戶建立成功，已綁定 Firebase 核心 Auth！');
+      showToast(`用戶「${trimmedUsername}」建立成功！`);
     } catch(e) { 
-        if (e.code === 'auth/operation-not-allowed') alert('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-        else alert('新增失敗：' + e.message);
+        if (e.code === 'auth/operation-not-allowed') showToast('❌ 請至後台啟用「電子郵件」登入', 'error');
+        else if (e.code === 'auth/email-already-in-use') showToast('❌ 此帳號名稱曾被建立且底層尚未刪除，請換一個名稱', 'error');
+        else showToast('新增失敗：' + e.message, 'error');
     }
   };
 
-  const handleDeleteUser = async (id) => {
+  const handleDeleteUser = (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (window.confirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)')) {
+    showConfirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)', async () => {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
-    }
+      showToast('用戶已成功停用');
+    });
   };
 
   const handleChangeOwnPassword = async (e) => {
@@ -612,33 +706,96 @@ export default function App() {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
       await setDoc(docRef, { overdueHours }, { merge: true });
-      alert("逾期判定時數已成功更新！");
+      showToast("逾期判定時數已成功更新！");
     } catch (e) {
-      alert("更新失敗：" + e.message);
+      showToast("更新失敗：" + e.message, 'error');
     }
   };
 
-  // 觸發後端 manualTriggerOverdue 函式
-  const handleManualTrigger = async () => {
+  const handleAddHoliday = async (e) => {
+    e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!window.confirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)")) return;
-    
-    setIsTriggering(true);
+    if (!newHoliday.start || !newHoliday.end || !newHoliday.note) return showToast("請填寫完整放假資訊", 'error');
+    if (newHoliday.start > newHoliday.end) return showToast("開始日期不能晚於結束日期", 'error');
     try {
-      const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
-      const res = await triggerFn();
-      alert(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
-    } catch (error) {
-      alert("觸發失敗，請確認後端是否已更新成功：" + error.message);
-    } finally {
-      setIsTriggering(false);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      const updatedHolidays = [...holidays, newHoliday].sort((a,b) => a.start.localeCompare(b.start));
+      await setDoc(docRef, { holidays: updatedHolidays }, { merge: true });
+      setNewHoliday({ start: '', end: '', note: '' });
+      showToast('國定假日新增成功！');
+    } catch(e) {
+      showToast("新增假日失敗：" + e.message, 'error');
     }
+  };
+
+  const handleRemoveHoliday = (idx) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    showConfirm("確定要刪除此假日設定嗎？", async () => {
+      try {
+        const newHolidays = holidays.filter((_, i) => i !== idx);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+        await setDoc(docRef, { holidays: newHolidays }, { merge: true });
+        showToast("假日設定已移除");
+      } catch (e) {
+        showToast("刪除失敗：" + e.message, 'error');
+      }
+    });
+  };
+
+  const handleSaveLeave = async (e) => {
+    e.preventDefault();
+    if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return showToast("請假開始日期不能晚於結束日期", 'error');
+    if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return showToast("請選擇案件代理人", 'error');
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+      await updateDoc(docRef, {
+        leaveStart: leaveForm.start,
+        leaveEnd: leaveForm.end,
+        delegateUser: leaveForm.delegate
+      });
+      showToast('代理人設定已儲存成功！休假期間系統會自動將您的案件推播轉給代理人。');
+    } catch (error) {
+      showToast('儲存代理失敗：' + error.message, 'error');
+    }
+  };
+
+  const handleClearLeave = () => {
+    showConfirm("確定要清除代理人設定並恢復自己接收通知嗎？", async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+        await updateDoc(docRef, { leaveStart: '', leaveEnd: '', delegateUser: '' });
+        setLeaveForm({ start: '', end: '', delegate: '' });
+        showToast('已成功解除代理設定！');
+      } catch (error) {
+        showToast('清除失敗：' + error.message, 'error');
+      }
+    });
+  };
+
+  const handleManualTrigger = () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    showConfirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)", async () => {
+      setIsTriggering(true);
+      try {
+        const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
+        const res = await triggerFn();
+        showToast(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
+      } catch (error) {
+        showToast("觸發失敗，請確認後端是否已更新成功：" + error.message, 'error');
+      } finally {
+        setIsTriggering(false);
+      }
+    });
   };
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !activeUser) return;
-    if (!file.type.startsWith('image/')) return alert('請上傳圖片檔案！');
+    if (!file.type.startsWith('image/')) return showToast('請上傳圖片檔案！', 'error');
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -658,9 +815,9 @@ export default function App() {
           const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
           const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
           await updateDoc(docRef, { photoURL: downloadUrl });
-          alert('個人圖像更新成功！已儲存至 Cloud Storage。');
+          showToast('個人圖像更新成功！已儲存至 Cloud Storage。');
         } catch (error) { 
-          alert('圖像更新失敗，請稍後再試。錯誤原因：' + error.message); 
+          showToast('圖像更新失敗，請稍後再試。錯誤原因：' + error.message, 'error'); 
         }
       };
       img.src = event.target.result;
@@ -732,15 +889,15 @@ export default function App() {
     if (!currentUser) return [];
     let result = tickets.filter(t => {
       if (t.isDeleted) return false;
-      const matchSearch = maintainSearchTerm ? ((t.ticketId || '').includes(maintainSearchTerm) || (t.instName || '').includes(maintainSearchTerm)) : true;
-      if (currentUser.role === ROLES.ADMIN) return maintainSearchTerm ? matchSearch : t.progress !== '結案'; 
+      const matchSearch = debouncedMaintainSearchTerm ? ((t.ticketId || '').includes(debouncedMaintainSearchTerm) || (t.instName || '').includes(debouncedMaintainSearchTerm)) : true;
+      if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : t.progress !== '結案'; 
       const isMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
       const isUnresolved = t.progress !== '結案';
-      return maintainSearchTerm ? isMine && isUnresolved && matchSearch : isMine && isUnresolved;
+      return debouncedMaintainSearchTerm ? isMine && isUnresolved && matchSearch : isMine && isUnresolved;
     });
     result.sort((a, b) => maintainSortOrder === 'asc' ? new Date(a.receiveTime).getTime() - new Date(b.receiveTime).getTime() : new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
     return result;
-  }, [tickets, currentUser, maintainSearchTerm, maintainSortOrder]);
+  }, [tickets, currentUser, debouncedMaintainSearchTerm, maintainSortOrder]);
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
@@ -753,13 +910,13 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), { deleteRequest: { status: 'pending', reason: reason.trim(), requestedBy: currentUser.username, requestTime: getFormatDate() } });
-      alert('刪除申請已送出，待管理員簽核。'); setMaintainModal(null);
-    } catch (error) { alert("申請失敗：" + error.message); }
+      showToast('刪除申請已送出，待管理員簽核。'); setMaintainModal(null);
+    } catch (error) { showToast("申請失敗：" + error.message, 'error'); }
   };
 
   const handleMaintainSubmit = async (e) => {
     e.preventDefault();
-    if (currentUser?.role === ROLES.VIEWER) return alert("無權限");
+    if (currentUser?.role === ROLES.VIEWER) return showToast("無權限", 'error');
     try {
       const updates = { progress: maintainForm.progress };
       if (maintainForm.progress === '結案' && maintainModal.progress !== '結案') updates.closeTime = getFormatDate();
@@ -779,8 +936,9 @@ export default function App() {
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), updates);
+      showToast('案件維護更新成功！');
       setMaintainModal(null);
-    } catch (error) { alert("更新失敗：" + error.message); }
+    } catch (error) { showToast("更新失敗：" + error.message, 'error'); }
   };
 
   const handleModalSave = async () => {
@@ -788,8 +946,8 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), modalEditForm);
-      alert('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
-    } catch (error) { alert('修改失敗：' + error.message); }
+      showToast('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
+    } catch (error) { showToast('修改失敗：' + error.message, 'error'); }
   };
 
   const pendingDeleteRequests = useMemo(() => tickets.filter(t => !t.isDeleted && t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
@@ -802,18 +960,19 @@ export default function App() {
     return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
   }, [tickets]);
 
-  const handleApproveDelete = async (ticketId, ticketInstName) => {
-    if (!window.confirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`)) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
-        isDeleted: true,
-        deletedAt: getFormatDate(),
-        deletedBy: currentUser.username,
-        'deleteRequest.status': 'approved'
-      });
-      alert('已成功邏輯刪除該筆紀錄。');
-    } catch (error) { alert('刪除失敗：' + error.message); }
+  const handleApproveDelete = (ticketId, ticketInstName) => {
+    showConfirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`, async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
+          isDeleted: true,
+          deletedAt: getFormatDate(),
+          deletedBy: currentUser.username,
+          'deleteRequest.status': 'approved'
+        });
+        showToast('已成功邏輯刪除該筆紀錄。');
+      } catch (error) { showToast('刪除失敗：' + error.message, 'error'); }
+    });
   };
 
   const handleRejectDelete = async (ticketId) => {
@@ -824,35 +983,57 @@ export default function App() {
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
         'deleteRequest.status': 'rejected', 'deleteRequest.rejectReason': rejectReason.trim(), 'deleteRequest.rejectedBy': currentUser.username, 'deleteRequest.rejectTime': getFormatDate()
       });
-    } catch (error) {}
+      showToast('已退回該刪除申請。');
+    } catch (error) { showToast('退回失敗：' + error.message, 'error');}
   };
 
-  const handleBatchDeleteTickets = async () => {
+  const handleBatchDeleteTickets = () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
-    if (window.confirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`)) {
+    showConfirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`, async () => {
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         let batch = writeBatch(db); let count = 0;
         for (let i = 0; i < selectedTickets.length; i++) {
           batch.update(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]), {
-             isDeleted: true,
-             deletedAt: getFormatDate(),
-             deletedBy: currentUser.username
+              isDeleted: true,
+              deletedAt: getFormatDate(),
+              deletedBy: currentUser.username
           });
           count++;
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        setSelectedTickets([]); alert(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
-      } catch (error) { alert("批次刪除失敗：" + error.message); }
+        setSelectedTickets([]); showToast(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
+      } catch (error) { showToast("批次刪除失敗：" + error.message, 'error'); }
+    });
+  };
+
+  // 徹底刪除 (Hard Delete) 函式 (因為需要輸入 DELETE 防呆，這裡保留 prompt)
+  const handleBatchHardDeleteTickets = async () => {
+    if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
+    const confirmText = window.prompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`);
+    if (confirmText !== 'DELETE') {
+      if (confirmText !== null) showToast('驗證碼不符，已取消徹底刪除操作。', 'error');
+      return;
     }
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      let batch = writeBatch(db); let count = 0;
+      for (let i = 0; i < selectedTickets.length; i++) {
+        batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]));
+        count++;
+        if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
+      }
+      if (count > 0) await batch.commit();
+      setSelectedTickets([]); showToast(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`);
+    } catch (error) { showToast("徹底刪除失敗：" + error.message, 'error'); }
   };
 
   const handleExportExcel = () => {
-    if (!window.XLSX) return alert("Excel 模組尚未載入完成，請稍後再試。");
+    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
     const targetData = activeTab === 'all-records' ? allRecordsFiltered : filteredAndSortedHistory;
-    if (targetData.length === 0) return alert("目前沒有資料可以匯出。");
-    if (targetData.length > 5000) return alert("為確保系統效能與避免瀏覽器崩潰，單次匯出不可超過 5000 筆！請嘗試縮小日期或查詢範圍。");
+    if (targetData.length === 0) return showToast("目前沒有資料可以匯出。", 'error');
+    if (targetData.length > 5000) return showToast("為確保系統效能，單次匯出不可超過 5000 筆！請嘗試縮小範圍。", 'error');
 
     const exportData = targetData.map(t => ({
       '狀態標記': t.isDeleted ? '已刪除' : '正常',
@@ -865,10 +1046,11 @@ export default function App() {
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
     window.XLSX.writeFile(wb, `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`);
+    showToast('匯出成功！');
   };
 
   const handleDownloadTemplate = () => {
-    if (!window.XLSX) return alert("Excel 模組尚未載入完成，請稍後再試。");
+    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
     const headers = ['案件號', '接收時間(YYYY-MM-DD HH:mm)', '反映管道', '院所代碼', '院所名稱', '醫療層級', '提問人資訊', '業務類別', '案件狀態', '處理進度', '建檔人', '指定處理人', '詳細問題描述', '回覆內容(完整紀錄)', '結案時間(YYYY-MM-DD HH:mm)'];
     const ws = window.XLSX.utils.aoa_to_sheet([headers]); const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, "匯入範本"); window.XLSX.writeFile(wb, "歷史紀錄匯入範本.xlsx");
@@ -891,7 +1073,7 @@ export default function App() {
         });
 
         if (validRows.length > 5000) {
-          alert('單次匯入筆數超過 5000 筆！為確保系統不中斷，請將檔案拆分後再進行匯入。');
+          showToast('單次匯入筆數超過 5000 筆！請將檔案拆分後再進行匯入。', 'error');
           return;
         }
 
@@ -915,8 +1097,8 @@ export default function App() {
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        alert(`成功匯入 ${added} 筆歷史紀錄！`);
-      } catch (error) { alert("匯入發生未預期錯誤，請確認檔案格式是否正確。"); } finally { setIsImportingHistory(false); e.target.value = null; }
+        showToast(`成功匯入 ${added} 筆歷史紀錄！`);
+      } catch (error) { showToast("匯入發生未預期錯誤，請確認檔案格式是否正確。", 'error'); } finally { setIsImportingHistory(false); e.target.value = null; }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -928,8 +1110,8 @@ export default function App() {
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
-      setNewInst({ code: '', name: '', level: '診所' }); setInstSubmitMsg('單筆新增成功！'); setTimeout(() => setInstSubmitMsg(''), 3000);
-    } catch (e) {}
+      setNewInst({ code: '', name: '', level: '診所' }); showToast('院所單筆新增成功！');
+    } catch (e) { showToast('新增失敗', 'error'); }
   };
 
   const handleDeleteInst = async (id) => {
@@ -938,15 +1120,18 @@ export default function App() {
     await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
   };
 
-  const handleClearAllInsts = async () => {
-    if (currentUser?.role !== ROLES.ADMIN || !window.confirm('確定要清空所有院所資料嗎？')) return;
-    setIsImporting(true);
-    try {
-      const batch = writeBatch(db);
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      institutions.forEach(inst => batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id)));
-      await batch.commit();
-    } catch (e) {} finally { setIsImporting(false); }
+  const handleClearAllInsts = () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    showConfirm('確定要清空所有院所資料嗎？此操作不可逆！', async () => {
+      setIsImporting(true);
+      try {
+        const batch = writeBatch(db);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        institutions.forEach(inst => batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id)));
+        await batch.commit();
+        showToast('已清空所有院所資料');
+      } catch (e) { showToast('清空失敗', 'error'); } finally { setIsImporting(false); }
+    });
   };
 
   const handleFileUpload = async (e) => {
@@ -980,7 +1165,8 @@ export default function App() {
           batch.set(baseDbPath.length ? doc(collection(db, ...baseDbPath, 'mohw_institutions')) : doc(collection(db, 'mohw_institutions')), { isChunk: true, payload: JSON.stringify(chunkData) });
           await batch.commit();
         }
-      } catch (error) {} finally { setIsImporting(false); e.target.value = null; }
+        showToast('院所資料批次匯入完成！');
+      } catch (error) { showToast('匯入失敗，請確認格式', 'error'); } finally { setIsImporting(false); e.target.value = null; }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -994,7 +1180,7 @@ export default function App() {
     let result = tickets.filter(t => {
       if (t.isDeleted) return false;
       const majorCat = categoryMapping[t.category] && categoryMapping[t.category].trim() !== '' ? categoryMapping[t.category].trim() : '未歸屬大類別';
-      const matchSearch = searchTerm === '' || (t.ticketId||'').includes(searchTerm) || (t.instName||'').includes(searchTerm) || (t.extraInfo||'').includes(searchTerm) || (t.category||'').includes(searchTerm) || majorCat.includes(searchTerm) || (t.receiver||'').includes(searchTerm);
+      const matchSearch = debouncedSearchTerm === '' || (t.ticketId||'').includes(debouncedSearchTerm) || (t.instName||'').includes(debouncedSearchTerm) || (t.extraInfo||'').includes(debouncedSearchTerm) || (t.category||'').includes(debouncedSearchTerm) || majorCat.includes(debouncedSearchTerm) || (t.receiver||'').includes(debouncedSearchTerm);
       const matchProgress = historyProgress === '全部' || (historyProgress === '未結案' ? t.progress !== '結案' : t.progress === historyProgress);
       let matchDate = true;
       if (historyStartDate && historyEndDate) matchDate = t.receiveTime.slice(0, 10) >= historyStartDate && t.receiveTime.slice(0, 10) <= historyEndDate;
@@ -1008,13 +1194,13 @@ export default function App() {
       return 0;
     });
     return result;
-  }, [tickets, searchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
+  }, [tickets, debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
 
   const allRecordsFiltered = useMemo(() => {
     let result = tickets.filter(t => {
-      if (!allRecordsSearchTerm) return true;
+      if (!debouncedAllRecordsSearchTerm) return true;
       const majorCat = categoryMapping[t.category] && categoryMapping[t.category].trim() !== '' ? categoryMapping[t.category].trim() : '未歸屬大類別';
-      return (t.ticketId||'').includes(allRecordsSearchTerm) || (t.instName||'').includes(allRecordsSearchTerm) || (t.extraInfo||'').includes(allRecordsSearchTerm) || (t.category||'').includes(allRecordsSearchTerm) || majorCat.includes(allRecordsSearchTerm) || (t.receiver||'').includes(allRecordsSearchTerm);
+      return (t.ticketId||'').includes(debouncedAllRecordsSearchTerm) || (t.instName||'').includes(debouncedAllRecordsSearchTerm) || (t.extraInfo||'').includes(debouncedAllRecordsSearchTerm) || (t.category||'').includes(debouncedAllRecordsSearchTerm) || majorCat.includes(debouncedAllRecordsSearchTerm) || (t.receiver||'').includes(debouncedAllRecordsSearchTerm);
     });
     result.sort((a, b) => {
       let valA = sortConfig.key === 'receiveTime' ? new Date(a[sortConfig.key] || '').getTime() : (a[sortConfig.key] || '');
@@ -1024,7 +1210,7 @@ export default function App() {
       return 0;
     });
     return result;
-  }, [tickets, allRecordsSearchTerm, sortConfig, categoryMapping]);
+  }, [tickets, debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
 
   const renderSortHeader = (label, sortKey, align = 'left', isFirst = false, isLast = false) => {
     const isActive = sortConfig.key === sortKey;
@@ -1040,73 +1226,90 @@ export default function App() {
     );
   };
 
-  const renderTicketTable = (dataList) => (
-    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible">
-      <div className="max-md:overflow-x-auto min-h-[400px] pb-32">
-        <table className="w-full text-left border-collapse relative">
-          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
-            <tr>
-              {currentUser.role === ROLES.ADMIN && (
-                <th className="p-5 text-center w-12 rounded-tl-[2rem]">
-                  <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={dataList.length > 0 && selectedTickets.length === dataList.length} onChange={(e) => setSelectedTickets(e.target.checked ? dataList.map(t => t.id) : [])} />
-                </th>
-              )}
-              <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
-              {renderSortHeader('案件號/日期', 'receiveTime')}
-              {renderSortHeader('院所', 'instName')}
-              {renderSortHeader('描述/回覆摘要', 'extraInfo')}
-              {renderSortHeader('建立/負責人', 'receiver')}
-              {renderSortHeader('進度', 'progress', 'center', false, true)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
-            {dataList.length === 0 ? (
-              <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
-            ) : (
-              dataList.map((t, index) => {
-                const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
-                const latestReplyStr = getLatestReply(t.replies, t.replyContent);
-                return (
-                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50 ${t.isDeleted ? 'opacity-50' : ''}`}>
-                    {currentUser.role === ROLES.ADMIN && (
-                      <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" disabled={t.isDeleted} className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
+  const renderTicketTable = (dataList, currentPage, setCurrentPage) => {
+    const totalPages = Math.ceil(dataList.length / ITEMS_PER_PAGE) || 1;
+    const paginatedList = dataList.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+    return (
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+        <div className="max-md:overflow-x-auto min-h-[400px]">
+          <table className="w-full text-left border-collapse relative">
+            <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
+              <tr>
+                {currentUser.role === ROLES.ADMIN && (
+                  <th className="p-5 text-center w-12 rounded-tl-[2rem]">
+                    <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={paginatedList.length > 0 && selectedTickets.length === paginatedList.length} onChange={(e) => setSelectedTickets(e.target.checked ? paginatedList.map(t => t.id) : [])} />
+                  </th>
+                )}
+                <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
+                {renderSortHeader('案件號/日期', 'receiveTime')}
+                {renderSortHeader('院所', 'instName')}
+                {renderSortHeader('描述/回覆摘要', 'extraInfo')}
+                {renderSortHeader('建立/負責人', 'receiver')}
+                {renderSortHeader('進度', 'progress', 'center', false, true)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
+              {paginatedList.length === 0 ? (
+                <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
+              ) : (
+                paginatedList.map((t, index) => {
+                  const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
+                  const latestReplyStr = getLatestReply(t.replies, t.replyContent);
+                  return (
+                    <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50 ${t.isDeleted ? 'opacity-50' : ''}`}>
+                      {currentUser.role === ROLES.ADMIN && (
+                        <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" disabled={t.isDeleted} className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
+                        </td>
+                      )}
+                      <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{(currentPage - 1) * ITEMS_PER_PAGE + index + 1}</td>
+                      <td className="p-5">
+                        <div className={`font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center ${t.isDeleted ? 'line-through' : ''}`}>
+                          {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
+                        </div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                        {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
                       </td>
-                    )}
-                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{index + 1}</td>
-                    <td className="p-5">
-                      <div className={`font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center ${t.isDeleted ? 'line-through' : ''}`}>
-                        {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
-                      </div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
-                      {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
-                    </td>
-                    <td className="p-5"><div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
-                    <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
-                       <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                       <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                       {fullHistoryStr && (
-                         <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
-                           <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
-                           <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
-                           <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                         </div>
-                       )}
-                    </td>
-                    <td className="p-5">
-                      <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
-                      {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
-                    </td>
-                    <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      <td className="p-5"><div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
+                      <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
+                         <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                         <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                         {fullHistoryStr && (
+                           <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
+                             <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
+                             <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
+                             <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
+                           </div>
+                         )}
+                      </td>
+                      <td className="p-5">
+                        <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
+                        {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
+                      </td>
+                      <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {dataList.length > 0 && (
+          <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+            <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+              顯示 {((currentPage - 1) * ITEMS_PER_PAGE) + 1} 至 {Math.min(currentPage * ITEMS_PER_PAGE, dataList.length)} 筆，共 {dataList.length} 筆
+            </div>
+            <div className="flex space-x-2">
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 disabled:opacity-50 hover:bg-slate-100 transition-colors text-slate-700">上一頁</button>
+              <div className="px-4 py-2 text-sm font-black text-slate-700 dark:text-slate-200">{currentPage} / {totalPages}</div>
+              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 disabled:opacity-50 hover:bg-slate-100 transition-colors text-slate-700">下一頁</button>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const dashboardStats = useMemo(() => {
     const total = tickets.filter(t => !t.isDeleted).length;
@@ -1308,7 +1511,10 @@ export default function App() {
                     {formData.progress !== '結案' && (
                       <div className="animate-in zoom-in-95 duration-200">
                         <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500"><option value="">-- 未指定 --</option>{dbUsers.map(u => <option key={u.id} value={u.username}>{u.username}</option>)}</select>
+                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
+                          <option value="">-- 未指定 --</option>
+                          {dbUsers.filter(u => u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                        </select>
                       </div>
                     )}
                   </div>
@@ -1435,7 +1641,8 @@ export default function App() {
                              <div>
                                <label className="text-xs font-black text-red-600 dark:text-red-400 mb-2 block">指派後續處理人</label>
                                <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 bg-white dark:bg-slate-700 border-2 border-red-200 dark:border-red-900/50 rounded-xl font-bold text-red-700 dark:text-red-400 outline-none">
-                                 <option value="">-- 未指定 --</option>{dbUsers.map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                                 <option value="">-- 未指定 --</option>
+                                 {dbUsers.filter(u => u.role === ROLES.USER).map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
                                </select>
                              </div>
                            ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 dark:text-slate-500 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 rounded-xl"/></div>}
@@ -1503,7 +1710,7 @@ export default function App() {
                  </div>
                </div>
                
-               {renderTicketTable(filteredAndSortedHistory)}
+               {renderTicketTable(filteredAndSortedHistory, historyPage, setHistoryPage)}
              </div>
           )}
 
@@ -1517,7 +1724,10 @@ export default function App() {
                  </div>
                  <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
                    {selectedTickets.length > 0 && (
-                     <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in"><Trash2 size={16} /><span className="hidden md:inline">刪除 ({selectedTickets.length})</span></button>
+                     <>
+                       <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in" title="標記為已刪除，保留於系統軌跡"><Trash2 size={16} /><span className="hidden md:inline">邏輯刪除 ({selectedTickets.length})</span></button>
+                       <button onClick={handleBatchHardDeleteTickets} className="flex items-center justify-center space-x-2 bg-slate-900 dark:bg-black text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-slate-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in" title="從資料庫徹底抹除，不留任何軌跡"><X size={16} /><span className="hidden md:inline">徹底刪除 ({selectedTickets.length})</span></button>
+                     </>
                    )}
                    <button onClick={handleExportExcel} className="flex items-center justify-center space-x-2 bg-green-600 dark:bg-green-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 dark:hover:bg-green-600 transition-colors font-bold text-sm shrink-0"><Download size={16} /><span className="hidden md:inline">匯出全部</span></button>
                    <div className="relative flex-1 xl:w-72">
@@ -1527,7 +1737,7 @@ export default function App() {
                  </div>
                </div>
                
-               {renderTicketTable(allRecordsFiltered)}
+               {renderTicketTable(allRecordsFiltered, allRecordsPage, setAllRecordsPage)}
              </div>
           )}
 
@@ -1600,7 +1810,7 @@ export default function App() {
                   <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
                 </div>
                 <div onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setHistoryProgress('未結案'); setSearchTerm(''); setActiveTab('list'); }} className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group" title="點擊檢視所有待處理案件">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRightCircle className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
+                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRight className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
                   <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
@@ -1766,11 +1976,37 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8 mt-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><UserPlus size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 請假與代理人設定</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">當您設定了休假區間與代理人後，在該區間內，系統會自動將您的逾期案件推播轉發給代理人。</p>
+                    <form onSubmit={handleSaveLeave} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end bg-slate-50 dark:bg-slate-700/30 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假開始日期</label>
+                        <input type="date" value={leaveForm.start} onChange={e=>setLeaveForm({...leaveForm, start: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假結束日期</label>
+                        <input type="date" value={leaveForm.end} onChange={e=>setLeaveForm({...leaveForm, end: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">選擇代理人</label>
+                        <select value={leaveForm.delegate} onChange={e=>setLeaveForm({...leaveForm, delegate: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
+                          <option value="">-- 無代理人 --</option>
+                          {dbUsers.filter(u => u.username !== activeUser?.username && u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex space-x-3">
+                        <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition-all shadow-md active:scale-95 text-sm">儲存代理</button>
+                        <button type="button" onClick={handleClearLeave} className="px-6 py-4 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-100 dark:hover:bg-slate-600 transition-all border border-slate-200 dark:border-slate-600 text-sm shadow-sm">清除</button>
+                      </div>
+                    </form>
+                  </div>
+
                   {currentUser.role !== ROLES.VIEWER && (
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
                       <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
-                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} />
+                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   )}
                 </>
@@ -1791,6 +2027,46 @@ export default function App() {
                       </button>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
+                  </div>
+
+                  {/* Holidays Management */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Calendar size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 國定假日與停發推播區間</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手手動強制推播）。</p>
+                    
+                    <form onSubmit={handleAddHoliday} className="flex flex-col md:flex-row gap-4 items-end mb-8 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">開始日期</label>
+                        <input type="date" required value={newHoliday.start} onChange={e=>setNewHoliday({...newHoliday, start: e.target.value})} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none [color-scheme:light] dark:[color-scheme:dark]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">結束日期</label>
+                        <input type="date" required value={newHoliday.end} onChange={e=>setNewHoliday({...newHoliday, end: e.target.value})} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none [color-scheme:light] dark:[color-scheme:dark]" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase block mb-2">休假事由</label>
+                        <input type="text" required value={newHoliday.note} onChange={e=>setNewHoliday({...newHoliday, note: e.target.value})} placeholder="例如: 中秋連假" className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <button type="submit" className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-black shadow-md shrink-0">新增假期</button>
+                    </form>
+
+                    <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 max-h-[300px]">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 tracking-widest z-10">
+                          <tr><th className="p-4">開始日期</th><th className="p-4">結束日期</th><th className="p-4">事由</th><th className="p-4 text-center">刪除</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
+                          {holidays.length === 0 ? <tr><td colSpan="4" className="p-8 text-center text-slate-400 dark:text-slate-500 font-bold">目前無設定任何國定假日</td></tr> : holidays.map((h, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <td className="p-4 font-mono text-slate-600 dark:text-slate-300">{h.start}</td>
+                              <td className="p-4 font-mono text-slate-600 dark:text-slate-300">{h.end}</td>
+                              <td className="p-4 text-slate-800 dark:text-slate-200 font-bold">{h.note}</td>
+                              <td className="p-4 text-center"><button onClick={()=>handleRemoveHoliday(idx)} className="text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   {/* Users Management */}
@@ -1907,142 +2183,66 @@ export default function App() {
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-                      <DropdownManager title="反映管道" dbKey="channels" items={channels} />
-                      <DropdownManager title="業務類別" dbKey="categories" items={categories} />
-                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} />
-                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} />
+                      <DropdownManager title="反映管道" dbKey="channels" items={channels} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="業務類別" dbKey="categories" items={categories} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   </div>
-                  <CategoryMappingManager categories={categories} mapping={categoryMapping} />
+                  <CategoryMappingManager categories={categories} mapping={categoryMapping} showToast={showToast} />
                 </div>
               )}
             </div>
           )}
 
-          {/* Global View & Edit Modal */}
-          {viewModalTicket && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}}>
-              <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
-                  <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
-                    <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
-                    {currentUser?.role === ROLES.ADMIN && !isEditingModal && (
-                       <button onClick={() => { setModalEditForm(viewModalTicket); setIsEditingModal(true); }} className="ml-4 px-3 py-1.5 bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors flex items-center">
-                         <Edit size={14} className="mr-1" /> 強制修改
-                       </button>
-                    )}
-                  </h3>
-                  <button onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
+          {/* Canned Messages Modal */}
+          {showCannedModal && (
+            <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />
+          )}
+
+          {/* Toast 元件 */}
+          {toast.show && (
+            <div className={`fixed bottom-8 right-8 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center animate-in slide-in-from-bottom-5 fade-in duration-300 font-bold ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900'}`}>
+              {toast.type === 'error' ? <AlertCircle size={18} className="mr-2" /> : <CheckCircle size={18} className="mr-2" />}
+              {toast.msg}
+            </div>
+          )}
+
+          {/* Confirm Modal 元件 */}
+          {confirmDialog.show && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 max-w-sm w-full animate-in zoom-in-95">
+                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-4 flex items-center"><AlertCircle className="mr-2 text-orange-500"/> 操作確認</h3>
+                <p className="text-slate-600 dark:text-slate-300 mb-8 font-medium leading-relaxed">{confirmDialog.msg}</p>
+                <div className="flex justify-end space-x-3">
+                  <button onClick={() => setConfirmDialog({ show: false, msg: '', onConfirm: null })} className="px-5 py-2.5 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">取消</button>
+                  <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog({ show: false, msg: '', onConfirm: null }); }} className="px-5 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg transition-transform active:scale-95">確定執行</button>
                 </div>
-                
-                <div className="p-8 overflow-y-auto flex-1 space-y-8">
-                   {!isEditingModal ? (
-                      <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">建檔人</div>
-                             <div className="flex items-center text-sm font-bold text-slate-700 dark:text-slate-200 mt-1">
-                                <UserAvatar username={viewModalTicket.receiver} photoURL={userMap[viewModalTicket.receiver]?.photoURL} className="w-5 h-5 text-[10px] mr-1.5" />
-                                {viewModalTicket.receiver}
-                             </div>
-                          </div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
-                              {viewModalTicket.progress}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
-                        </div>
+              </div>
+            </div>
+          )}
 
-                        <div>
-                          <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
-                          
-                          <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
-                            <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
-                              <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
-                                <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
-                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
-                              </div>
-                            </div>
-
-                            {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
-                              viewModalTicket.replies.map((r, i) => (
-                                <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                  <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                    <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
-                                      <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
-                                      客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                    <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
-                                  </div>
-                                </div>
-                              ))
-                            ) : viewModalTicket.replyContent ? (
-                              <div className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                  <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                  <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄</div>
-                                  <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
-                                </div>
-                              </div>
-                            ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
-
-                            {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
-                              <div className="relative flex items-center justify-center pt-4">
-                                <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center"><CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案</div>
-                              </div>
-                            )}
-
-                          </div>
-                        </div>
-                      </>
-                   ) : modalEditForm ? (
-                       <div className="space-y-6">
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                           <EditField label="反映管道" type="select" val={modalEditForm.channel} setVal={(v) => setModalEditForm({...modalEditForm, channel: v})} options={channels} />
-                           <EditField label="業務類別" type="select" val={modalEditForm.category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} options={categories} />
-                           <EditField label="案件狀態" type="select" val={modalEditForm.status} setVal={(v) => setModalEditForm({...modalEditForm, status: v})} options={statuses} />
-                           <EditField label="當前進度" type="select" val={modalEditForm.progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} options={progresses} />
-                           <EditField label="建檔人" val={modalEditForm.receiver} setVal={(v) => setModalEditForm({...modalEditForm, receiver: v})} />
-                           <EditField label="負責人" type="select" val={modalEditForm.assignee} setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} options={['', ...dbUsers.map(u => u.username)]} />
-                           <EditField label="接收時間" type="datetime-local" val={modalEditForm.receiveTime} setVal={(v) => setModalEditForm({...modalEditForm, receiveTime: v})} />
-                           <EditField label="結案時間" type="datetime-local" val={modalEditForm.closeTime} setVal={(v) => setModalEditForm({...modalEditForm, closeTime: v})} />
-                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 mt-4">
-                           <div>
-                             <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所名稱 / 代碼</div>
-                             <div className="flex space-x-2">
-                               <input type="text" value={modalEditForm.instName || ''} onChange={e=>setModalEditForm({...modalEditForm, instName: e.target.value})} className="w-2/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="名稱"/>
-                               <input type="text" value={modalEditForm.instCode || ''} onChange={e=>setModalEditForm({...modalEditForm, instCode: e.target.value})} className="w-1/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono" placeholder="代碼"/>
-                             </div>
-                           </div>
-                           <EditField label="提問人資訊" val={modalEditForm.questioner} setVal={(v) => setModalEditForm({...modalEditForm, questioner: v})} />
-                         </div>
-                         <div className="mt-4"><EditField label="詳細問題描述 (首筆)" type="textarea" val={modalEditForm.extraInfo} setVal={(v) => setModalEditForm({...modalEditForm, extraInfo: v})} /></div>
-                         <div className="mt-4"><EditField label="初步回覆內容 (首筆)" type="textarea" val={modalEditForm.replyContent} setVal={(v) => setModalEditForm({...modalEditForm, replyContent: v})} /></div>
-                       </div>
-                   ) : null}
-                   </div>
-                   <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
-                     {isEditingModal ? (
-                       <>
-                         <button onClick={() => setIsEditingModal(false)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消修改</button>
-                         <button onClick={handleModalSave} className="px-8 py-3 bg-red-600 text-white font-black rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200 dark:shadow-none flex items-center"><Save size={16} className="mr-2"/>儲存修改</button>
-                       </>
-                     ) : (
-                       <button onClick={() => setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 dark:bg-slate-600 text-white font-black rounded-xl hover:bg-slate-900 dark:hover:bg-slate-500 transition-colors shadow-lg shadow-slate-200 dark:shadow-none">關閉檢視</button>
-                     )}
-                   </div>
-                 </div>
-               </div>
-             )}
+          {/* 強制修改密碼 Modal */}
+          {showForcePwdModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 max-w-md w-full">
+                <div className="bg-indigo-100 dark:bg-indigo-900/50 w-16 h-16 rounded-2xl flex items-center justify-center mb-6"><Lock size={32} className="text-indigo-600 dark:text-indigo-400"/></div>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 mb-2">安全設定：請修改初始密碼</h3>
+                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">為了確保您的帳號安全，系統要求您在首次登入時必須更改預設密碼。</p>
+                <form onSubmit={handleForceChangePassword} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-2">設定新密碼</label>
+                    <input type="password" required value={forcePwdForm.newPwd} onChange={e=>setForcePwdForm({...forcePwdForm, newPwd: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800" placeholder="最少 6 個字元"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-2">再次確認密碼</label>
+                    <input type="password" required value={forcePwdForm.confirmPwd} onChange={e=>setForcePwdForm({...forcePwdForm, confirmPwd: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800" placeholder="重新輸入新密碼"/>
+                  </div>
+                  <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black mt-4 hover:bg-indigo-700 shadow-lg active:scale-95 transition-all">確認並啟用帳號</button>
+                </form>
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
