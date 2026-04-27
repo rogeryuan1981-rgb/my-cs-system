@@ -1,35 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
 import { collection, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { Menu, X, LogOut, Sun, Moon, Database, PieChart, Shield, History, Wrench, FileText, CheckCircle } from 'lucide-react';
+import { Menu, X, LogOut, Sun, Moon, Database, PieChart, Shield, History, Wrench, FileText, CheckCircle, AlertCircle, MessageCircle } from 'lucide-react';
 
-// === 1. 引入外部設定與工具 ===
-import { auth, db, storage, functions, secondaryAuth, appId } from './lib/firebase';
+// === 1. 引入外部設定與工具 (請確保檔案路徑正確且檔案存在) ===
+import { auth, db, storage, functions, secondaryAuth } from './lib/firebase.js';
 import { 
   getFirstDayOfMonth, 
   getLastDayOfMonth, 
-  getEmailFromUsername 
-} from './utils/helpers';
+  getEmailFromUsername,
+  formatRepliesHistory
+} from './utils/helpers.js';
 
-// === 2. 引入拆分後的 UI 模組 ===
-import TicketForm from './components/TicketForm';
-import MaintenanceArea from './components/MaintenanceArea';
-import HistoryArea from './components/HistoryArea';
-import AllRecordsArea from './components/AllRecordsArea';
-import AuditArea from './components/AuditArea';
-import DashboardArea from './components/DashboardArea';
-import SettingsArea from './components/SettingsArea';
-import ViewEditModal from './components/ViewEditModal';
-import ForcePasswordChangeModal from './components/ForcePasswordChangeModal';
-import CannedMessagesModal from './components/CannedMessagesModal';
-import UserAvatar from './components/UserAvatar';
+// === 2. 引入拆分後的 UI 模組 (明確加上副檔名以增進 Vercel/Vite 編譯相容性) ===
+import TicketForm from './components/TicketForm.jsx';
+import MaintenanceArea from './components/MaintenanceArea.jsx';
+import HistoryArea from './components/HistoryArea.jsx';
+import AllRecordsArea from './components/AllRecordsArea.jsx';
+import AuditArea from './components/AuditArea.jsx';
+import DashboardArea from './components/DashboardArea.jsx';
+import SettingsArea from './components/SettingsArea.jsx';
+import ViewEditModal from './components/ViewEditModal.jsx';
+import ForcePasswordChangeModal from './components/ForcePasswordChangeModal.jsx';
+import CannedMessagesModal from './components/CannedMessagesModal.jsx';
+import UserAvatar from './components/UserAvatar.jsx';
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
-/**
- * 客服紀錄系統 - 終極重構主進入點 (App)
- * 負責全局狀態管理、Firebase 監聽以及各個功能模組的調度
- */
 export default function App() {
   // --- 基礎狀態 ---
   const [currentUser, setCurrentUser] = useState(null);
@@ -65,7 +62,7 @@ export default function App() {
   const [historyProgress, setHistoryProgress] = useState('全部');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // --- 全局彈窗與提示狀態 ---
+  // --- 全局 UI 狀態 ---
   const [viewModalTicket, setViewModalTicket] = useState(null);
   const [showCannedModal, setShowCannedModal] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: '' });
@@ -75,8 +72,19 @@ export default function App() {
     isOpen: false, type: 'alert', title: '', message: '', inputValue: '', onConfirm: null, onCancel: null 
   });
 
-  // ==================== 1. 初始化與身份驗證 ====================
+  // 取得全域 appId (相容環境變數)
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+  // ==================== 1. 初始化與環境維護 ====================
   useEffect(() => {
+    // 自動補回 Tailwind CSS 腳本（若被移除）
+    if (!document.getElementById('tailwind-cdn')) {
+      const script = document.createElement('script');
+      script.id = 'tailwind-cdn';
+      script.src = "https://cdn.tailwindcss.com";
+      document.head.appendChild(script);
+    }
+
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -94,7 +102,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // ==================== 2. 資料即時監聽 (Real-time Sync) ====================
+  // ==================== 2. 資料即時監聽 ====================
   useEffect(() => {
     const usersRef = collection(db, 'cs_users');
     return onSnapshot(usersRef, (snap) => {
@@ -104,7 +112,8 @@ export default function App() {
       usersData.forEach(u => uMap[u.username] = u);
       setUserMap(uMap);
       
-      const matchedUser = usersData.find(u => u.username === (typeof localStorage !== 'undefined' ? localStorage.getItem('cs_last_user') : null)) || usersData[0];
+      const lastUser = typeof localStorage !== 'undefined' ? localStorage.getItem('cs_last_user') : null;
+      const matchedUser = usersData.find(u => u.username === lastUser) || usersData[0];
       if (matchedUser) { setCurrentUser(matchedUser); setActiveUser(matchedUser); }
     });
   }, []);
@@ -179,7 +188,6 @@ export default function App() {
     }
   };
 
-  // 批次操作邏輯
   const handleBatchDeleteTickets = async (ids) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     if (!(await customConfirm(`確定要將這 ${ids.length} 筆案件標記為「已刪除」嗎？`))) return;
@@ -204,29 +212,27 @@ export default function App() {
     } catch (e) { showToast("抹除失敗：" + e.message, "error"); }
   };
 
-  const handleApproveDelete = async (ticketId, instName) => {
-    if (!(await customConfirm(`核准刪除「${instName}」的申請？`))) return;
-    try {
-      await updateDoc(doc(db, 'cs_records', ticketId), { isDeleted: true, 'deleteRequest.status': 'approved' });
-      showToast('核准成功', 'success');
-    } catch (e) { showToast('核准失敗：' + e.message, 'error'); }
-  };
-
-  const handleRejectDelete = async (ticketId) => {
-    if (!(await customConfirm(`退回此筆刪除申請？`))) return;
-    try {
-      await updateDoc(doc(db, 'cs_records', ticketId), { 'deleteRequest.status': 'rejected' });
-      showToast('已退回申請', 'success');
-    } catch (e) { showToast('退回失敗：' + e.message, 'error'); }
+  const handleExportExcel = (dataList) => {
+    if (!window.XLSX) return showToast("Excel 模組載入中，請稍後再試", "error");
+    const exportData = dataList.map(t => ({
+      '案件號': t.ticketId || '', '接收時間': t.receiveTime, '反映管道': t.channel, '院所代碼': t.instCode,
+      '院所名稱': t.instName, '類別': t.category, '狀態': t.status, '進度': t.progress,
+      '建檔人': t.receiver, '負責人': t.assignee || '', '問題描述': t.extraInfo, '回覆紀錄': formatRepliesHistory(t.replies, t.replyContent)
+    }));
+    const ws = window.XLSX.utils.json_to_sheet(exportData);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄");
+    window.XLSX.writeFile(wb, `客服紀錄匯出_${new Date().getTime()}.xlsx`);
   };
 
   // ==================== 4. 渲染邏輯 ====================
   if (!currentUser) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-          <p className="text-slate-500 font-bold animate-pulse">系統載入中...</p>
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', color: '#64748b', fontFamily: 'sans-serif' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '48px', height: '48px', border: '4px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1rem' }}></div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ fontWeight: 'bold' }}>系統載入中，請稍候...</p>
         </div>
       </div>
     );
@@ -245,7 +251,6 @@ export default function App() {
   return (
     <div className={`flex h-screen overflow-hidden transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
       
-      {/* 側邊導覽列 */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-slate-800 shadow-2xl transition-all duration-300 z-30 flex flex-col shrink-0 border-r border-slate-100 dark:border-slate-700`}>
         <div className="h-20 flex items-center justify-center border-b border-slate-100 dark:border-slate-700 bg-blue-600 dark:bg-blue-900 shrink-0 cursor-pointer" onClick={() => setSidebarOpen(!sidebarOpen)}>
           <h1 className={`font-black text-white tracking-widest flex items-center ${sidebarOpen ? 'text-xl' : 'text-xs'}`}>
@@ -277,7 +282,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* 主內容區 */}
       <main className="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-slate-900 relative">
         <header className="h-20 bg-white dark:bg-slate-800 shadow-sm flex items-center justify-between px-6 shrink-0 z-20 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center">
@@ -290,7 +294,6 @@ export default function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          
           {activeTab === 'new' && (
             <TicketForm 
               currentUser={currentUser} channels={channels} categories={categories} statuses={statuses} 
@@ -312,7 +315,8 @@ export default function App() {
               currentUser={currentUser} ROLES={ROLES} tickets={tickets} progresses={progresses} 
               categoryMapping={categoryMapping} userMap={userMap} selectedTickets={selectedTickets} 
               setSelectedTickets={setSelectedTickets} setViewModalTicket={setViewModalTicket} 
-              handleBatchDeleteTickets={handleBatchDeleteTickets} handleExportExcel={()=>{}} 
+              handleBatchDeleteTickets={() => handleBatchDeleteTickets(selectedTickets)} 
+              handleExportExcel={() => handleExportExcel(tickets)} 
               handleImportHistoryExcel={()=>{}} isImportingHistory={false}
               historyStartDate={historyStartDate} setHistoryStartDate={setHistoryStartDate}
               historyEndDate={historyEndDate} setHistoryEndDate={setHistoryEndDate}
@@ -325,15 +329,18 @@ export default function App() {
             <AllRecordsArea 
               currentUser={currentUser} ROLES={ROLES} tickets={tickets} categoryMapping={categoryMapping} 
               userMap={userMap} selectedTickets={selectedTickets} setSelectedTickets={setSelectedTickets} 
-              setViewModalTicket={setViewModalTicket} handleBatchDeleteTickets={handleBatchDeleteTickets} 
-              handleBatchHardDeleteTickets={handleBatchHardDeleteTickets} handleExportExcel={()=>{}}
+              setViewModalTicket={setViewModalTicket} 
+              handleBatchDeleteTickets={() => handleBatchDeleteTickets(selectedTickets)} 
+              handleBatchHardDeleteTickets={() => handleBatchHardDeleteTickets(selectedTickets)} 
+              handleExportExcel={() => handleExportExcel(tickets)}
             />
           )}
 
           {activeTab === 'audit' && (
             <AuditArea 
               tickets={tickets} userMap={userMap} 
-              handleRejectDelete={handleRejectDelete} handleApproveDelete={handleApproveDelete}
+              handleRejectDelete={(id) => updateDoc(doc(db, 'cs_records', id), { 'deleteRequest.status': 'rejected' })} 
+              handleApproveDelete={(id) => updateDoc(doc(db, 'cs_records', id), { isDeleted: true, 'deleteRequest.status': 'approved' })}
             />
           )}
 
@@ -357,11 +364,9 @@ export default function App() {
               ROLES={ROLES} showToast={showToast} customConfirm={customConfirm} customAlert={customAlert} customPrompt={customPrompt}
             />
           )}
-          
         </div>
       </main>
 
-      {/* 全域彈窗 */}
       {viewModalTicket && (
         <ViewEditModal 
           ticket={viewModalTicket} onClose={() => setViewModalTicket(null)} currentUser={currentUser} 
@@ -378,7 +383,6 @@ export default function App() {
         <ForcePasswordChangeModal activeUser={activeUser} showToast={showToast} auth={auth} db={db} />
       )}
 
-      {/* 自訂對話框 */}
       {customDialog.isOpen && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col border border-slate-200 dark:border-slate-700">
@@ -397,7 +401,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Toast 通知 */}
       {toast.show && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[999] animate-in slide-in-from-bottom-5 duration-300">
           <div className={`px-6 py-3 rounded-full font-bold shadow-lg flex items-center space-x-2 ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'}`}>
@@ -405,7 +408,6 @@ export default function App() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
