@@ -500,37 +500,56 @@ export default function App() {
   }, []);
 
   // --- Data Fetching ---
-useEffect(() => {
-  if (!firebaseUser) return;
-  const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-  const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
-  const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
+// --- Data Fetching ---
+  useEffect(() => {
+    if (!firebaseUser) return;
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : []; 
+    const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
+    const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
 
-  // ======== 修正部分：補回院所資料 (mohw_institutions) 監聽 ========
-  const unsubInstitutions = onSnapshot(buildPath('mohw_institutions'), (snapshot) => {
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    setInstitutions(data); // 寫入院所陣列
-
-    // 建立對照表(Map)，讓 handleInstCodeBlur 能夠透過 instMap 快速查詢
-    const map = {};
-    data.forEach(inst => {
-      map[inst.code] = inst;
-    });
-    setInstMap(map);
-  }, (error) => {
-    console.error("獲取院所資料失敗:", error);
-  });
-  // ==============================================================
-
-  // ⚠️ 注意：如果您的 3.8 原始碼中，此處還有其他資料表（例如 cs_records 案件紀錄、cs_users 使用者、cs_settings 設定）的 onSnapshot 監聽邏輯，請務必保留貼在這邊，不要覆蓋掉。
-
-  return () => {
-    // 卸載時取消院所監聽，避免 Memory Leak
-    if (unsubInstitutions) unsubInstitutions();
+    const unsubUsers = onSnapshot(query(buildPath('cs_users')), snap => { setDbUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
+    const unsubTickets = onSnapshot(query(buildPath('cs_records')), snap => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     
-    // 如果您有保留其他資料表的取消監聽 (如 unsubTickets() 等) 也請加在這裡
-  };
-}, [firebaseUser]);
+    const unsubInst = onSnapshot(query(buildPath('mohw_institutions')), snap => {
+      let instList = []; const map = {};
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.isChunk && data.payload) {
+          try { 
+            JSON.parse(data.payload).forEach(item => { 
+              // 🔽 這裡修復了原先 instListList 的拼寫錯誤，改回正確的 instList
+              instList.push({ id: doc.id, isChunk: true, ...item }); 
+              map[item.code] = { name: item.name, level: item.level }; 
+            }); 
+          } catch (e) {
+            console.error("院所資料解析錯誤:", e);
+          }
+        } else { 
+          instList.push({ id: doc.id, isChunk: false, ...data }); 
+          map[data.code] = { name: data.name, level: data.level }; 
+        }
+      });
+      setInstitutions(instList); setInstMap(map);
+    });
+    
+    const unsubSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), docSnap => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setChannels(data.channels || []); setCategories(data.categories || []);
+        setStatuses(data.statuses || []); setProgresses(data.progresses || []);
+        setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
+        setOverdueHours(data.overdueHours || 24);
+        setHolidays(data.holidays || []);
+      } else {
+        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
+          channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
+          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: []
+        });
+      }
+    });
+
+    return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
+  }, [firebaseUser]);
 
 // --- Auth Handlers ---
   const handleForceChangePassword = async (e) => {
