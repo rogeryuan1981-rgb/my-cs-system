@@ -1245,24 +1245,27 @@ export default function App() {
     );
   };
 
-const renderTicketTable = () => {
-  // 防呆：如果沒有資料，顯示查無紀錄
-  if (!paginatedHistory || paginatedHistory.length === 0) {
+const renderTicketTable = (data, currentPage, setCurrentPage) => {
+  // 1. 在函式內部處理分頁切割
+  const PAGE_SIZE = 50;
+  const paginatedData = data.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // 2. 檢查切割後有沒有資料
+  if (!paginatedData || paginatedData.length === 0) {
     return (
       <tr>
-        <td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">
-          查無相關歷史紀錄
-        </td>
+        <td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td>
       </tr>
     );
   }
 
-  return paginatedHistory.map(t => (
+  // 3. 渲染每一行，並綁定打開明細的事件
+  return paginatedData.map(t => (
     <tr 
       key={t.id} 
       className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
-      // 【關鍵 1】整行點擊時，將當下的案件資料 (t) 寫入彈窗狀態
-      onClick={() => setViewModalTicket(t)}
+      // 【修復點】點擊整行就可以打開明細彈窗
+      onClick={() => setViewModalTicket(t)} 
     >
       <td className="p-6">
         <div className="font-mono text-xs font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
@@ -1282,10 +1285,9 @@ const renderTicketTable = () => {
         </span>
       </td>
       <td className="p-6 text-center">
-        {/* 【關鍵 2】如果眼睛 icon 是個按鈕，必須加入 e.stopPropagation() 防止點擊衝突 */}
         <button 
           onClick={(e) => {
-            e.stopPropagation();
+            e.stopPropagation(); // 避免點擊衝突
             setViewModalTicket(t);
           }} 
           className="p-3 hover:bg-white dark:hover:bg-slate-700 rounded-full text-slate-300 group-hover:text-blue-500 transition-all"
