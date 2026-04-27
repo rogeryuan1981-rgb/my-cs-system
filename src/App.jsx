@@ -1245,13 +1245,15 @@ export default function App() {
     );
   };
 
-  const renderTicketTable = (dataList, currentPage, setCurrentPage) => {
+ const renderTicketTable = (dataList, currentPage, setCurrentPage) => {
     const totalPages = Math.ceil(dataList.length / ITEMS_PER_PAGE) || 1;
     const paginatedList = dataList.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
-        <div className="max-md:overflow-x-auto min-h-[400px]">
+      // 🔽 修正點 1：將原本的 overflow-hidden 改為 overflow-visible
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible flex flex-col">
+        {/* 🔽 修正點 2：補回 pb-32 以確保表格下方留有空間供點擊與 Tooltip 展開 */}
+        <div className="max-md:overflow-x-auto min-h-[400px] pb-32">
           <table className="w-full text-left border-collapse relative">
             <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
               <tr>
@@ -1290,12 +1292,15 @@ export default function App() {
                         <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
                         {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
                       </td>
-                      <td className="p-5"><div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
+                      <td className="p-5">
+                        <div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div>
+                        <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
+                      </td>
                       <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
                          <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
                          <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
                          {fullHistoryStr && (
-                           <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
+                           <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z- w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
                              <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
                              <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
                              <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
@@ -1314,16 +1319,19 @@ export default function App() {
             </tbody>
           </table>
         </div>
-        {dataList.length > 0 && (
-          <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
-            <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              顯示 {((currentPage - 1) * ITEMS_PER_PAGE) + 1} 至 {Math.min(currentPage * ITEMS_PER_PAGE, dataList.length)} 筆，共 {dataList.length} 筆
+
+        {/* 🔽 分頁控制區塊 */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-b-[2rem]">
+            <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 transition-colors text-slate-600 dark:text-slate-300 shadow-sm">
+              上一頁
+            </button>
+            <div className="text-xs font-bold text-slate-500 dark:text-slate-400 tracking-wider">
+              第 {currentPage} 頁 <span className="mx-2">/</span> 共 {totalPages} 頁
             </div>
-            <div className="flex space-x-2">
-              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 disabled:opacity-50 hover:bg-slate-100 transition-colors text-slate-700">上一頁</button>
-              <div className="px-4 py-2 text-sm font-black text-slate-700 dark:text-slate-200">{currentPage} / {totalPages}</div>
-              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 disabled:opacity-50 hover:bg-slate-100 transition-colors text-slate-700">下一頁</button>
-            </div>
+            <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 transition-colors text-slate-600 dark:text-slate-300 shadow-sm">
+              下一頁
+            </button>
           </div>
         )}
       </div>
