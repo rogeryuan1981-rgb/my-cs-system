@@ -4,7 +4,7 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ChevronRight, ChevronLeft, Pin, Timer, AlertTriangle, Info
+  Menu, Eye, Moon, Sun, Camera, ArrowRight, Pin, Timer
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
@@ -19,7 +19,8 @@ if (typeof window !== 'undefined') {
   window.tailwind.config.darkMode = 'class';
 }
 
-const APP_VERSION = "v3.7.0 (資料直連與效能終極版)";
+// --- System Variables ---
+const APP_VERSION = "v3.8 (全面現代化提示版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -36,71 +37,105 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const functions = getFunctions(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
+// Secondary App for Admin to create users without logging themselves out
 let secondaryApp;
-try { secondaryApp = getApp('SecondaryApp'); } 
-catch (e) { secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp'); }
+try {
+  secondaryApp = getApp('SecondaryApp');
+} catch (e) {
+  secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
+}
 const secondaryAuth = getAuth(secondaryApp);
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
-// --- Utility Hooks ---
-function useDebounce(value, delay) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => { setDebouncedValue(value); }, delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debouncedValue;
-}
+const getFormatDate = (date = new Date()) => {
+  const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+  return (new Date(date - tzOffset)).toISOString().slice(0, 16);
+};
+const getFirstDayOfMonth = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+};
+const getLastDayOfMonth = () => {
+  const d = new Date();
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+};
+const getToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
-const getFormatDate = (date = new Date()) => new Date(date - (new Date()).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-const getFirstDayOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
-const getLastDayOfMonth = () => { const d = new Date(); const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`; };
-const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const getEmailFromUsername = (username) => `${encodeURIComponent(username).replace(/%/g, '_')}@cs.local`.toLowerCase();
 
 const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => ({
-  receiveTime: getFormatDate(), callEndTime: '', channel: Array.isArray(channelsArr) && channelsArr.length > 0 ? channelsArr[0] : '',
-  receiver: username, instCode: '', instName: '', instLevel: '', category: '', status: '', extraInfo: '', questioner: '', replyContent: '', closeTime: '',
-  progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理', assignee: '', replies: [], editLogs: []
+  receiveTime: getFormatDate(), callEndTime: '',
+  channel: Array.isArray(channelsArr) && channelsArr.length > 0 ? channelsArr[0] : '',
+  receiver: username, instCode: '', instName: '', instLevel: '', category: '', status: '',
+  extraInfo: '', questioner: '', replyContent: '', closeTime: '',
+  progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理',
+  assignee: '', replies: [], editLogs: []
 });
 
 const formatRepliesHistory = (replies, fallbackContent) => {
-  if (replies && replies.length > 0) return replies.map(r => `${r.content} (${r.user} ${new Date(r.time).toLocaleString()})`).join('\n');
+  if (replies && replies.length > 0) {
+    return replies.map(r => `${r.content} (${r.user} ${new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })})`).join('\n');
+  }
   return fallbackContent || '';
 };
-const getLatestReply = (replies, fallbackContent) => (replies && replies.length > 0) ? replies[replies.length - 1].content : fallbackContent || '';
+
+const getLatestReply = (replies, fallbackContent) => {
+  if (replies && replies.length > 0) return replies[replies.length - 1].content;
+  return fallbackContent || '';
+};
 
 // --- Sub-Components ---
 const UserAvatar = ({ username, photoURL, className = "w-8 h-8 text-xs" }) => {
   if (photoURL) return <img src={photoURL} alt={username} className={`rounded-full object-cover shadow-sm border border-slate-200 dark:border-slate-600 ${className}`} />;
-  return <div className={`rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 shadow-sm border border-blue-200 dark:border-blue-800 ${className}`}>{username ? username.charAt(0).toUpperCase() : '?'}</div>;
+  return (
+    <div className={`rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 shadow-sm border border-blue-200 dark:border-blue-800 ${className}`}>
+      {username ? username.charAt(0).toUpperCase() : '?'}
+    </div>
+  );
 };
 
 const LineChart = ({ datasets, labels, isDarkMode }) => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
-  if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
+  if (!Array.isArray(datasets) || datasets.length === 0 || !labels) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
   const allData = datasets.flatMap(ds => ds.data || []);
-  if (allData.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
+  if (allData.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
+
   const maxVal = Math.max(...allData, 10);
   const height = 260, width = 800, paddingX = 40, paddingY = 40;
-  const gridColor = isDarkMode ? "#334155" : "#e2e8f0", axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8", bgStroke = isDarkMode ? "#1e293b" : "#ffffff";
+  const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
+  const axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8";
+  const bgStroke = isDarkMode ? "#1e293b" : "#ffffff";
 
   return (
     <div className="w-full flex flex-col items-center">
       <div className="flex flex-wrap justify-center gap-4 mb-6 h-8 items-center">
-        {datasets.map((ds, idx) => (
-          <div key={ds.label} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-xl transition-all duration-300 ${hoveredPoint?.dsIdx === idx ? 'bg-slate-200 dark:bg-slate-700 scale-110 shadow-sm' : ''}`}>
-            <span className="w-3 h-3 rounded-full mr-2 shadow-sm" style={{ backgroundColor: ds.color }}></span><span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{ds.label}</span>
-          </div>
-        ))}
+        {datasets.map((ds, idx) => {
+          const isHovered = hoveredPoint?.dsIdx === idx;
+          return (
+            <div key={ds.label} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-xl transition-all duration-300 ${isHovered ? 'bg-slate-200 dark:bg-slate-700 scale-110 shadow-sm' : ''}`}>
+              <span className="w-3 h-3 rounded-full mr-2 shadow-sm" style={{ backgroundColor: ds.color }}></span>
+              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{ds.label}</span>
+            </div>
+          );
+        })}
       </div>
       <div className="w-full overflow-x-auto relative scrollbar-hide">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-64 md:h-80 drop-shadow-sm min-w-[600px]">
           {[0, 0.5, 1].map(ratio => {
             const y = height - paddingY - ratio * (height - paddingY * 2);
-            return <g key={ratio}><line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" /><text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text></g>;
+            return (
+              <g key={ratio}>
+                <line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
+                <text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text>
+              </g>
+            );
           })}
           {datasets.map((ds) => {
             const points = ds.data.map((val, i) => `${paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)))},${height - paddingY - (val / maxVal) * (height - paddingY * 2)}`).join(' ');
@@ -108,9 +143,15 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
           })}
           {datasets.map((ds, dsIdx) => ds.data.map((val, i) => {
             if (hoveredPoint?.dsIdx === dsIdx && hoveredPoint?.i === i) return null;
-            const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1))), y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
+            const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
+            const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
             let dy = -12, dx = 0;
-            if (dsIdx === 0) dy = -22; if (dsIdx === 1) dy = -10; if (dsIdx === 2) { dy = 14; dx = 10; } if (dsIdx === 3) { dy = 24; dx = -10; } if (y + dy > height - paddingY - 5) dy = -10;
+            if (dsIdx === 0) dy = -22;
+            if (dsIdx === 1) dy = -10;
+            if (dsIdx === 2) { dy = 14; dx = 10; }
+            if (dsIdx === 3) { dy = 24; dx = -10; }
+            if (y + dy > height - paddingY - 5) dy = -10;
+
             return (
               <g key={`point-${ds.label}-${i}`} onMouseEnter={() => setHoveredPoint({ dsIdx, i })} onMouseLeave={() => setHoveredPoint(null)} className="cursor-pointer">
                 <circle cx={x} cy={y} r="4" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="2" className="transition-all duration-200" />
@@ -119,8 +160,11 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             );
           }))}
           {hoveredPoint && (() => {
-            const { dsIdx, i } = hoveredPoint; const ds = datasets[dsIdx]; const val = ds.data[i];
-            const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1))), y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
+            const { dsIdx, i } = hoveredPoint;
+            const ds = datasets[dsIdx];
+            const val = ds.data[i];
+            const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
+            const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
             return (
               <g className="pointer-events-none">
                 <circle cx={x} cy={y} r="7" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="3" />
@@ -135,89 +179,13 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   );
 };
 
-const Pagination = ({ currentPage, totalCount, pageSize, onPageChange }) => {
-  const totalPages = Math.ceil(totalCount / pageSize);
-  if (totalCount === 0) return null;
-  return (
-    <div className="flex flex-col sm:flex-row justify-between items-center px-6 py-4 bg-white dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 rounded-b-[2rem] gap-4 shrink-0">
-      <span className="text-sm font-bold text-slate-500 dark:text-slate-400">顯示 {(currentPage - 1) * pageSize + 1} 到 {Math.min(currentPage * pageSize, totalCount)} 筆，共 <span className="text-indigo-600 dark:text-indigo-400">{totalCount}</span> 筆</span>
-      <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-600">
-        <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="p-2 rounded-lg disabled:opacity-30 hover:bg-white dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 transition-colors shadow-sm disabled:shadow-none"><ChevronLeft size={18}/></button>
-        <div className="px-4 text-sm font-black text-slate-700 dark:text-slate-200">{currentPage} <span className="text-slate-400 font-medium mx-1">/</span> {totalPages}</div>
-        <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-2 rounded-lg disabled:opacity-30 hover:bg-white dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 transition-colors shadow-sm disabled:shadow-none"><ChevronRight size={18}/></button>
-      </div>
-    </div>
-  );
-};
-
-const ForcePasswordChangeModal = ({ activeUser, showToast }) => {
-  const [pwdForm, setPwdForm] = useState({ newPwd: '', confirmPwd: '' });
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  const handleForceUpdate = async (e) => {
-    e.preventDefault();
-    if (pwdForm.newPwd.length < 6) return showToast('密碼長度至少需要 6 個字元', 'error');
-    if (pwdForm.newPwd !== pwdForm.confirmPwd) return showToast('兩次密碼不一致', 'error');
-    setIsUpdating(true);
-    try {
-      await updatePassword(auth.currentUser, pwdForm.newPwd);
-      await updateDoc(doc(db, 'cs_users', activeUser.id), { requirePasswordChange: false });
-      showToast('密碼修改成功！歡迎使用系統', 'success');
-    } catch (error) { 
-      showToast('修改失敗：' + error.message, 'error'); 
-    } finally { 
-      setIsUpdating(false); 
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl max-w-md w-full border border-red-100 dark:border-red-900/50 relative overflow-hidden flex flex-col">
-        <div className="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
-        <div className="text-center mb-8">
-          <div className="bg-red-100 dark:bg-red-900/50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertTriangle size={32} className="text-red-600 dark:text-red-400"/>
-          </div>
-          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100">為了您的帳號安全</h2>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">系統偵測到您是首次登入，請立即設定您的專屬新密碼以啟用系統功能。</p>
-        </div>
-        <form onSubmit={handleForceUpdate} className="space-y-6">
-          <div>
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">設定新密碼</label>
-            <input type="password" required value={pwdForm.newPwd} onChange={e=>setPwdForm({...pwdForm, newPwd: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium" placeholder="最少 6 個字元"/>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">確認新密碼</label>
-            <input type="password" required value={pwdForm.confirmPwd} onChange={e=>setPwdForm({...pwdForm, confirmPwd: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium" placeholder="再次輸入新密碼"/>
-          </div>
-          <button type="submit" disabled={isUpdating} className="w-full py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black disabled:opacity-50 transition-colors shadow-md">
-            {isUpdating ? '更新中...' : '確認修改並啟用'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-const CannedMessagesModal = ({ messages, onClose, showToast }) => {
+const CannedMessagesModal = ({ messages, onClose }) => {
   const [copyId, setCopyId] = useState(null);
-  
   const handleCopy = (text, idx) => {
-    const ta = document.createElement("textarea"); 
-    ta.value = text; 
-    document.body.appendChild(ta); 
-    ta.select();
-    try { 
-      document.execCommand('copy'); 
-      setCopyId(idx); 
-      showToast('已複製到剪貼簿', 'success');
-      setTimeout(() => { setCopyId(null); onClose(); }, 500); 
-    } catch (err) { 
-      showToast('複製失敗', 'error'); 
-    }
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); setCopyId(idx); setTimeout(() => { setCopyId(null); onClose(); }, 500); } catch (err) { console.error('Copy failed', err); }
     document.body.removeChild(ta);
   };
-
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
@@ -250,16 +218,21 @@ const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
     e.preventDefault();
     if (!newItem.trim() || safeItems.includes(newItem.trim())) return;
     const newArray = [...safeItems, newItem.trim()];
-    await setDoc(doc(db, 'cs_settings', 'dropdowns'), { [dbKey]: newArray }, { merge: true });
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
     setNewItem('');
-    showToast(`成功新增：${newItem}`, 'success');
+    showToast(`成功新增「${newItem.trim()}」`);
   };
 
-  const handleRemove = async (itemToRemove) => {
-    if (!(await showConfirm(`確定要刪除「${itemToRemove}」嗎？`))) return;
-    const newArray = safeItems.filter(i => i !== itemToRemove);
-    await setDoc(doc(db, 'cs_settings', 'dropdowns'), { [dbKey]: newArray }, { merge: true });
-    showToast(`已刪除：${itemToRemove}`, 'success');
+  const handleRemove = (itemToRemove) => {
+    showConfirm(`確定要刪除「${itemToRemove}」嗎？`, async () => {
+      const newArray = safeItems.filter(i => i !== itemToRemove);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newArray }, { merge: true });
+      showToast(`已刪除「${itemToRemove}」`);
+    });
   };
 
   const handleDrop = async (e, dropIdx) => {
@@ -268,7 +241,9 @@ const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
     const newItems = [...safeItems];
     const [moved] = newItems.splice(draggedIdx, 1);
     newItems.splice(dropIdx, 0, moved);
-    await setDoc(doc(db, 'cs_settings', 'dropdowns'), { [dbKey]: newItems }, { merge: true });
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
     setDraggedIdx(null);
   };
 
@@ -297,12 +272,12 @@ const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
 const CategoryMappingManager = ({ categories, mapping, showToast }) => {
   const [localMap, setLocalMap] = useState({});
   useEffect(() => setLocalMap(mapping || {}), [mapping]);
-  
   const handleSaveMapping = async () => {
-    await setDoc(doc(db, 'cs_settings', 'dropdowns'), { categoryMapping: localMap }, { merge: true });
-    showToast("大類別設定已儲存成功！", 'success');
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+    await setDoc(docRef, { categoryMapping: localMap }, { merge: true });
+    showToast("大類別設定已儲存成功！");
   };
-
   return (
     <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
       <div className="flex justify-between items-center mb-6">
@@ -324,6 +299,17 @@ const CategoryMappingManager = ({ categories, mapping, showToast }) => {
   );
 };
 
+// -------------------------------------------------
+// --- 加入防抖 Hook ---
+// -------------------------------------------------
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => { setDebouncedValue(value); }, delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+};
 
 // -------------------------------------------------
 // --- 主應用程式 App ---
@@ -371,13 +357,6 @@ export default function App() {
   const [isEditingModal, setIsEditingModal] = useState(false);
   const [modalEditForm, setModalEditForm] = useState(null);
 
-  // Pagination states
-  const [listPage, setListPage] = useState(1);
-  const [allRecordsPage, setAllRecordsPage] = useState(1);
-  const [maintainPage, setMaintainPage] = useState(1);
-  const [instPage, setInstPage] = useState(1);
-  const PAGE_SIZE = 50;
-
   useEffect(() => { setSelectedTickets([]); }, [activeTab]);
 
   const [formData, setFormData] = useState(getInitialForm());
@@ -391,22 +370,33 @@ export default function App() {
     }));
   }, [channels, progresses]);
 
-  // Debounced Search Terms
   const [searchTerm, setSearchTerm] = useState('');
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-  
   const [historyStartDate, setHistoryStartDate] = useState(getFirstDayOfMonth());
   const [historyEndDate, setHistoryEndDate] = useState(getLastDayOfMonth());
   const [historyProgress, setHistoryProgress] = useState('全部');
   const [sortConfig, setSortConfig] = useState({ key: 'receiveTime', direction: 'desc' });
 
   const [allRecordsSearchTerm, setAllRecordsSearchTerm] = useState('');
+
+  // --- 防抖狀態 ---
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const debouncedAllRecordsSearchTerm = useDebounce(allRecordsSearchTerm, 300);
+  
+  // --- 分頁狀態 ---
+  const [historyPage, setHistoryPage] = useState(1);
+  const [allRecordsPage, setAllRecordsPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
 
-  // Reset pages on filter changes
-  useEffect(() => { setListPage(1); setSelectedTickets([]); }, [debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
-  useEffect(() => { setAllRecordsPage(1); setSelectedTickets([]); }, [debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
+  useEffect(() => { 
+    setSelectedTickets([]); 
+    setHistoryPage(1); 
+  }, [debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
 
+  useEffect(() => { 
+    setSelectedTickets([]); 
+    setAllRecordsPage(1); 
+  }, [debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
+  
   const [dashStartDate, setDashStartDate] = useState(getFirstDayOfMonth());
   const [dashEndDate, setDashEndDate] = useState(getLastDayOfMonth());
   
@@ -429,50 +419,34 @@ export default function App() {
   const [maintainModal, setMaintainModal] = useState(null);
   const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
 
-  useEffect(() => { setMaintainPage(1); }, [debouncedMaintainSearchTerm, maintainSortOrder]);
-
   const [institutions, setInstitutions] = useState([]);
   const [instMap, setInstMap] = useState({});
   const [newInst, setNewInst] = useState({ code: '', name: '', level: '診所' });
   const [isImporting, setIsImporting] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
-  const debouncedInstSearchTerm = useDebounce(instSearchTerm, 300);
-
-  useEffect(() => { setInstPage(1); }, [debouncedInstSearchTerm]);
   
   const [newUser, setNewUser] = useState({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
   const [pwdChangeForm, setPwdChangeForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdChangeMsg, setPwdChangeMsg] = useState('');
 
-  // --- Toast & Custom Dialog System ---
-  const [toasts, setToasts] = useState([]);
-  const showToast = (msg, type = 'success') => {
-    const id = Date.now() + Math.random();
-    setToasts(prev => [...prev, { id, msg, type }]);
-    setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3500);
-  };
-
-  const [dialog, setDialog] = useState(null);
-  const [promptInput, setPromptInput] = useState('');
-  useEffect(() => { if(dialog?.type === 'prompt') setPromptInput(''); }, [dialog]);
-
-  const customAlert = (message) => {
-    return new Promise(resolve => { setDialog({ type: 'alert', message, resolve }); });
-  };
-  const customConfirm = (message) => {
-    return new Promise(resolve => { setDialog({ type: 'confirm', message, resolve }); });
-  };
-  const customPrompt = (message, inputPlaceholder = '') => {
-    return new Promise(resolve => { setDialog({ type: 'prompt', message, resolve, inputPlaceholder }); });
-  };
-  const handleDialogClose = (result) => {
-    if (dialog?.resolve) dialog.resolve(result);
-    setDialog(null);
-  };
-
   const userMap = useMemo(() => {
     const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
   }, [dbUsers]);
+
+// --- 現代化提示系統與強制改密碼 State ---
+  const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+  const [confirmDialog, setConfirmDialog] = useState({ show: false, msg: '', onConfirm: null });
+  const [showForcePwdModal, setShowForcePwdModal] = useState(false);
+  const [forcePwdForm, setForcePwdForm] = useState({ newPwd: '', confirmPwd: '' }); // ✅ 修復：補上漏掉的密碼表單狀態
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ show: true, msg, type });
+    setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 3000);
+  };
+  
+  const showConfirm = (msg, onConfirmCallback) => {
+    setConfirmDialog({ show: true, msg, onConfirm: onConfirmCallback });
+  };
 
   // Auth State Sync
   useEffect(() => {
@@ -481,6 +455,12 @@ export default function App() {
       if (matchedUser) {
         setCurrentUser(matchedUser);
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
+        
+        if (matchedUser.forcePasswordChange) {
+          setShowForcePwdModal(true);
+        } else {
+          setShowForcePwdModal(false);
+        }
       } else {
         setCurrentUser(null);
       }
@@ -491,14 +471,9 @@ export default function App() {
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
-  // 載入當前使用者的請假設定
   useEffect(() => {
     if (activeUser) {
-      setLeaveForm({
-        start: activeUser.leaveStart || '',
-        end: activeUser.leaveEnd || '',
-        delegate: activeUser.delegateUser || ''
-      });
+      setLeaveForm({ start: activeUser.leaveStart || '', end: activeUser.leaveEnd || '', delegate: activeUser.delegateUser || '' });
     }
   }, [activeUser]);
 
@@ -524,25 +499,26 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // --- Data Fetching (Straight to Root Collections) ---
+  // --- Data Fetching ---
   useEffect(() => {
     if (!firebaseUser) return;
-    
-    // Removed baseDbPath artifacts logic. Direct to root.
-    const unsubUsers = onSnapshot(query(collection(db, 'cs_users')), snap => { setDbUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
-    const unsubTickets = onSnapshot(query(collection(db, 'cs_records')), snap => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubInst = onSnapshot(query(collection(db, 'mohw_institutions')), snap => {
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : []; 
+    const buildPath = (colName) => baseDbPath.length ? collection(db, ...baseDbPath, colName) : collection(db, colName);
+    const buildDocPath = (colName, docId) => baseDbPath.length ? doc(db, ...baseDbPath, colName, docId) : doc(db, colName, docId);
+
+    const unsubUsers = onSnapshot(query(buildPath('cs_users')), snap => { setDbUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
+    const unsubTickets = onSnapshot(query(buildPath('cs_records')), snap => setTickets(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubInst = onSnapshot(query(buildPath('mohw_institutions')), snap => {
       let instList = []; const map = {};
       snap.docs.forEach(doc => {
         const data = doc.data();
         if (data.isChunk && data.payload) {
-          try { JSON.parse(data.payload).forEach(item => { instList.push({ id: doc.id, isChunk: true, ...item }); map[item.code] = { name: item.name, level: item.level }; }); } catch (e) {}
+          try { JSON.parse(data.payload).forEach(item => { instListList.push({ id: doc.id, isChunk: true, ...item }); map[item.code] = { name: item.name, level: item.level }; }); } catch (e) {}
         } else { instList.push({ id: doc.id, isChunk: false, ...data }); map[data.code] = { name: data.name, level: data.level }; }
       });
       setInstitutions(instList); setInstMap(map);
     });
-    
-    const unsubSettings = onSnapshot(doc(db, 'cs_settings', 'dropdowns'), docSnap => {
+    const unsubSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setChannels(data.channels || []); setCategories(data.categories || []);
@@ -551,7 +527,7 @@ export default function App() {
         setOverdueHours(data.overdueHours || 24);
         setHolidays(data.holidays || []);
       } else {
-        setDoc(doc(db, 'cs_settings', 'dropdowns'), {
+        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
           channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
           progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: []
         });
@@ -561,22 +537,48 @@ export default function App() {
     return () => { unsubUsers(); unsubTickets(); unsubInst(); unsubSettings(); };
   }, [firebaseUser]);
 
-  // --- Auth Handlers ---
+// --- Auth Handlers ---
+  const handleForceChangePassword = async (e) => {
+    e.preventDefault();
+    if (forcePwdForm.newPwd !== forcePwdForm.confirmPwd) return showToast('兩次密碼不一致', 'error');
+    if (forcePwdForm.newPwd.length < 6) return showToast('密碼長度需至少 6 碼', 'error');
+    try {
+      await updatePassword(auth.currentUser, forcePwdForm.newPwd);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', currentUser.id) : doc(db, 'cs_users', currentUser.id);
+      await updateDoc(docRef, { forcePasswordChange: false });
+      showToast('密碼設定成功，歡迎使用系統！');
+      setShowForcePwdModal(false);
+      setActiveTab('form');
+    } catch (error) {
+      showToast('密碼更新失敗: ' + error.message, 'error');
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
-    const email = getEmailFromUsername(loginForm.username);
+    const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
+    const email = getEmailFromUsername(trimmedUsername);
     try {
       await signInWithEmailAndPassword(auth, email, loginForm.password);
-      const matchedUser = dbUsers.find(u => u.username === loginForm.username);
+      const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
         setFormData(getInitialForm(matchedUser.username, channels, progresses));
-        setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
+        
+        if (matchedUser.forcePasswordChange) {
+          setShowForcePwdModal(true);
+        } else {
+          setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
+        }
         setAuthError('');
+      } else {
+        setAuthError('登入成功，但資料庫無您的權限紀錄，請聯絡管理員。');
+        await auth.signOut();
       }
     } catch (err) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
-        const legacyUser = dbUsers.find(u => u.username === loginForm.username && u.password === loginForm.password);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
           try {
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
@@ -585,11 +587,14 @@ export default function App() {
             setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form');
             setAuthError('');
           } catch (createErr) {
-            setAuthError('升級失敗：' + createErr.message);
+            if (createErr.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+            else setAuthError('帳號升級失敗：' + createErr.message);
           }
         } else {
-          setAuthError('帳號或密碼錯誤');
+          setAuthError('❌ 帳號或密碼錯誤！請確認大小寫與是否有空白。');
         }
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
       } else {
         setAuthError('登入失敗：' + err.message);
       }
@@ -601,21 +606,24 @@ export default function App() {
     if (dbUsers.length > 0) return;
     if (loginForm.password.length < 6) return setAuthError('密碼長度至少需要 6 個字元！');
     try {
-      const email = getEmailFromUsername(loginForm.username);
+      const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除空白
+      const email = getEmailFromUsername(trimmedUsername);
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
       
-      await addDoc(collection(db, 'cs_users'), { 
-        username: loginForm.username, 
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
+        username: trimmedUsername, 
         role: ROLES.ADMIN, 
-        createdAt: new Date().toISOString(),
-        requirePasswordChange: false 
+        createdAt: new Date().toISOString(), 
+        forcePasswordChange: false 
       });
       
       setAuthError('');
       setActiveTab('form');
-      setFormData(getInitialForm(loginForm.username, channels, progresses));
+      setFormData(getInitialForm(trimmedUsername, channels, progresses));
     } catch (e) { 
-      setAuthError('建立失敗：' + e.message); 
+      if (e.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+      else setAuthError('建立失敗：' + e.message); 
     }
   };
 
@@ -633,34 +641,39 @@ export default function App() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (dbUsers.some(u => u.username === newUser.username)) return showToast('帳號名稱已存在', 'error');
+    const trimmedUsername = newUser.username.trim(); // ✅ 自動清除空白
+    if (dbUsers.some(u => u.username === trimmedUsername)) return showToast('帳號名稱已存在', 'error');
     if (newUser.password.length < 6) return showToast('密碼長度至少需要 6 個字元！', 'error');
     try {
-      const email = getEmailFromUsername(newUser.username);
+      const email = getEmailFromUsername(trimmedUsername);
       await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
       await secondaryAuth.signOut();
 
-      await addDoc(collection(db, 'cs_users'), { 
-        username: newUser.username, 
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_users') : collection(db, 'cs_users'), { 
+        username: trimmedUsername, 
         role: newUser.role, 
         createdAt: new Date().toISOString(), 
         region: '',
         lineUserId: newUser.lineUserId.trim(),
-        requirePasswordChange: true 
+        forcePasswordChange: true
       });
       setNewUser({ username: '', password: '', role: ROLES.USER, lineUserId: '' });
-      showToast('用戶建立成功！', 'success');
+      showToast(`用戶「${trimmedUsername}」建立成功！`);
     } catch(e) { 
-        showToast('新增失敗：' + e.message, 'error');
+        if (e.code === 'auth/operation-not-allowed') showToast('❌ 請至後台啟用「電子郵件」登入', 'error');
+        else if (e.code === 'auth/email-already-in-use') showToast('❌ 此帳號名稱曾被建立且底層尚未刪除，請換一個名稱', 'error');
+        else showToast('新增失敗：' + e.message, 'error');
     }
   };
 
-  const handleDeleteUser = async (id) => {
+  const handleDeleteUser = (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (await customConfirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)')) {
-      await deleteDoc(doc(db, 'cs_users', id));
-      showToast('使用者已刪除', 'success');
-    }
+    showConfirm('確定要停用此使用者嗎？\n(注意：基於資安限制，前端僅能移除系統存取權，無法刪除底層 Auth 帳號，如需徹底刪除請至 Firebase 後台處理)', async () => {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id));
+      showToast('用戶已成功停用');
+    });
   };
 
   const handleChangeOwnPassword = async (e) => {
@@ -668,98 +681,120 @@ export default function App() {
     if (pwdChangeForm.newPwd !== pwdChangeForm.confirmPwd) return setPwdChangeMsg('❌ 兩次密碼不一致！');
     try {
       await updatePassword(auth.currentUser, pwdChangeForm.newPwd);
-      setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。'); 
-      setPwdChangeForm({ newPwd: '', confirmPwd: '' }); 
-      setTimeout(() => setPwdChangeMsg(''), 5000);
+      setPwdChangeMsg('✅ 密碼更新成功！下次登入請使用新密碼。'); setPwdChangeForm({ newPwd: '', confirmPwd: '' }); setTimeout(() => setPwdChangeMsg(''), 5000);
     } catch (e) { setPwdChangeMsg('❌ 密碼更新失敗：' + e.message); }
   };
 
   const handleUpdateUserRegion = async (id, regionValue) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
-      await updateDoc(doc(db, 'cs_users', id), { region: regionValue.trim() });
-    } catch (e) { console.error("更新地區失敗", e); }
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { region: regionValue.trim() });
+    } catch (e) {
+      console.error("更新地區失敗", e);
+    }
   };
 
   const handleUpdateUserLineId = async (id, lineIdValue) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
-      await updateDoc(doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
-    } catch (e) { console.error("更新 LINE UID 失敗", e); }
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
+    } catch (e) {
+      console.error("更新 LINE UID 失敗", e);
+    }
   };
 
   const handleSaveOverdueHours = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
-      await setDoc(doc(db, 'cs_settings', 'dropdowns'), { overdueHours }, { merge: true });
-      showToast("逾期判定時數已成功更新！", "success");
-    } catch (e) { showToast("更新失敗：" + e.message, "error"); }
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { overdueHours }, { merge: true });
+      showToast("逾期判定時數已成功更新！");
+    } catch (e) {
+      showToast("更新失敗：" + e.message, 'error');
+    }
   };
 
   const handleAddHoliday = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!newHoliday.start || !newHoliday.end || !newHoliday.note) return showToast("請填寫完整放假資訊", "error");
-    if (newHoliday.start > newHoliday.end) return showToast("開始日期不能晚於結束日期", "error");
+    if (!newHoliday.start || !newHoliday.end || !newHoliday.note) return showToast("請填寫完整放假資訊", 'error');
+    if (newHoliday.start > newHoliday.end) return showToast("開始日期不能晚於結束日期", 'error');
     try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
       const updatedHolidays = [...holidays, newHoliday].sort((a,b) => a.start.localeCompare(b.start));
-      await setDoc(doc(db, 'cs_settings', 'dropdowns'), { holidays: updatedHolidays }, { merge: true });
+      await setDoc(docRef, { holidays: updatedHolidays }, { merge: true });
       setNewHoliday({ start: '', end: '', note: '' });
-      showToast('國定假日新增成功！', 'success');
-    } catch(e) { showToast("新增假日失敗：" + e.message, "error"); }
+      showToast('國定假日新增成功！');
+    } catch(e) {
+      showToast("新增假日失敗：" + e.message, 'error');
+    }
   };
 
-  const handleRemoveHoliday = async (idx) => {
+  const handleRemoveHoliday = (idx) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!(await customConfirm("確定要刪除此假日設定嗎？"))) return;
-    try {
-      const newHolidays = holidays.filter((_, i) => i !== idx);
-      await setDoc(doc(db, 'cs_settings', 'dropdowns'), { holidays: newHolidays }, { merge: true });
-      showToast("已成功刪除假日", "success");
-    } catch (e) { showToast("刪除失敗：" + e.message, "error"); }
+    showConfirm("確定要刪除此假日設定嗎？", async () => {
+      try {
+        const newHolidays = holidays.filter((_, i) => i !== idx);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+        await setDoc(docRef, { holidays: newHolidays }, { merge: true });
+        showToast("假日設定已移除");
+      } catch (e) {
+        showToast("刪除失敗：" + e.message, 'error');
+      }
+    });
   };
 
   const handleSaveLeave = async (e) => {
     e.preventDefault();
-    if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return showToast("請假開始日期不能晚於結束日期", "error");
-    if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return showToast("請選擇案件代理人", "error");
+    if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return showToast("請假開始日期不能晚於結束日期", 'error');
+    if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return showToast("請選擇案件代理人", 'error');
     try {
-      await updateDoc(doc(db, 'cs_users', activeUser.id), {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+      await updateDoc(docRef, {
         leaveStart: leaveForm.start,
         leaveEnd: leaveForm.end,
         delegateUser: leaveForm.delegate
       });
-      showToast('代理人設定已儲存成功！休假期間系統會自動將您的案件推播轉給代理人。', 'success');
+      showToast('代理人設定已儲存成功！休假期間系統會自動將您的案件推播轉給代理人。');
     } catch (error) {
       showToast('儲存代理失敗：' + error.message, 'error');
     }
   };
 
-  const handleClearLeave = async () => {
-    if (!(await customConfirm("確定要清除代理人設定並恢復自己接收通知嗎？"))) return;
-    try {
-      await updateDoc(doc(db, 'cs_users', activeUser.id), { leaveStart: '', leaveEnd: '', delegateUser: '' });
-      setLeaveForm({ start: '', end: '', delegate: '' });
-      showToast('已成功解除代理設定！', 'success');
-    } catch (error) {
-      showToast('清除失敗：' + error.message, 'error');
-    }
+  const handleClearLeave = () => {
+    showConfirm("確定要清除代理人設定並恢復自己接收通知嗎？", async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+        await updateDoc(docRef, { leaveStart: '', leaveEnd: '', delegateUser: '' });
+        setLeaveForm({ start: '', end: '', delegate: '' });
+        showToast('已成功解除代理設定！');
+      } catch (error) {
+        showToast('清除失敗：' + error.message, 'error');
+      }
+    });
   };
 
-  const handleManualTrigger = async () => {
+  const handleManualTrigger = () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!(await customConfirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)"))) return;
-    
-    setIsTriggering(true);
-    try {
-      const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
-      const res = await triggerFn();
-      await customAlert(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
-    } catch (error) {
-      showToast("觸發失敗，請確認後端是否已更新成功：" + error.message, "error");
-    } finally {
-      setIsTriggering(false);
-    }
+    showConfirm("確定要現在「立即掃描並發送」逾期通知嗎？\n(只會發送給目前符合條件且「今天尚未通知過」的案件負責人)", async () => {
+      setIsTriggering(true);
+      try {
+        const triggerFn = httpsCallable(functions, 'manualTriggerOverdue');
+        const res = await triggerFn();
+        showToast(`手動執行完畢！🎉\n本次共發送給 ${res.data.notifiedCount} 位同仁，並成功標記了 ${res.data.markedCount} 筆案件。`);
+      } catch (error) {
+        showToast("觸發失敗，請確認後端是否已更新成功：" + error.message, 'error');
+      } finally {
+        setIsTriggering(false);
+      }
+    });
   };
 
   const handleAvatarUpload = (e) => {
@@ -778,11 +813,14 @@ export default function App() {
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         try {
-          const storageRef = ref(storage, `avatars/${activeUser.id}_${Date.now()}.jpg`);
+          const storageRef = ref(storage, `avatars/${appId}/${activeUser.id}_${Date.now()}.jpg`);
           await uploadString(storageRef, dataUrl, 'data_url');
           const downloadUrl = await getDownloadURL(storageRef);
-          await updateDoc(doc(db, 'cs_users', activeUser.id), { photoURL: downloadUrl });
-          showToast('個人圖像更新成功！已儲存至 Cloud Storage。', 'success');
+
+          const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+          const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
+          await updateDoc(docRef, { photoURL: downloadUrl });
+          showToast('個人圖像更新成功！已儲存至 Cloud Storage。');
         } catch (error) { 
           showToast('圖像更新失敗，請稍後再試。錯誤原因：' + error.message, 'error'); 
         }
@@ -838,7 +876,8 @@ export default function App() {
       const initialReplies = formData.replyContent ? [{ time: getFormatDate(), user: currentUser.username, content: formData.replyContent }] : [];
       const submissionData = { ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], createdAt: new Date().toISOString(), isDeleted: false };
       
-      await addDoc(collection(db, 'cs_records'), submissionData);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       setFormData(prev => ({
@@ -865,25 +904,24 @@ export default function App() {
     return result;
   }, [tickets, currentUser, debouncedMaintainSearchTerm, maintainSortOrder]);
 
-  const paginatedMaintain = useMemo(() => maintainTicketsList.slice((maintainPage - 1) * PAGE_SIZE, maintainPage * PAGE_SIZE), [maintainTicketsList, maintainPage]);
-
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
     setMaintainForm({ progress: ticket.progress, assignee: ticket.assignee || '', newReply: '', extraInfo: ticket.extraInfo || '' });
   };
 
   const handleRequestDelete = async () => {
-    const reason = await customPrompt(`請輸入刪除案件「${maintainModal.instName || maintainModal.ticketId}」的申請原因：`);
+    const reason = window.prompt(`請輸入刪除案件「${maintainModal.instName || maintainModal.ticketId}」的申請原因：`);
     if (!reason) return;
     try {
-      await updateDoc(doc(db, 'cs_records', maintainModal.id), { deleteRequest: { status: 'pending', reason: reason.trim(), requestedBy: currentUser.username, requestTime: getFormatDate() } });
-      showToast('刪除申請已送出，待管理員簽核。', 'success'); setMaintainModal(null);
-    } catch (error) { showToast("申請失敗：" + error.message, "error"); }
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), { deleteRequest: { status: 'pending', reason: reason.trim(), requestedBy: currentUser.username, requestTime: getFormatDate() } });
+      showToast('刪除申請已送出，待管理員簽核。'); setMaintainModal(null);
+    } catch (error) { showToast("申請失敗：" + error.message, 'error'); }
   };
 
   const handleMaintainSubmit = async (e) => {
     e.preventDefault();
-    if (currentUser?.role === ROLES.VIEWER) return showToast("無權限", "error");
+    if (currentUser?.role === ROLES.VIEWER) return showToast("無權限", 'error');
     try {
       const updates = { progress: maintainForm.progress };
       if (maintainForm.progress === '結案' && maintainModal.progress !== '結案') updates.closeTime = getFormatDate();
@@ -901,17 +939,19 @@ export default function App() {
         updates.replyContent = maintainForm.newReply.trim();
       }
 
-      await updateDoc(doc(db, 'cs_records', maintainModal.id), updates);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), updates);
+      showToast('案件維護更新成功！');
       setMaintainModal(null);
-      showToast("案件更新成功", "success");
-    } catch (error) { showToast("更新失敗：" + error.message, "error"); }
+    } catch (error) { showToast("更新失敗：" + error.message, 'error'); }
   };
 
   const handleModalSave = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
-      await updateDoc(doc(db, 'cs_records', modalEditForm.id), modalEditForm);
-      showToast('強制修改成功！', 'success'); setViewModalTicket(null); setIsEditingModal(false);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), modalEditForm);
+      showToast('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
     } catch (error) { showToast('修改失敗：' + error.message, 'error'); }
   };
 
@@ -925,101 +965,97 @@ export default function App() {
     return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
   }, [tickets]);
 
-  const handleApproveDelete = async (ticketId, ticketInstName) => {
-    if (!(await customConfirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`))) return;
-    try {
-      await updateDoc(doc(db, 'cs_records', ticketId), {
-        isDeleted: true,
-        deletedAt: getFormatDate(),
-        deletedBy: currentUser.username,
-        'deleteRequest.status': 'approved'
-      });
-      showToast('已成功邏輯刪除該筆紀錄。', 'success');
-    } catch (error) { showToast('刪除失敗：' + error.message, 'error'); }
+  const handleApproveDelete = (ticketId, ticketInstName) => {
+    showConfirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`, async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
+          isDeleted: true,
+          deletedAt: getFormatDate(),
+          deletedBy: currentUser.username,
+          'deleteRequest.status': 'approved'
+        });
+        showToast('已成功邏輯刪除該筆紀錄。');
+      } catch (error) { showToast('刪除失敗：' + error.message, 'error'); }
+    });
   };
 
   const handleRejectDelete = async (ticketId) => {
-    const rejectReason = await customPrompt('請輸入退回此刪除申請的理由：');
+    const rejectReason = window.prompt('請輸入退回此刪除申請的理由：');
     if (rejectReason === null) return;
     try {
-      await updateDoc(doc(db, 'cs_records', ticketId), {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', ticketId) : doc(db, 'cs_records', ticketId), {
         'deleteRequest.status': 'rejected', 'deleteRequest.rejectReason': rejectReason.trim(), 'deleteRequest.rejectedBy': currentUser.username, 'deleteRequest.rejectTime': getFormatDate()
       });
-      showToast('已退回申請', 'success');
-    } catch (error) {}
+      showToast('已退回該刪除申請。');
+    } catch (error) { showToast('退回失敗：' + error.message, 'error');}
   };
 
-  const handleBatchDeleteTickets = async () => {
+  const handleBatchDeleteTickets = () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
-    if (await customConfirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`)) {
+    showConfirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`, async () => {
       try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         let batch = writeBatch(db); let count = 0;
         for (let i = 0; i < selectedTickets.length; i++) {
-          batch.update(doc(db, 'cs_records', selectedTickets[i]), {
-             isDeleted: true,
-             deletedAt: getFormatDate(),
-             deletedBy: currentUser.username
+          batch.update(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]), {
+              isDeleted: true,
+              deletedAt: getFormatDate(),
+              deletedBy: currentUser.username
           });
           count++;
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        setSelectedTickets([]); showToast(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`, 'success');
-      } catch (error) { showToast("批次刪除失敗：" + error.message, "error"); }
-    }
+        setSelectedTickets([]); showToast(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
+      } catch (error) { showToast("批次刪除失敗：" + error.message, 'error'); }
+    });
   };
 
+  // 徹底刪除 (Hard Delete) 函式 (因為需要輸入 DELETE 防呆，這裡保留 prompt)
   const handleBatchHardDeleteTickets = async () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
-    const confirmText = await customPrompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`, '輸入 DELETE');
+    const confirmText = window.prompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`);
     if (confirmText !== 'DELETE') {
-      if (confirmText !== null) await customAlert('驗證碼不符，已取消徹底刪除操作。');
+      if (confirmText !== null) showToast('驗證碼不符，已取消徹底刪除操作。', 'error');
       return;
     }
     try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       let batch = writeBatch(db); let count = 0;
       for (let i = 0; i < selectedTickets.length; i++) {
-        batch.delete(doc(db, 'cs_records', selectedTickets[i]));
+        batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]));
         count++;
         if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
       }
       if (count > 0) await batch.commit();
-      setSelectedTickets([]); showToast(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`, 'success');
-    } catch (error) { showToast("徹底刪除失敗：" + error.message, "error"); }
+      setSelectedTickets([]); showToast(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`);
+    } catch (error) { showToast("徹底刪除失敗：" + error.message, 'error'); }
   };
 
   const handleExportExcel = () => {
-    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", "error");
+    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
     const targetData = activeTab === 'all-records' ? allRecordsFiltered : filteredAndSortedHistory;
-    if (targetData.length === 0) return showToast("目前沒有資料可以匯出。", "error");
-    if (targetData.length > 5000) return showToast("為確保系統效能與避免瀏覽器崩潰，單次匯出不可超過 5000 筆！請嘗試縮小日期或查詢範圍。", "error");
+    if (targetData.length === 0) return showToast("目前沒有資料可以匯出。", 'error');
+    if (targetData.length > 5000) return showToast("為確保系統效能，單次匯出不可超過 5000 筆！請嘗試縮小範圍。", 'error');
 
     const exportData = targetData.map(t => ({
-      '資料狀態': t.isDeleted ? '已刪除' : '正常',
-      '案件號': t.ticketId || '', 
-      '接收時間': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
-      '反映管道': t.channel || '', 
-      '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '', 
-      '院所名稱': t.instName || '',
-      '醫療層級': t.instLevel || '', 
-      '提問人資訊': t.questioner || '', 
-      '業務類別': t.category || '', 
-      '案件處理狀態': t.status || '',
-      '處理進度': t.progress || '', 
-      '建檔人': t.receiver || '', 
-      '指定處理人': t.assignee || '', 
-      '詳細問題描述': t.extraInfo || '',
-      '回覆內容(完整紀錄)': formatRepliesHistory(t.replies, t.replyContent), 
-      '結案時間': t.closeTime ? t.closeTime.replace('T', ' ') : ''
+      '狀態標記': t.isDeleted ? '已刪除' : '正常',
+      '案件號': t.ticketId || '', '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
+      '反映管道': t.channel || '', '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '', '院所名稱': t.instName || '',
+      '醫療層級': t.instLevel || '', '提問人資訊': t.questioner || '', '業務類別': t.category || '', '案件狀態': t.status || '',
+      '處理進度': t.progress || '', '建檔人': t.receiver || '', '指定處理人': t.assignee || '', '詳細問題描述': t.extraInfo || '',
+      '回覆內容(完整紀錄)': formatRepliesHistory(t.replies, t.replyContent), '結案時間(YYYY-MM-DD HH:mm)': t.closeTime ? t.closeTime.replace('T', ' ') : ''
     }));
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
     window.XLSX.writeFile(wb, `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`);
-    showToast("匯出成功", "success");
+    showToast('匯出成功！');
   };
 
   const handleDownloadTemplate = () => {
-    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", "error");
+    if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
     const headers = ['案件號', '接收時間(YYYY-MM-DD HH:mm)', '反映管道', '院所代碼', '院所名稱', '醫療層級', '提問人資訊', '業務類別', '案件狀態', '處理進度', '建檔人', '指定處理人', '詳細問題描述', '回覆內容(完整紀錄)', '結案時間(YYYY-MM-DD HH:mm)'];
     const ws = window.XLSX.utils.aoa_to_sheet([headers]); const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, "匯入範本"); window.XLSX.writeFile(wb, "歷史紀錄匯入範本.xlsx");
@@ -1042,11 +1078,12 @@ export default function App() {
         });
 
         if (validRows.length > 5000) {
-          showToast('單次匯入筆數超過 5000 筆！為確保系統不中斷，請將檔案拆分後再進行匯入。', 'error');
+          showToast('單次匯入筆數超過 5000 筆！請將檔案拆分後再進行匯入。', 'error');
           return;
         }
 
         let added = 0; let batch = writeBatch(db); let count = 0;
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         for (const row of validRows) {
           let rTime = getFormatDate(); const rawRecTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
           if (!isNaN(new Date(rawRecTime))) rTime = getFormatDate(new Date(rawRecTime));
@@ -1060,13 +1097,13 @@ export default function App() {
             receiver: String(row['建檔人']).trim(), assignee: String(row['指定處理人'] || '').trim(), extraInfo: String(row['詳細問題描述'] || '').trim(),
             replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || '').trim(), closeTime: cTime, replies: [], createdAt: new Date().toISOString(), isImported: true, isDeleted: false
           };
-          batch.set(doc(collection(db, 'cs_records')), recordData);
+          batch.set(baseDbPath.length ? doc(collection(db, ...baseDbPath, 'cs_records')) : doc(collection(db, 'cs_records')), recordData);
           count++; added++;
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
-        showToast(`成功匯入 ${added} 筆歷史紀錄！`, 'success');
-      } catch (error) { showToast("匯入發生未預期錯誤，請確認檔案格式是否正確。", "error"); } finally { setIsImportingHistory(false); e.target.value = null; }
+        showToast(`成功匯入 ${added} 筆歷史紀錄！`);
+      } catch (error) { showToast("匯入發生未預期錯誤，請確認檔案格式是否正確。", 'error'); } finally { setIsImportingHistory(false); e.target.value = null; }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -1076,25 +1113,30 @@ export default function App() {
     if (currentUser?.role !== ROLES.ADMIN && currentUser?.role !== ROLES.USER) return;
     const paddedCode = newInst.code.trim().padStart(10, '0');
     try {
-      await addDoc(collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
-      setNewInst({ code: '', name: '', level: '診所' }); showToast('單筆新增成功！', 'success'); 
-    } catch (e) {}
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
+      setNewInst({ code: '', name: '', level: '診所' }); showToast('院所單筆新增成功！');
+    } catch (e) { showToast('新增失敗', 'error'); }
   };
 
   const handleDeleteInst = async (id) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    await deleteDoc(doc(db, 'mohw_institutions', id));
+    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+    await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
   };
 
-  const handleClearAllInsts = async () => {
-    if (currentUser?.role !== ROLES.ADMIN || !(await customConfirm('確定要清空所有院所資料嗎？'))) return;
-    setIsImporting(true);
-    try {
-      const batch = writeBatch(db);
-      institutions.forEach(inst => batch.delete(doc(db, 'mohw_institutions', inst.id)));
-      await batch.commit();
-      showToast('院所資料已清空', 'success');
-    } catch (e) {} finally { setIsImporting(false); }
+  const handleClearAllInsts = () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    showConfirm('確定要清空所有院所資料嗎？此操作不可逆！', async () => {
+      setIsImporting(true);
+      try {
+        const batch = writeBatch(db);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        institutions.forEach(inst => batch.delete(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', inst.id) : doc(db, 'mohw_institutions', inst.id)));
+        await batch.commit();
+        showToast('已清空所有院所資料');
+      } catch (e) { showToast('清空失敗', 'error'); } finally { setIsImporting(false); }
+    });
   };
 
   const handleFileUpload = async (e) => {
@@ -1122,19 +1164,19 @@ export default function App() {
         }
         if (currentChunk.length > 0) chunks.push(currentChunk);
         
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         for (const chunkData of chunks) {
           const batch = writeBatch(db);
-          batch.set(doc(collection(db, 'mohw_institutions')), { isChunk: true, payload: JSON.stringify(chunkData) });
+          batch.set(baseDbPath.length ? doc(collection(db, ...baseDbPath, 'mohw_institutions')) : doc(collection(db, 'mohw_institutions')), { isChunk: true, payload: JSON.stringify(chunkData) });
           await batch.commit();
         }
-        showToast('院所資料批次匯入成功', 'success');
-      } catch (error) { showToast('匯入失敗', 'error') } finally { setIsImporting(false); e.target.value = null; }
+        showToast('院所資料批次匯入完成！');
+      } catch (error) { showToast('匯入失敗，請確認格式', 'error'); } finally { setIsImporting(false); e.target.value = null; }
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const filteredInsts = useMemo(() => institutions.filter(inst => (inst.code||'').includes(debouncedInstSearchTerm) || (inst.name||'').includes(debouncedInstSearchTerm)), [institutions, debouncedInstSearchTerm]);
-  const paginatedInsts = useMemo(() => filteredInsts.slice((instPage - 1) * PAGE_SIZE, instPage * PAGE_SIZE), [filteredInsts, instPage]);
+  const filteredInsts = useMemo(() => institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm)), [institutions, instSearchTerm]);
 
   const handleSort = (key) => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
   const handleCategoryClick = (cat) => { setHistoryStartDate(dashStartDate); setHistoryEndDate(dashEndDate); setSearchTerm(cat); setActiveTab('list'); };
@@ -1158,7 +1200,6 @@ export default function App() {
     });
     return result;
   }, [tickets, debouncedSearchTerm, historyStartDate, historyEndDate, historyProgress, sortConfig, categoryMapping]);
-  const paginatedHistory = useMemo(() => filteredAndSortedHistory.slice((listPage - 1) * PAGE_SIZE, listPage * PAGE_SIZE), [filteredAndSortedHistory, listPage]);
 
   const allRecordsFiltered = useMemo(() => {
     let result = tickets.filter(t => {
@@ -1175,7 +1216,6 @@ export default function App() {
     });
     return result;
   }, [tickets, debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
-  const paginatedAllRecords = useMemo(() => allRecordsFiltered.slice((allRecordsPage - 1) * PAGE_SIZE, allRecordsPage * PAGE_SIZE), [allRecordsFiltered, allRecordsPage]);
 
   const renderSortHeader = (label, sortKey, align = 'left', isFirst = false, isLast = false) => {
     const isActive = sortConfig.key === sortKey;
@@ -1191,74 +1231,90 @@ export default function App() {
     );
   };
 
-  const renderTicketTable = (dataList, currentPage, setCurrentPage, totalCount) => (
-    <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible flex flex-col">
-      <div className="max-md:overflow-x-auto min-h-[400px] flex-1">
-        <table className="w-full text-left border-collapse relative">
-          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
-            <tr>
-              {currentUser.role === ROLES.ADMIN && (
-                <th className="p-5 text-center w-12 rounded-tl-[2rem]">
-                  <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={dataList.length > 0 && selectedTickets.length === dataList.length} onChange={(e) => setSelectedTickets(e.target.checked ? dataList.map(t => t.id) : [])} />
-                </th>
-              )}
-              <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
-              {renderSortHeader('案件號/日期', 'receiveTime')}
-              {renderSortHeader('院所', 'instName')}
-              {renderSortHeader('描述/回覆摘要', 'extraInfo')}
-              {renderSortHeader('建立/負責人', 'receiver')}
-              {renderSortHeader('進度', 'progress', 'center', false, true)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
-            {dataList.length === 0 ? (
-              <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
-            ) : (
-              dataList.map((t, index) => {
-                const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
-                const latestReplyStr = getLatestReply(t.replies, t.replyContent);
-                return (
-                  <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50 ${t.isDeleted ? 'opacity-50' : ''}`}>
-                    {currentUser.role === ROLES.ADMIN && (
-                      <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" disabled={t.isDeleted} className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
+  const renderTicketTable = (dataList, currentPage, setCurrentPage) => {
+    const totalPages = Math.ceil(dataList.length / ITEMS_PER_PAGE) || 1;
+    const paginatedList = dataList.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+    return (
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+        <div className="max-md:overflow-x-auto min-h-[400px]">
+          <table className="w-full text-left border-collapse relative">
+            <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
+              <tr>
+                {currentUser.role === ROLES.ADMIN && (
+                  <th className="p-5 text-center w-12 rounded-tl-[2rem]">
+                    <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={paginatedList.length > 0 && selectedTickets.length === paginatedList.length} onChange={(e) => setSelectedTickets(e.target.checked ? paginatedList.map(t => t.id) : [])} />
+                  </th>
+                )}
+                <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
+                {renderSortHeader('案件號/日期', 'receiveTime')}
+                {renderSortHeader('院所', 'instName')}
+                {renderSortHeader('描述/回覆摘要', 'extraInfo')}
+                {renderSortHeader('建立/負責人', 'receiver')}
+                {renderSortHeader('進度', 'progress', 'center', false, true)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
+              {paginatedList.length === 0 ? (
+                <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
+              ) : (
+                paginatedList.map((t, index) => {
+                  const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
+                  const latestReplyStr = getLatestReply(t.replies, t.replyContent);
+                  return (
+                    <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50 ${t.isDeleted ? 'opacity-50' : ''}`}>
+                      {currentUser.role === ROLES.ADMIN && (
+                        <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" disabled={t.isDeleted} className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
+                        </td>
+                      )}
+                      <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{(currentPage - 1) * ITEMS_PER_PAGE + index + 1}</td>
+                      <td className="p-5">
+                        <div className={`font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center ${t.isDeleted ? 'line-through' : ''}`}>
+                          {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
+                        </div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
+                        {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
                       </td>
-                    )}
-                    <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
-                    <td className="p-5">
-                      <div className={`font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center ${t.isDeleted ? 'line-through' : ''}`}>
-                        {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
-                      </div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
-                      {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
-                    </td>
-                    <td className="p-5"><div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
-                    <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
-                       <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                       <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                       {fullHistoryStr && (
-                         <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
-                           <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
-                           <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
-                           <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                         </div>
-                       )}
-                    </td>
-                    <td className="p-5">
-                      <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
-                      {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
-                    </td>
-                    <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      <td className="p-5"><div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div><div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div></td>
+                      <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
+                         <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
+                         <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
+                         {fullHistoryStr && (
+                           <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z-[999] w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
+                             <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
+                             <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
+                             <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
+                           </div>
+                         )}
+                      </td>
+                      <td className="p-5">
+                        <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
+                        {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
+                      </td>
+                      <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {dataList.length > 0 && (
+          <div className="p-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+            <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+              顯示 {((currentPage - 1) * ITEMS_PER_PAGE) + 1} 至 {Math.min(currentPage * ITEMS_PER_PAGE, dataList.length)} 筆，共 {dataList.length} 筆
+            </div>
+            <div className="flex space-x-2">
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 disabled:opacity-50 hover:bg-slate-100 transition-colors text-slate-700">上一頁</button>
+              <div className="px-4 py-2 text-sm font-black text-slate-700 dark:text-slate-200">{currentPage} / {totalPages}</div>
+              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="px-4 py-2 rounded-xl text-sm font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 disabled:opacity-50 hover:bg-slate-100 transition-colors text-slate-700">下一頁</button>
+            </div>
+          </div>
+        )}
       </div>
-      <Pagination currentPage={currentPage} totalCount={totalCount} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
-    </div>
-  );
+    );
+  };
 
   const dashboardStats = useMemo(() => {
     const total = tickets.filter(t => !t.isDeleted).length;
@@ -1322,51 +1378,61 @@ export default function App() {
     return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
   }, [tickets, dashStartDate, dashEndDate, personnelStartDate, personnelEndDate, trendCategory, categories, categoryMapping, userMap]);
 
-  return (
-    <div className={isDarkMode ? 'dark' : ''}>
-    
-    {/* Global Toast Container */}
-    <div className="fixed top-4 right-4 z-[200] flex flex-col space-y-2 pointer-events-none">
-      {toasts.map(t => (
-        <div key={t.id} className={`animate-in fade-in slide-in-from-top-2 flex items-center p-4 rounded-2xl shadow-lg border ${t.type === 'success' ? 'bg-white dark:bg-slate-800 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400' : 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'}`}>
-          {t.type === 'success' ? <CheckCircle size={20} className="mr-3 shrink-0"/> : <AlertCircle size={20} className="mr-3 shrink-0"/>}
-          <span className="font-bold text-sm">{t.msg}</span>
-        </div>
-      ))}
-    </div>
 
-    {/* Global Dialog Modal */}
-    {dialog && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
-        <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700 flex flex-col">
-          <div className={`p-6 border-b border-slate-100 dark:border-slate-700 flex items-center ${dialog.type === 'alert' ? 'text-blue-600 dark:text-blue-400' : dialog.type === 'confirm' ? 'text-amber-600 dark:text-amber-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
-            {dialog.type === 'alert' ? <AlertCircle size={24} className="mr-3"/> : <MessageCircle size={24} className="mr-3"/>}
-            <h3 className="font-black text-lg">{dialog.type === 'alert' ? '系統提示' : dialog.type === 'confirm' ? '確認操作' : '請輸入資訊'}</h3>
+  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
+
+  if (!currentUser) {
+    const isFirstTime = dbUsers.length === 0;
+    
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900 relative overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 dark:bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400 dark:bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
+        <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl z-10 w-full max-w-md border border-slate-100 dark:border-slate-700 flex flex-col relative">
+          <div className="text-center mb-10">
+            <div className="bg-blue-600 dark:bg-blue-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 dark:shadow-none"><Shield size={32} className="text-white"/></div>
+            <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight">系統存取驗證</h2>
+            <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">{isFirstTime ? '初始化系統：建立最高管理員' : '請輸入您的帳號密碼'}</p>
+            <div className="mt-2 text-[10px] text-slate-400 dark:text-slate-600 font-mono font-bold tracking-widest">{APP_VERSION}</div>
           </div>
-          <div className="p-6">
-            <p className="text-slate-600 dark:text-slate-300 font-medium whitespace-pre-wrap leading-relaxed">{dialog.message}</p>
-            {dialog.type === 'prompt' && (
-              <input type="text" autoFocus value={promptInput} onChange={e => setPromptInput(e.target.value)} className="mt-4 w-full p-3 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100" placeholder={dialog.inputPlaceholder} onKeyDown={e => { if (e.key === 'Enter') handleDialogClose(promptInput) }} />
+          <form onSubmit={isFirstTime ? handleCreateFirstAdmin : handleLogin} className="space-y-6">
+            {isFirstTime ? (
+              <>
+                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">建立管理員帳號</label><input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500" autoComplete="username"/></div>
+                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">設定密碼</label><input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500" autoComplete="new-password"/></div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">帳號</label>
+                  <input type="text" required value={loginForm.username} onChange={e=>setLoginForm({...loginForm, username: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-bold placeholder-slate-400 dark:placeholder-slate-500" placeholder="請輸入帳號" autoComplete="username"/>
+                </div>
+                <div><label className="text-xs font-bold text-slate-400 dark:text-slate-300 uppercase tracking-widest mb-2 block">密碼</label><input type="password" required value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} className="w-full p-4 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium placeholder-slate-400 dark:placeholder-slate-500" autoComplete="current-password"/></div>
+              </>
             )}
-          </div>
-          <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end space-x-3">
-            {(dialog.type === 'confirm' || dialog.type === 'prompt') && (
-              <button onClick={() => handleDialogClose(dialog.type === 'prompt' ? null : false)} className="px-5 py-2.5 rounded-xl font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">取消</button>
-            )}
-            <button onClick={() => {
-              const res = dialog.type === 'prompt' ? promptInput : true;
-              handleDialogClose(res);
-            }} className={`px-5 py-2.5 rounded-xl font-black text-white shadow-md transition-all active:scale-95 ${dialog.type === 'alert' ? 'bg-blue-600 hover:bg-blue-700' : dialog.type === 'confirm' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>確認</button>
-          </div>
+            {authError && <p className="text-sm text-red-500 dark:text-red-400 font-bold text-center animate-pulse">{authError}</p>}
+            <button type="submit" className="w-full py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg shadow-blue-200 dark:shadow-none active:scale-95 flex justify-center items-center">{isFirstTime ? '初始化資料庫' : <><Lock size={16} className="mr-2"/> 登入系統</>}</button>
+          </form>
         </div>
       </div>
-    )}
+    );
+  }
 
-    {/* Force Password Change Modal */}
-    {activeUser?.requirePasswordChange && (
-      <ForcePasswordChangeModal activeUser={activeUser} showToast={showToast} />
-    )}
+  const renderNavButton = (id, Icon, label) => (
+    <button 
+      onClick={() => {
+        setActiveTab(id);
+        if (!isPinned && window.innerWidth < 1024) setIsSidebarOpen(false);
+      }} 
+      className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}
+    >
+      <Icon size={20} />
+      <span className="font-bold text-sm tracking-wide">{label}</span>
+    </button>
+  );
 
+  return (
+    <div className={isDarkMode ? 'dark' : ''}>
     <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       
       {/* Sidebar Wrapper */}
@@ -1386,12 +1452,12 @@ export default function App() {
           </button>
         </div>
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto border-t border-slate-100 dark:border-slate-700 mt-2 pt-4">
-          {currentUser.role !== ROLES.VIEWER && <><button onClick={()=>{setActiveTab('form'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='form'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><Plus size={20}/><span className="font-bold text-sm tracking-wide">新增紀錄區</span></button><button onClick={()=>{setActiveTab('maintenance'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='maintenance'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><Edit size={20}/><span className="font-bold text-sm tracking-wide">紀錄維護區</span></button></>}
-          <button onClick={()=>{setActiveTab('list'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='list'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><List size={20}/><span className="font-bold text-sm tracking-wide">歷史查詢區</span></button>
-          {currentUser.role === ROLES.ADMIN && <button onClick={()=>{setActiveTab('all-records'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='all-records'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><Database size={20}/><span className="font-bold text-sm tracking-wide">紀錄資料區</span></button>}
-          <button onClick={()=>{setActiveTab('dashboard'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='dashboard'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><LayoutDashboard size={20}/><span className="font-bold text-sm tracking-wide">進階統計區</span></button>
-          {currentUser.role === ROLES.ADMIN && <button onClick={()=>{setActiveTab('audit'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='audit'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><FileText size={20}/><span className="font-bold text-sm tracking-wide">申請與日誌區</span></button>}
-          <button onClick={()=>{setActiveTab('settings'); if(!isPinned&&window.innerWidth<1024)setIsSidebarOpen(false);}} className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab==='settings'?'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none':'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}><Settings size={20}/><span className="font-bold text-sm tracking-wide">系統設定區</span></button>
+          {currentUser.role !== ROLES.VIEWER && <>{renderNavButton('form', Plus, '新增紀錄區')}{renderNavButton('maintenance', Edit, '紀錄維護區')}</>}
+          {renderNavButton('list', List, '歷史查詢區')}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區')}
+          {renderNavButton('dashboard', LayoutDashboard, '進階統計區')}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區')}
+          {renderNavButton('settings', Settings, '系統設定區')}
         </nav>
         <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0"><button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button></div>
       </div>
@@ -1496,13 +1562,13 @@ export default function App() {
                    </select>
                    <div className="relative w-full sm:w-80">
                      <Search size={18} className="absolute left-4 top-3.5 text-slate-400 dark:text-slate-500"/>
-                     <input type="text" placeholder="輸入案件號碼查詢... (停頓自動搜尋)" value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                     <input type="text" placeholder="輸入案件號碼查詢..." value={maintainSearchTerm} onChange={(e)=>setMaintainSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                    </div>
                  </div>
                </div>
                
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
-                 {paginatedMaintain.map(t => {
+                 {maintainTicketsList.map(t => {
                    const isOverdue = t.progress !== '結案' && ((new Date().getTime() - new Date(t.receiveTime).getTime()) / 3600000) > overdueHours;
                    return (
                      <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-500 transition-all group flex flex-col h-full relative overflow-hidden">
@@ -1524,9 +1590,6 @@ export default function App() {
                    );
                  })}
                  {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 dark:text-slate-500 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
-               </div>
-               <div className="mt-4">
-                 <Pagination currentPage={maintainPage} totalCount={maintainTicketsList.length} pageSize={PAGE_SIZE} onPageChange={setMaintainPage} />
                </div>
 
                {maintainModal && (
@@ -1599,9 +1662,11 @@ export default function App() {
                        </form>
                      </div>
                      <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
-                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center mr-auto"><Trash2 size={16} className="mr-1" /> 申請刪除</button>
-                       <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消</button>
-                       <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
+                       <button onClick={handleRequestDelete} className="px-4 py-3 text-red-500 dark:text-red-400 font-bold hover:bg-red-50 dark:bg-red-900/30 rounded-xl transition-colors text-sm flex items-center"><Trash2 size={16} className="mr-1" /> 申請刪除</button>
+                       <div>
+                         <button onClick={()=>setMaintainModal(null)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消</button>
+                         <button form="maintain-form" type="submit" disabled={currentUser.role === ROLES.VIEWER} className={`px-8 py-3 text-white rounded-xl font-black shadow-lg transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-0.5'}`}>{currentUser.role === ROLES.VIEWER ? '無維護權限' : '確認更新並寫入軌跡'}</button>
+                       </div>
                      </div>
                    </div>
                  </div>
@@ -1623,7 +1688,7 @@ export default function App() {
                      <>
                        <div className="relative">
                          <input type="file" accept=".xlsx, .xls, .csv" onChange={handleImportHistoryExcel} disabled={isImportingHistory} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" title="匯入歷史紀錄"/>
-                         <button disabled={isImportingHistory} className="flex items-center justify-center space-x-2 bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors font-bold text-sm disabled:opacity-50">
+                         <button disabled={isImportingHistory} className="flex items-center justify-center space-x-2 bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors font-bold text-sm disabled:bg-indigo-400 dark:disabled:bg-indigo-400">
                            {isImportingHistory ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Upload size={16} />}<span className="hidden md:inline">{isImportingHistory ? '匯入中' : '匯入歷史'}</span>
                          </button>
                        </div>
@@ -1646,11 +1711,11 @@ export default function App() {
                  </select>
                  <div className="relative flex-1">
                    <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
-                   <input type="text" placeholder="搜尋案件號、院所或內容... (停頓自動搜尋)" value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                   <input type="text" placeholder="搜尋案件號、院所或內容..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                  </div>
                </div>
                
-               {renderTicketTable(paginatedHistory, listPage, setListPage, filteredAndSortedHistory.length)}
+               {renderTicketTable(filteredAndSortedHistory, historyPage, setHistoryPage)}
              </div>
           )}
 
@@ -1672,12 +1737,12 @@ export default function App() {
                    <button onClick={handleExportExcel} className="flex items-center justify-center space-x-2 bg-green-600 dark:bg-green-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 dark:hover:bg-green-600 transition-colors font-bold text-sm shrink-0"><Download size={16} /><span className="hidden md:inline">匯出全部</span></button>
                    <div className="relative flex-1 xl:w-72">
                      <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
-                     <input type="text" placeholder="關鍵字搜尋... (停頓自動搜尋)" value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                     <input type="text" placeholder="關鍵字搜尋..." value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
                    </div>
                  </div>
                </div>
                
-               {renderTicketTable(paginatedAllRecords, allRecordsPage, setAllRecordsPage, allRecordsFiltered.length)}
+               {renderTicketTable(allRecordsFiltered, allRecordsPage, setAllRecordsPage)}
              </div>
           )}
 
@@ -1750,7 +1815,7 @@ export default function App() {
                   <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
                 </div>
                 <div onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setHistoryProgress('未結案'); setSearchTerm(''); setActiveTab('list'); }} className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group" title="點擊檢視所有待處理案件">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ChevronRight className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
+                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRight className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
                   <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
@@ -1946,7 +2011,7 @@ export default function App() {
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
                       <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
-                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} showToast={showToast} showConfirm={customConfirm} />
+                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   )}
                 </>
@@ -1972,7 +2037,7 @@ export default function App() {
                   {/* Holidays Management */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Calendar size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 國定假日與停發推播區間</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手動強制推播）。</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手手動強制推播）。</p>
                     
                     <form onSubmit={handleAddHoliday} className="flex flex-col md:flex-row gap-4 items-end mb-8 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
                       <div>
@@ -2099,13 +2164,13 @@ export default function App() {
                         <h3 className="font-black text-sm text-slate-800 dark:text-slate-100 uppercase tracking-widest">雲端院所對照表 ({(Array.isArray(institutions)?institutions:[]).length.toLocaleString()} 筆)</h3>
                         {(Array.isArray(institutions)?institutions:[]).length > 0 && <button onClick={handleClearAllInsts} className="text-red-400 text-xs font-black uppercase tracking-tighter hover:text-red-600">清空全部資料庫</button>}
                       </div>
-                      <div className="flex-1 overflow-auto flex flex-col">
-                        <table className="w-full text-left border-collapse flex-1">
-                          <thead className="bg-white dark:bg-slate-800 sticky top-0 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest z-10">
+                      <div className="flex-1 overflow-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="bg-white dark:bg-slate-800 sticky top-0 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
                             <tr><th className="p-5">代碼</th><th className="p-5">名稱</th><th className="p-5 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-xs font-medium">
-                            {paginatedInsts.map(i=>(
+                            {(Array.isArray(filteredInsts)?filteredInsts:[]).slice(0, 100).map(i=>(
                               <tr key={i.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                 <td className="p-5 font-mono text-slate-500 dark:text-slate-400">{i.code}</td>
                                 <td className="p-5 text-slate-800 dark:text-slate-200 font-bold">{i.name}</td>
@@ -2114,7 +2179,6 @@ export default function App() {
                             ))}
                           </tbody>
                         </table>
-                        <Pagination currentPage={instPage} totalCount={filteredInsts.length} pageSize={PAGE_SIZE} onPageChange={setInstPage} />
                       </div>
                     </div>
                   </div>
@@ -2124,10 +2188,10 @@ export default function App() {
                     <h3 className="font-black text-lg mb-2 flex items-center text-slate-800 dark:text-slate-100"><List size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 表單下拉選單維護</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-                      <DropdownManager title="反映管道" dbKey="channels" items={channels} showToast={showToast} showConfirm={customConfirm} />
-                      <DropdownManager title="業務類別" dbKey="categories" items={categories} showToast={showToast} showConfirm={customConfirm} />
-                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} showToast={showToast} showConfirm={customConfirm} />
-                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} showToast={showToast} showConfirm={customConfirm} />
+                      <DropdownManager title="反映管道" dbKey="channels" items={channels} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="業務類別" dbKey="categories" items={categories} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="處理進度" dbKey="progresses" items={progresses} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   </div>
                   <CategoryMappingManager categories={categories} mapping={categoryMapping} showToast={showToast} />
@@ -2136,134 +2200,53 @@ export default function App() {
             </div>
           )}
 
-          {/* Global View & Edit Modal */}
-          {viewModalTicket && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}}>
-              <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
-                  <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100">
-                    <FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 案件紀錄檢視 - {viewModalTicket.ticketId || '舊案件'}
-                    {currentUser?.role === ROLES.ADMIN && !isEditingModal && (
-                       <button onClick={() => { setModalEditForm(viewModalTicket); setIsEditingModal(true); }} className="ml-4 px-3 py-1.5 bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors flex items-center">
-                         <Edit size={14} className="mr-1" /> 強制修改
-                       </button>
-                    )}
-                  </h3>
-                  <button onClick={() => {setViewModalTicket(null); setIsEditingModal(false);}} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"><X size={20}/></button>
-                </div>
-                
-                <div className="p-8 overflow-y-auto flex-1 space-y-8">
-                   {!isEditingModal ? (
-                      <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">反映管道</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.channel}</div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">業務類別</div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{viewModalTicket.category}</div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">建檔人</div>
-                             <div className="flex items-center text-sm font-bold text-slate-700 dark:text-slate-200 mt-1">
-                                <UserAvatar username={viewModalTicket.receiver} photoURL={userMap[viewModalTicket.receiver]?.photoURL} className="w-5 h-5 text-[10px] mr-1.5" />
-                                {viewModalTicket.receiver}
-                             </div>
-                          </div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">當前進度</div>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-wider uppercase mt-1 inline-block ${viewModalTicket.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':viewModalTicket.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>
-                              {viewModalTicket.progress}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.instName} <span className="text-slate-400 dark:text-slate-500 font-mono ml-2">({viewModalTicket.instCode})</span></div></div>
-                          <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">提問人資訊</div><div className="text-sm font-bold text-slate-800 dark:text-slate-200">{viewModalTicket.questioner || '未提供'}</div></div>
-                        </div>
-
-                        <div>
-                          <h4 className="font-black text-sm text-slate-800 dark:text-slate-200 mb-4 flex items-center border-b border-slate-100 dark:border-slate-700 pb-2"><MessageCircle size={16} className="mr-2 text-blue-500 dark:text-blue-400"/> 對話軌跡與處理紀錄</h4>
-                          
-                          <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-slate-700 before:to-transparent">
-                            <div className="relative flex items-start justify-start md:w-1/2 pr-8 mb-6">
-                              <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl rounded-tl-sm shadow-sm w-full relative">
-                                <div className="absolute top-4 -left-3.5 w-3 h-3 bg-white dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rotate-45 transform border-t-transparent border-r-transparent"></div>
-                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center"><User size={14} className="mr-1 text-slate-400 dark:text-slate-500"/> 客戶問題 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(viewModalTicket.receiveTime).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>
-                                <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.extraInfo || '(未填寫)'}</div>
-                              </div>
-                            </div>
-
-                            {viewModalTicket.replies && viewModalTicket.replies.length > 0 ? (
-                              viewModalTicket.replies.map((r, i) => (
-                                <div key={i} className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                  <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                    <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                    <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center">
-                                      <UserAvatar username={r.user} photoURL={userMap[r.user]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5" />
-                                      客服：{r.user} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-2">{new Date(r.time).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                    <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</div>
-                                  </div>
-                                </div>
-                              ))
-                            ) : viewModalTicket.replyContent ? (
-                              <div className="relative flex items-start justify-end md:w-1/2 md:ml-auto pl-8 mb-6">
-                                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 p-5 rounded-2xl rounded-tr-sm shadow-sm w-full relative">
-                                  <div className="absolute top-4 -right-3.5 w-3 h-3 bg-blue-50 dark:bg-slate-800 border-2 border-blue-100 dark:border-blue-800 rotate-45 transform border-b-transparent border-l-transparent"></div>
-                                  <div className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center"><Shield size={14} className="mr-1 text-blue-500 dark:text-blue-400"/> 歷史匯入紀錄</div>
-                                  <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{viewModalTicket.replyContent}</div>
-                                </div>
-                              </div>
-                            ) : <div className="text-sm text-slate-400 dark:text-slate-500 italic text-center w-full my-4">尚無任何答覆紀錄</div>}
-
-                            {viewModalTicket.progress === '結案' && viewModalTicket.closeTime && (
-                              <div className="relative flex items-center justify-center pt-4">
-                                <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-black px-4 py-2 rounded-full border border-green-200 dark:border-green-800 shadow-sm flex items-center"><CheckCircle size={14} className="mr-2"/> 案件已於 {new Date(viewModalTicket.closeTime).toLocaleString()} 結案</div>
-                              </div>
-                            )}
-
-                          </div>
-                        </div>
-                      </>
-                   ) : modalEditForm ? (
-                       <div className="space-y-6">
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                           <EditField label="反映管道" type="select" val={modalEditForm.channel} setVal={(v) => setModalEditForm({...modalEditForm, channel: v})} options={channels} />
-                           <EditField label="業務類別" type="select" val={modalEditForm.category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} options={categories} />
-                           <EditField label="案件狀態" type="select" val={modalEditForm.status} setVal={(v) => setModalEditForm({...modalEditForm, status: v})} options={statuses} />
-                           <EditField label="當前進度" type="select" val={modalEditForm.progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} options={progresses} />
-                           <EditField label="建檔人" val={modalEditForm.receiver} setVal={(v) => setModalEditForm({...modalEditForm, receiver: v})} />
-                           <EditField label="負責人" type="select" val={modalEditForm.assignee} setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} options={['', ...dbUsers.filter(u => u.role === ROLES.USER).map(u => u.username)]} />
-                           <EditField label="接收時間" type="datetime-local" val={modalEditForm.receiveTime} setVal={(v) => setModalEditForm({...modalEditForm, receiveTime: v})} />
-                           <EditField label="結案時間" type="datetime-local" val={modalEditForm.closeTime} setVal={(v) => setModalEditForm({...modalEditForm, closeTime: v})} />
-                         </div>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 mt-4">
-                           <div>
-                             <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">醫療院所名稱 / 代碼</div>
-                             <div className="flex space-x-2">
-                               <input type="text" value={modalEditForm.instName || ''} onChange={e=>setModalEditForm({...modalEditForm, instName: e.target.value})} className="w-2/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="名稱"/>
-                               <input type="text" value={modalEditForm.instCode || ''} onChange={e=>setModalEditForm({...modalEditForm, instCode: e.target.value})} className="w-1/3 p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono" placeholder="代碼"/>
-                             </div>
-                           </div>
-                           <EditField label="提問人資訊" val={modalEditForm.questioner} setVal={(v) => setModalEditForm({...modalEditForm, questioner: v})} />
-                         </div>
-                         <div className="mt-4"><EditField label="詳細問題描述 (首筆)" type="textarea" val={modalEditForm.extraInfo} setVal={(v) => setModalEditForm({...modalEditForm, extraInfo: v})} /></div>
-                         <div className="mt-4"><EditField label="初步回覆內容 (首筆)" type="textarea" val={modalEditForm.replyContent} setVal={(v) => setModalEditForm({...modalEditForm, replyContent: v})} /></div>
-                       </div>
-                   ) : null}
-                   </div>
-                   <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-end shrink-0">
-                     {isEditingModal ? (
-                       <>
-                         <button onClick={() => setIsEditingModal(false)} className="px-6 py-3 text-slate-500 dark:text-slate-400 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl mr-3 transition-colors">取消修改</button>
-                         <button onClick={handleModalSave} className="px-8 py-3 bg-red-600 text-white font-black rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200 dark:shadow-none flex items-center"><Save size={16} className="mr-2"/>儲存修改</button>
-                       </>
-                     ) : (
-                       <button onClick={() => setViewModalTicket(null)} className="px-8 py-3 bg-slate-800 dark:bg-slate-600 text-white font-black rounded-xl hover:bg-slate-900 dark:hover:bg-slate-500 transition-colors shadow-lg shadow-slate-200 dark:shadow-none">關閉檢視</button>
-                     )}
-                   </div>
-                 </div>
-               </div>
-             )}
-
           {/* Canned Messages Modal */}
           {showCannedModal && (
-            <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} showToast={showToast} />
+            <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />
+          )}
+
+          {/* Toast 元件 */}
+          {toast.show && (
+            <div className={`fixed bottom-8 right-8 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center animate-in slide-in-from-bottom-5 fade-in duration-300 font-bold ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900'}`}>
+              {toast.type === 'error' ? <AlertCircle size={18} className="mr-2" /> : <CheckCircle size={18} className="mr-2" />}
+              {toast.msg}
+            </div>
+          )}
+
+          {/* Confirm Modal 元件 */}
+          {confirmDialog.show && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 max-w-sm w-full animate-in zoom-in-95">
+                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-4 flex items-center"><AlertCircle className="mr-2 text-orange-500"/> 操作確認</h3>
+                <p className="text-slate-600 dark:text-slate-300 mb-8 font-medium leading-relaxed">{confirmDialog.msg}</p>
+                <div className="flex justify-end space-x-3">
+                  <button onClick={() => setConfirmDialog({ show: false, msg: '', onConfirm: null })} className="px-5 py-2.5 rounded-xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">取消</button>
+                  <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog({ show: false, msg: '', onConfirm: null }); }} className="px-5 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg transition-transform active:scale-95">確定執行</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 強制修改密碼 Modal */}
+          {showForcePwdModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 max-w-md w-full">
+                <div className="bg-indigo-100 dark:bg-indigo-900/50 w-16 h-16 rounded-2xl flex items-center justify-center mb-6"><Lock size={32} className="text-indigo-600 dark:text-indigo-400"/></div>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 mb-2">安全設定：請修改初始密碼</h3>
+                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">為了確保您的帳號安全，系統要求您在首次登入時必須更改預設密碼。</p>
+                <form onSubmit={handleForceChangePassword} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-2">設定新密碼</label>
+                    <input type="password" required value={forcePwdForm.newPwd} onChange={e=>setForcePwdForm({...forcePwdForm, newPwd: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800" placeholder="最少 6 個字元"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-2">再次確認密碼</label>
+                    <input type="password" required value={forcePwdForm.confirmPwd} onChange={e=>setForcePwdForm({...forcePwdForm, confirmPwd: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800" placeholder="重新輸入新密碼"/>
+                  </div>
+                  <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black mt-4 hover:bg-indigo-700 shadow-lg active:scale-95 transition-all">確認並啟用帳號</button>
+                </form>
+              </div>
+            </div>
           )}
 
         </div>
