@@ -314,6 +314,31 @@ const useDebounce = (value, delay) => {
 // -------------------------------------------------
 // --- 主應用程式 App ---
 // -------------------------------------------------
+
+// 輔助組件：精緻的資訊卡片 (用於檢視模式)
+const InfoCard = ({ label, value, isHighlight }) => (
+  <div className={`p-4 rounded-2xl border ${isHighlight ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'}`}>
+    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{label}</span>
+    <span className={`font-black text-sm ${isHighlight ? 'text-green-700 dark:text-green-400' : 'text-slate-700 dark:text-slate-200'}`}>{value || '-'}</span>
+  </div>
+);
+
+// 輔助組件：表單輸入框 (用於強制維護模式)
+const EditField = ({ label, val, setVal, type = "text", options = [] }) => (
+  <div className="space-y-1">
+    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">{label}</label>
+    {type === "select" ? (
+      <select value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white">
+        {options.map(o => <option key={o} value={o}>{o || '未指定'}</option>)}
+      </select>
+    ) : type === "textarea" ? (
+      <textarea value={val || ''} onChange={e => setVal(e.target.value)} rows="4" className="w-full p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" />
+    ) : (
+      <input type={type} value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white" />
+    )}
+  </div>
+);
+
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('cs_theme') === 'dark' : false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1246,52 +1271,36 @@ export default function App() {
   };
 
 const renderTicketTable = (data, currentPage, setCurrentPage) => {
-  // 1. 在函式內部處理分頁切割
   const PAGE_SIZE = 50;
   const paginatedData = data.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  // 2. 檢查切割後有沒有資料
   if (!paginatedData || paginatedData.length === 0) {
-    return (
-      <tr>
-        <td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td>
-      </tr>
-    );
+    return <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td></tr>;
   }
 
-  // 3. 渲染每一行，並綁定打開明細的事件
   return paginatedData.map(t => (
-    <tr 
-      key={t.id} 
-      className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
-      // 【修復點】點擊整行就可以打開明細彈窗
-      onClick={() => setViewModalTicket(t)} 
-    >
-      <td className="p-6">
-        <div className="font-mono text-xs font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
-        <div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
+    <tr key={t.id} className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer" onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }}>
+      <td className="p-5 md:p-6 align-middle">
+        <div className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
+        <div className="text-xs font-bold text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
       </td>
-      <td className="p-6">
-        <div className="font-black text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
-        <div className="text-[10px] font-mono text-slate-400 mt-0.5">{t.instCode}</div>
+      <td className="p-5 md:p-6 align-middle">
+        <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
+        <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
       </td>
-      <td className="p-6 flex items-center space-x-3 py-10">
-        <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} />
-        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{t.receiver}</span>
+      <td className="p-5 md:p-6 align-middle">
+        <div className="flex items-center space-x-3">
+          <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-8 h-8" />
+          <span className="text-sm font-bold text-slate-600 dark:text-slate-300">{t.receiver}</span>
+        </div>
       </td>
-      <td className="p-6">
-        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${t.progress === '結案' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+      <td className="p-5 md:p-6 align-middle">
+        <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
           {t.progress || '待處理'}
         </span>
       </td>
-      <td className="p-6 text-center">
-        <button 
-          onClick={(e) => {
-            e.stopPropagation(); // 避免點擊衝突
-            setViewModalTicket(t);
-          }} 
-          className="p-3 hover:bg-white dark:hover:bg-slate-700 rounded-full text-slate-300 group-hover:text-blue-500 transition-all"
-        >
+      <td className="p-5 md:p-6 align-middle text-center">
+        <button onClick={(e) => { e.stopPropagation(); setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }} className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
           <Eye size={20}/>
         </button>
       </td>
