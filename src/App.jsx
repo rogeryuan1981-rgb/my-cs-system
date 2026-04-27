@@ -1,19 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
 import { collection, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { Menu, X, LogOut, Sun, Moon, Database, PieChart, Shield, History, Wrench, FileText, CheckCircle, AlertCircle, MessageCircle } from 'lucide-react';
+import { Menu, X, LogOut, Sun, Moon, Database, PieChart, Shield, History, Wrench, FileText, CheckCircle } from 'lucide-react';
 
-// === 1. 引入外部設定與工具 (請確保這些檔案路徑正確) ===
+// === 1. 引入外部設定與工具 ===
 import { auth, db, storage, functions, secondaryAuth, appId } from './lib/firebase';
-import useDebounce from './hooks/useDebounce';
 import { 
-  getFormatDate, 
   getFirstDayOfMonth, 
   getLastDayOfMonth, 
-  getToday, 
-  getEmailFromUsername, 
-  getInitialForm, 
-  formatRepliesHistory 
+  getEmailFromUsername 
 } from './utils/helpers';
 
 // === 2. 引入拆分後的 UI 模組 ===
@@ -31,6 +26,10 @@ import UserAvatar from './components/UserAvatar';
 
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
+/**
+ * 客服紀錄系統 - 終極重構主進入點 (App)
+ * 負責全局狀態管理、Firebase 監聽以及各個功能模組的調度
+ */
 export default function App() {
   // --- 基礎狀態 ---
   const [currentUser, setCurrentUser] = useState(null);
@@ -41,7 +40,7 @@ export default function App() {
     typeof localStorage !== 'undefined' ? localStorage.getItem('cs_theme') === 'dark' : false
   );
   
-  // --- 側邊欄與分頁狀態 ---
+  // --- UI 導覽狀態 ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('new');
   
@@ -50,7 +49,7 @@ export default function App() {
   const [institutions, setInstitutions] = useState([]);
   const [instMap, setInstMap] = useState({});
   
-  // --- 系統設定下拉選單狀態 ---
+  // --- 系統下拉選單與參數狀態 ---
   const [channels, setChannels] = useState([]);
   const [categories, setCategories] = useState([]);
   const [statuses, setStatuses] = useState([]);
@@ -60,7 +59,13 @@ export default function App() {
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]);
 
-  // --- 全局 UI 狀態 ---
+  // --- 歷史查詢區狀態連動 (用於 Dashboard 跳轉與全域搜尋) ---
+  const [historyStartDate, setHistoryStartDate] = useState(getFirstDayOfMonth());
+  const [historyEndDate, setHistoryEndDate] = useState(getLastDayOfMonth());
+  const [historyProgress, setHistoryProgress] = useState('全部');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // --- 全局彈窗與提示狀態 ---
   const [viewModalTicket, setViewModalTicket] = useState(null);
   const [showCannedModal, setShowCannedModal] = useState(false);
   const [toast, setToast] = useState({ show: false, msg: '', type: '' });
@@ -72,7 +77,6 @@ export default function App() {
 
   // ==================== 1. 初始化與身份驗證 ====================
   useEffect(() => {
-    // 執行一次性登入
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -80,47 +84,31 @@ export default function App() {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (err) {
-        console.error("Auth Init Error:", err);
-      }
+      } catch (err) { console.error("Auth Init Error:", err); }
     };
     initAuth();
     
-    // 監聽 Auth 狀態
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        setCurrentUser(null);
-        setActiveUser(null);
-      }
+      if (!user) { setCurrentUser(null); setActiveUser(null); }
     });
     return () => unsubscribe();
   }, []);
 
   // ==================== 2. 資料即時監聽 (Real-time Sync) ====================
-  
-  // 監聽使用者列表
   useEffect(() => {
     const usersRef = collection(db, 'cs_users');
     return onSnapshot(usersRef, (snap) => {
       const usersData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setDbUsers(usersData);
-      
       const uMap = {};
       usersData.forEach(u => uMap[u.username] = u);
       setUserMap(uMap);
       
-      // 根據當前登入的 Firebase UID 匹配資料庫中的權限與使用者
-      const firebaseUid = auth.currentUser?.uid;
       const matchedUser = usersData.find(u => u.username === (typeof localStorage !== 'undefined' ? localStorage.getItem('cs_last_user') : null)) || usersData[0];
-      
-      if (matchedUser) {
-        setCurrentUser(matchedUser);
-        setActiveUser(matchedUser);
-      }
-    }, (err) => console.error("Users Subscription Error:", err));
+      if (matchedUser) { setCurrentUser(matchedUser); setActiveUser(matchedUser); }
+    });
   }, []);
 
-  // 監聽系統下拉選單設定
   useEffect(() => {
     const settingsRef = doc(db, 'cs_settings', 'dropdowns');
     return onSnapshot(settingsRef, (docSnap) => {
@@ -138,7 +126,6 @@ export default function App() {
     });
   }, []);
 
-  // 監聽案件紀錄
   useEffect(() => {
     const recordsRef = collection(db, 'cs_records');
     return onSnapshot(recordsRef, (snap) => {
@@ -146,7 +133,6 @@ export default function App() {
     });
   }, []);
 
-  // 監聽院所對照表
   useEffect(() => {
     const instRef = collection(db, 'mohw_institutions');
     return onSnapshot(instRef, (snap) => {
@@ -193,18 +179,45 @@ export default function App() {
     }
   };
 
+  // 批次操作邏輯
   const handleBatchDeleteTickets = async (ids) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!(await customConfirm(`確定要標記這 ${ids.length} 筆案件為「已刪除」嗎？`))) return;
+    if (!(await customConfirm(`確定要將這 ${ids.length} 筆案件標記為「已刪除」嗎？`))) return;
     try {
       const batch = writeBatch(db);
-      ids.forEach(id => {
-        batch.update(doc(db, 'cs_records', id), { isDeleted: true });
-      });
+      ids.forEach(id => batch.update(doc(db, 'cs_records', id), { isDeleted: true }));
       await batch.commit();
       showToast(`成功標記 ${ids.length} 筆案件！`, 'success');
       setSelectedTickets([]);
     } catch (e) { showToast("刪除失敗：" + e.message, "error"); }
+  };
+
+  const handleBatchHardDeleteTickets = async (ids) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (!(await customConfirm(`警告：將徹底從資料庫抹除 ${ids.length} 筆案件，且不可還原！確定執行？`))) return;
+    try {
+      const batch = writeBatch(db);
+      ids.forEach(id => batch.delete(doc(db, 'cs_records', id)));
+      await batch.commit();
+      showToast(`成功抹除 ${ids.length} 筆案件！`, 'success');
+      setSelectedTickets([]);
+    } catch (e) { showToast("抹除失敗：" + e.message, "error"); }
+  };
+
+  const handleApproveDelete = async (ticketId, instName) => {
+    if (!(await customConfirm(`核准刪除「${instName}」的申請？`))) return;
+    try {
+      await updateDoc(doc(db, 'cs_records', ticketId), { isDeleted: true, 'deleteRequest.status': 'approved' });
+      showToast('核准成功', 'success');
+    } catch (e) { showToast('核准失敗：' + e.message, 'error'); }
+  };
+
+  const handleRejectDelete = async (ticketId) => {
+    if (!(await customConfirm(`退回此筆刪除申請？`))) return;
+    try {
+      await updateDoc(doc(db, 'cs_records', ticketId), { 'deleteRequest.status': 'rejected' });
+      showToast('已退回申請', 'success');
+    } catch (e) { showToast('退回失敗：' + e.message, 'error'); }
   };
 
   // ==================== 4. 渲染邏輯 ====================
@@ -213,7 +226,7 @@ export default function App() {
       <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="flex flex-col items-center space-y-4">
           <div className="animate-spin w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-          <p className="text-slate-500 font-bold animate-pulse text-sm">系統載入中，請稍候...</p>
+          <p className="text-slate-500 font-bold animate-pulse">系統載入中...</p>
         </div>
       </div>
     );
@@ -235,7 +248,7 @@ export default function App() {
       {/* 側邊導覽列 */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-slate-800 shadow-2xl transition-all duration-300 z-30 flex flex-col shrink-0 border-r border-slate-100 dark:border-slate-700`}>
         <div className="h-20 flex items-center justify-center border-b border-slate-100 dark:border-slate-700 bg-blue-600 dark:bg-blue-900 shrink-0 cursor-pointer" onClick={() => setSidebarOpen(!sidebarOpen)}>
-          <h1 className={`font-black text-white tracking-widest flex items-center ${sidebarOpen ? 'text-xl' : 'text-sm'}`}>
+          <h1 className={`font-black text-white tracking-widest flex items-center ${sidebarOpen ? 'text-xl' : 'text-xs'}`}>
             <Shield size={22} className={sidebarOpen ? "mr-2" : ""} /> {sidebarOpen && "客服紀錄系統"}
           </h1>
         </div>
@@ -256,7 +269,7 @@ export default function App() {
             {sidebarOpen && (
               <div className="overflow-hidden">
                 <div className="text-sm font-black text-slate-800 dark:text-slate-200 truncate">{currentUser.username}</div>
-                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-700 px-1.5 rounded mt-0.5 inline-block">{currentUser.role}</div>
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-50 bg-slate-200 dark:bg-slate-700 px-1.5 rounded mt-0.5 inline-block">{currentUser.role}</div>
               </div>
             )}
             <button onClick={handleLogout} className="p-2.5 text-slate-400 hover:text-red-500 transition-all"><LogOut size={18} /></button>
@@ -277,6 +290,7 @@ export default function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          
           {activeTab === 'new' && (
             <TicketForm 
               currentUser={currentUser} channels={channels} categories={categories} statuses={statuses} 
@@ -299,7 +313,37 @@ export default function App() {
               categoryMapping={categoryMapping} userMap={userMap} selectedTickets={selectedTickets} 
               setSelectedTickets={setSelectedTickets} setViewModalTicket={setViewModalTicket} 
               handleBatchDeleteTickets={handleBatchDeleteTickets} handleExportExcel={()=>{}} 
-              handleImportHistoryExcel={()=>{}} isImportingHistory={false} 
+              handleImportHistoryExcel={()=>{}} isImportingHistory={false}
+              historyStartDate={historyStartDate} setHistoryStartDate={setHistoryStartDate}
+              historyEndDate={historyEndDate} setHistoryEndDate={setHistoryEndDate}
+              historyProgress={historyProgress} setHistoryProgress={setHistoryProgress}
+              searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+            />
+          )}
+
+          {activeTab === 'all_records' && (
+            <AllRecordsArea 
+              currentUser={currentUser} ROLES={ROLES} tickets={tickets} categoryMapping={categoryMapping} 
+              userMap={userMap} selectedTickets={selectedTickets} setSelectedTickets={setSelectedTickets} 
+              setViewModalTicket={setViewModalTicket} handleBatchDeleteTickets={handleBatchDeleteTickets} 
+              handleBatchHardDeleteTickets={handleBatchHardDeleteTickets} handleExportExcel={()=>{}}
+            />
+          )}
+
+          {activeTab === 'audit' && (
+            <AuditArea 
+              tickets={tickets} userMap={userMap} 
+              handleRejectDelete={handleRejectDelete} handleApproveDelete={handleApproveDelete}
+            />
+          )}
+
+          {activeTab === 'dashboard' && (
+            <DashboardArea 
+              tickets={tickets} categories={categories} categoryMapping={categoryMapping} userMap={userMap} 
+              ROLES={ROLES} isDarkMode={isDarkMode} 
+              setHistoryStartDate={setHistoryStartDate} setHistoryEndDate={setHistoryEndDate} 
+              setHistoryProgress={setHistoryProgress} setSearchTerm={setSearchTerm} 
+              setActiveTab={setActiveTab}
             />
           )}
 
@@ -314,7 +358,6 @@ export default function App() {
             />
           )}
           
-          {/* 其他頁籤以此類推引入... */}
         </div>
       </main>
 
