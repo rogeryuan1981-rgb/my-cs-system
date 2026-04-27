@@ -2353,21 +2353,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
   );
 }
 
-// Helper component for forced-edit mode
-const EditField = ({ label, val, setVal, type = "text", options = [] }) => (
-  <div>
-    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-1">{label}</label>
-    {type === "select" ? (
-      <select value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold">
-        {options.map(o => <option key={o} value={o}>{o || '未指定'}</option>)}
-      </select>
-    ) : type === "textarea" ? (
-      <textarea value={val || ''} onChange={e => setVal(e.target.value)} rows="4" className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
-    ) : (
-      <input type={type} value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
-    )}
-  </div>
-);
 
 const container = document.getElementById('root');
 if (container) {
