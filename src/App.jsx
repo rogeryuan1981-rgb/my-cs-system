@@ -1730,7 +1730,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
 {/* TAB: 歷史查詢 (寬版優化版) */}
           {activeTab === 'list' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full px-2">
-              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
+              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">歷史查詢區</h2>
               {/* 頂部搜尋與工具列 (寬版) */}
               <div className="flex flex-wrap gap-4 items-end bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm w-full">
                 <div className="relative flex-1 min-w-[300px]">
