@@ -1,89 +1,86 @@
-import React, { useState } from 'react';
+import React from 'react';
 
 /**
- * 共用折線圖元件 (LineChart)
- * 用於進階統計區顯示趨勢圖表
+ * 簡易趨勢圖表元件 (LineChart)
+ * 專門用於 Dashboard 展示近半年服務量趨勢
  */
 const LineChart = ({ datasets, labels, isDarkMode }) => {
-  const [hoveredPoint, setHoveredPoint] = useState(null);
+  const chartHeight = 240;
+  const chartWidth = 800;
+  const padding = 40;
 
-  if (!Array.isArray(datasets) || datasets.length === 0 || !labels) {
-    return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
-  }
-  
-  const allData = datasets.flatMap(ds => ds.data || []);
-  if (allData.length === 0) {
-    return <div className="h-48 flex items-center justify-center text-slate-400">無數據</div>;
-  }
-  
-  const maxVal = Math.max(...allData, 10);
-  const height = 260, width = 800, paddingX = 40, paddingY = 40;
-  const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
-  const axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8";
-  const bgStroke = isDarkMode ? "#1e293b" : "#ffffff";
+  // 找出數據的最大值，決定座標軸刻度
+  const allValues = datasets.flatMap(d => d.data);
+  const maxValue = Math.max(...allValues, 10);
+  const steps = 5;
+
+  // 座標轉換邏輯
+  const getX = (idx) => padding + (idx * (chartWidth - padding * 2) / (labels.length - 1));
+  const getY = (val) => chartHeight - padding - (val * (chartHeight - padding * 2) / maxValue);
 
   return (
-    <div className="w-full flex flex-col items-center">
-      <div className="flex flex-wrap justify-center gap-4 mb-6 h-8 items-center">
-        {datasets.map((ds, idx) => {
-          const isHovered = hoveredPoint?.dsIdx === idx;
+    <div className="w-full overflow-x-auto py-4">
+      <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full min-w-[600px] h-auto overflow-visible">
+        {/* 背景格線 */}
+        {[...Array(steps + 1)].map((_, i) => {
+          const val = Math.round((maxValue / steps) * i);
+          const y = getY(val);
           return (
-            <div key={ds.label} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-xl transition-all duration-300 ${isHovered ? 'bg-slate-200 dark:bg-slate-700 scale-110 shadow-sm' : ''}`}>
-              <span className="w-3 h-3 rounded-full mr-2 shadow-sm" style={{ backgroundColor: ds.color }}></span>
-              <span className={isDarkMode ? "text-slate-200" : "text-slate-700"}>{ds.label}</span>
-            </div>
+            <g key={i}>
+              <line x1={padding} y1={y} x2={chartWidth - padding} y2={y} stroke={isDarkMode ? "#334155" : "#f1f5f9"} strokeWidth="1" />
+              <text x={padding - 10} y={y + 4} textAnchor="end" className="text-[10px] fill-slate-400 font-mono">{val}</text>
+            </g>
           );
         })}
-      </div>
-      <div className="w-full overflow-x-auto relative scrollbar-hide">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-64 md:h-80 drop-shadow-sm min-w-[600px]">
-          {[0, 0.5, 1].map(ratio => {
-            const y = height - paddingY - ratio * (height - paddingY * 2);
-            return (
-              <g key={ratio}>
-                <line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
-                <text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text>
-              </g>
-            );
-          })}
-          {datasets.map((ds) => {
-            const points = ds.data.map((val, i) => `${paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)))},${height - paddingY - (val / maxVal) * (height - paddingY * 2)}`).join(' ');
-            return <polyline key={`line-${ds.label}`} points={points} fill="none" stroke={ds.color} strokeWidth={ds.dashed ? "2" : "3"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={ds.dashed ? '6 6' : 'none'} className="transition-all duration-500" />;
-          })}
-          {datasets.map((ds, dsIdx) => ds.data.map((val, i) => {
-            if (hoveredPoint?.dsIdx === dsIdx && hoveredPoint?.i === i) return null;
-            const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
-            const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
-            let dy = -12, dx = 0;
-            if (dsIdx === 0) dy = -22;
-            if (dsIdx === 1) dy = -10;
-            if (dsIdx === 2) { dy = 14; dx = 10; }
-            if (dsIdx === 3) { dy = 24; dx = -10; }
-            if (y + dy > height - paddingY - 5) dy = -10;
 
-            return (
-              <g key={`point-${ds.label}-${i}`} onMouseEnter={() => setHoveredPoint({ dsIdx, i })} onMouseLeave={() => setHoveredPoint(null)} className="cursor-pointer">
-                <circle cx={x} cy={y} r="4" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="2" className="transition-all duration-200" />
-                {val > 0 && <text x={x + dx} y={y + dy} fontSize="11" fill={ds.color} textAnchor="middle" fontWeight="black" className="select-none transition-all duration-200" stroke={bgStroke} strokeWidth="3" paintOrder="stroke" strokeLinejoin="round">{val}</text>}
-              </g>
-            );
-          }))}
-          {hoveredPoint && (() => {
-            const { dsIdx, i } = hoveredPoint;
-            const ds = datasets[dsIdx];
-            const val = ds.data[i];
-            const x = paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)));
-            const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
-            return (
-              <g className="pointer-events-none">
-                <circle cx={x} cy={y} r="7" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="3" />
-                <text x={x} y={y - 15} fontSize="18" fill={ds.color} textAnchor="middle" fontWeight="black" stroke={bgStroke} strokeWidth="5" paintOrder="stroke" strokeLinejoin="round">{val}</text>
-              </g>
-            );
-          })()}
-          {labels.map((lbl, i) => <text key={`lbl-${i}`} x={paddingX + (i * ((width - paddingX * 2) / (labels.length - 1 || 1)))} y={height - 10} fontSize="11" fill={axisTextColor} textAnchor="middle" fontWeight="bold">{lbl}</text>)}
-        </svg>
-      </div>
+        {/* 橫軸標籤 */}
+        {labels.map((label, i) => (
+          <text key={i} x={getX(i)} y={chartHeight - 10} textAnchor="middle" className="text-[10px] fill-slate-400 font-bold">{label}</text>
+        ))}
+
+        {/* 數據折線 */}
+        {datasets.map((dataset, dsIdx) => {
+          const points = dataset.data.map((val, i) => `${getX(i)},${getY(val)}`).join(' ');
+          return (
+            <g key={dsIdx}>
+              <polyline
+                fill="none"
+                stroke={dataset.color}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={dataset.dashed ? "4 4" : "0"}
+                points={points}
+                className="transition-all duration-1000"
+              />
+              {dataset.data.map((val, i) => (
+                <circle
+                  key={i}
+                  cx={getX(i)}
+                  cy={getY(val)}
+                  r="4"
+                  fill={isDarkMode ? "#1e293b" : "white"}
+                  stroke={dataset.color}
+                  strokeWidth="2"
+                  className="hover:r-6 cursor-pointer transition-all"
+                >
+                  <title>{`${dataset.label}: ${val} 件`}</title>
+                </circle>
+              ))}
+            </g>
+          );
+        })}
+
+        {/* 圖例 */}
+        <g transform={`translate(${padding}, 0)`}>
+          {datasets.map((d, i) => (
+            <g key={i} transform={`translate(${i * 80}, 0)`}>
+              <line x1="0" y1="0" x2="15" y2="0" stroke={d.color} strokeWidth="3" strokeDasharray={d.dashed ? "2 2" : "0"} />
+              <text x="20" y="4" className="text-[10px] fill-slate-500 font-black">{d.label}</text>
+            </g>
+          ))}
+        </g>
+      </svg>
     </div>
   );
 };
