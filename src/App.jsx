@@ -324,20 +324,27 @@ const InfoCard = ({ label, value, isHighlight }) => (
 );
 
 // 輔助組件：表單輸入框 (用於強制維護模式)
-const EditField = ({ label, val, setVal, type = "text", options = [] }) => (
-  <div className="space-y-1">
-    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">{label}</label>
-    {type === "select" ? (
-      <select value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white">
-        {options.map(o => <option key={o} value={o}>{o || '未指定'}</option>)}
-      </select>
-    ) : type === "textarea" ? (
-      <textarea value={val || ''} onChange={e => setVal(e.target.value)} rows="4" className="w-full p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" />
-    ) : (
-      <input type={type} value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white" />
-    )}
-  </div>
-);
+// 輔助組件：表單輸入框 (防彈安全版，保證不白屏)
+const EditField = ({ label, val, setVal, type = "text", options = [] }) => {
+  // 強制確保 options 絕對是陣列，防止 .map 崩潰
+  const safeOptions = Array.isArray(options) ? options : [];
+  
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-1">{label}</label>
+      {type === "select" ? (
+        <select value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white">
+          <option value="">未指定</option>
+          {safeOptions.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : type === "textarea" ? (
+        <textarea value={val || ''} onChange={e => setVal(e.target.value)} rows="4" className="w-full p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" />
+      ) : (
+        <input type={type} value={val || ''} onChange={e => setVal(e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold dark:text-white" />
+      )}
+    </div>
+  );
+};
 
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('cs_theme') === 'dark' : false);
