@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
 import { collection, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { 
   Menu, X, LogOut, Sun, Moon, Database, PieChart, Shield, History, 
-  Wrench, FileText, CheckCircle, AlertCircle, MessageCircle 
+  Wrench, FileText, CheckCircle, AlertCircle, MessageCircle, ChevronRight 
 } from 'lucide-react';
 
 // === 1. 引入外部設定與工具 ===
-// 確保路徑與您的專案結構一致：src/lib/firebase.js 與 src/utils/helpers.js
-import { auth, db, storage, functions, secondaryAuth, appId } from './lib/firebase';
+// 確保路徑相對於 src/App.jsx 正確
+import { auth, db, storage, functions, secondaryAuth } from './lib/firebase';
 import { 
   getFirstDayOfMonth, 
   getLastDayOfMonth, 
@@ -16,8 +16,8 @@ import {
   formatRepliesHistory
 } from './utils/helpers';
 
-// === 2. 引入功能模組 ===
-// 確保檔案存在於 src/components/ 且檔名大小寫完全一致
+// === 2. 引入拆分後的 UI 功能元件 ===
+// 確保這些檔案已正確保存在 src/components/ 資料夾中
 import TicketForm from './components/TicketForm';
 import MaintenanceArea from './components/MaintenanceArea';
 import HistoryArea from './components/HistoryArea';
@@ -33,8 +33,8 @@ import UserAvatar from './components/UserAvatar';
 const ROLES = { ADMIN: "後台管理者", USER: "一般使用者", VIEWER: "紀錄檢視者" };
 
 /**
- * 客服紀錄系統 - 核心進入點
- * 已修復變數重複宣告與路徑解析問題，並強化了雲端部署後的樣式補償邏輯。
+ * 客服紀錄系統 - 核心主進入點 (App)
+ * 已修復模組路徑解析問題與「一片白」載入死角。
  */
 export default function App() {
   // --- A. 基礎狀態管理 ---
@@ -46,7 +46,7 @@ export default function App() {
     typeof localStorage !== 'undefined' ? localStorage.getItem('cs_theme') === 'dark' : false
   );
   
-  // --- B. 導覽與分頁狀態 ---
+  // --- B. UI 導覽狀態 ---
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('new');
   
@@ -55,7 +55,7 @@ export default function App() {
   const [institutions, setInstitutions] = useState([]);
   const [instMap, setInstMap] = useState({});
   
-  // --- D. 系統參數狀態 ---
+  // --- D. 系統下拉選單與參數狀態 ---
   const [channels, setChannels] = useState([]);
   const [categories, setCategories] = useState([]);
   const [statuses, setStatuses] = useState([]);
@@ -65,7 +65,7 @@ export default function App() {
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]);
 
-  // --- E. 歷史查詢區連動狀態 ---
+  // --- E. 頁面連動狀態 (用於 Dashboard 跳轉與全域搜尋) ---
   const [historyStartDate, setHistoryStartDate] = useState(getFirstDayOfMonth());
   const [historyEndDate, setHistoryEndDate] = useState(getLastDayOfMonth());
   const [historyProgress, setHistoryProgress] = useState('全部');
@@ -81,9 +81,12 @@ export default function App() {
     isOpen: false, type: 'alert', title: '', message: '', inputValue: '', onConfirm: null, onCancel: null 
   });
 
-  // ==================== 1. 初始化與環境維護 ====================
+  // 取得全域 appId
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+  // ==================== 1. 初始化與環境修復 ====================
   useEffect(() => {
-    // 解決生產環境移除 index.html script 後導致的樣式遺失與白屏問題
+    // 【環境補償】自動檢查並補回 Tailwind CSS，解決 index.html 拿掉 script 導致的樣式崩潰
     if (!document.getElementById('tailwind-cdn')) {
       const script = document.createElement('script');
       script.id = 'tailwind-cdn';
@@ -98,18 +101,14 @@ export default function App() {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (err) {
-        console.error("Firebase 認證初始化失敗:", err);
-      }
+      } catch (err) { console.error("Firebase Auth Init Error:", err); }
     };
     initAuth();
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 提供初始占位身份以避免渲染中斷
-        if (!currentUser) {
-          setCurrentUser({ id: user.uid, username: '正在核對權限...', role: ROLES.USER });
-        }
+        // 先給予一個臨時身份防止渲染中斷
+        if (!currentUser) setCurrentUser({ id: user.uid, username: '正在核對...', role: ROLES.USER });
       } else {
         setCurrentUser(null);
       }
@@ -117,32 +116,30 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // ==================== 2. 資料即時監聽 ====================
+  // ==================== 2. 資料即時監聽 (Real-time Sync) ====================
   useEffect(() => {
-    if (!auth.currentUser) return;
-    
+    // 監聽使用者列表：解決白屏鎖死問題
     const usersRef = collection(db, 'cs_users');
     return onSnapshot(usersRef, (snap) => {
       const usersData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setDbUsers(usersData);
-      
       const uMap = {};
       usersData.forEach(u => uMap[u.username] = u);
       setUserMap(uMap);
       
-      // 自動比對當前使用者
       const lastUser = typeof localStorage !== 'undefined' ? localStorage.getItem('cs_last_user') : null;
       const matchedUser = usersData.find(u => u.username === lastUser) || usersData[0];
       
       if (matchedUser) {
         setCurrentUser(matchedUser);
         setActiveUser(matchedUser);
-      } else if (usersData.length === 0) {
-        // 針對資料庫為空的特殊處理：賦予臨時管理員權限
-        setCurrentUser({ id: auth.currentUser.uid, username: '系統管理員', role: ROLES.ADMIN });
+      } else if (auth.currentUser) {
+        // 資料庫空狀態處理：賦予初始管理員身份，避免卡在 Loading
+        setCurrentUser({ id: auth.currentUser.uid, username: '系統初始帳號', role: ROLES.ADMIN });
+        setActiveUser({ id: auth.currentUser.uid, username: '系統初始帳號', role: ROLES.ADMIN });
       }
-    }, (err) => console.error("使用者數據監聽錯誤:", err));
-  }, [currentUser?.id]);
+    }, (error) => console.error("Users Subscription Error:", error));
+  }, []);
 
   useEffect(() => {
     const settingsRef = doc(db, 'cs_settings', 'dropdowns');
@@ -208,7 +205,7 @@ export default function App() {
   const customPrompt = (msg) => new Promise(resolve => setCustomDialog({ isOpen: true, type: 'prompt', title: '請輸入', message: msg, inputValue: '', onConfirm: (val) => { setCustomDialog(prev => ({...prev, isOpen: false})); resolve(val); }, onCancel: () => { setCustomDialog(prev => ({...prev, isOpen: false})); resolve(null); } }));
 
   const handleLogout = async () => {
-    if (await customConfirm("確定要登出並結束目前工作階段嗎？")) {
+    if (await customConfirm("確定要登出並重整頁面嗎？")) {
       await signOut(auth);
       window.location.reload();
     }
@@ -216,7 +213,6 @@ export default function App() {
 
   const handleBatchDeleteTickets = async (ids) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!(await customConfirm(`確定要將這 ${ids.length} 筆案件標記為「已刪除」嗎？`))) return;
     try {
       const batch = writeBatch(db);
       ids.forEach(id => batch.update(doc(db, 'cs_records', id), { isDeleted: true }));
@@ -226,26 +222,15 @@ export default function App() {
     } catch (e) { showToast("刪除失敗：" + e.message, "error"); }
   };
 
-  const handleBatchHardDeleteTickets = async (ids) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    if (!(await customConfirm(`警告：將徹底抹除這 ${ids.length} 筆雲端紀錄，且不可還原！確定執行？`))) return;
-    try {
-      const batch = writeBatch(db);
-      ids.forEach(id => batch.delete(doc(db, 'cs_records', id)));
-      await batch.commit();
-      showToast(`成功徹底抹除 ${ids.length} 筆紀錄！`, 'success');
-      setSelectedTickets([]);
-    } catch (e) { showToast("抹除失敗：" + e.message, "error"); }
-  };
-
-  // ==================== 4. 渲染介面 ====================
+  // ==================== 4. 渲染主介面 ====================
   if (!currentUser) {
     return (
-      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', backgroundColor: isDarkMode ? '#0f172a' : '#f8fafc' }}>
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', backgroundColor: isDarkMode ? '#0f172a' : '#f8fafc', color: isDarkMode ? '#94a3b8' : '#64748b' }}>
         <div style={{ textAlign: 'center', fontFamily: 'sans-serif' }}>
           <div style={{ width: '48px', height: '48px', border: '4px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem' }}></div>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          <p style={{ fontWeight: 'bold', color: isDarkMode ? '#94a3b8' : '#64748b' }}>系統載入中，請稍候...</p>
+          <p style={{ fontWeight: 'bold', fontSize: '14px' }}>系統啟動中，請稍候...</p>
+          <p style={{ fontSize: '11px', marginTop: '8px', opacity: 0.7 }}>若長時間無反應，請確認 Firebase 與資料庫連線。</p>
         </div>
       </div>
     );
@@ -300,7 +285,7 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-slate-900 relative">
         <header className="h-20 bg-white dark:bg-slate-800 shadow-sm flex items-center justify-between px-6 shrink-0 z-20 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="mr-4 p-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 hidden md:block transition-all hover:bg-blue-50 hover:text-blue-600"><Menu size={20} /></button>
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="mr-4 p-2.5 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-500 hidden md:block"><Menu size={20} /></button>
             <h2 className="text-lg font-black text-slate-800 dark:text-slate-100">{TABS.find(t => t.id === activeTab)?.label}</h2>
           </div>
           <div className="flex items-center space-x-3">
@@ -346,8 +331,7 @@ export default function App() {
               userMap={userMap} selectedTickets={selectedTickets} setSelectedTickets={setSelectedTickets} 
               setViewModalTicket={setViewModalTicket} 
               handleBatchDeleteTickets={() => handleBatchDeleteTickets(selectedTickets)} 
-              handleBatchHardDeleteTickets={() => handleBatchHardDeleteTickets(selectedTickets)} 
-              handleExportExcel={() => {}}
+              handleBatchHardDeleteTickets={() => {}} handleExportExcel={() => {}}
             />
           )}
 
@@ -382,7 +366,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* 全域懸浮彈窗 */}
+      {/* 全域彈窗 */}
       {viewModalTicket && (
         <ViewEditModal 
           ticket={viewModalTicket} onClose={() => setViewModalTicket(null)} currentUser={currentUser} 
@@ -404,7 +388,7 @@ export default function App() {
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col border border-slate-200 dark:border-slate-700">
             <h3 className="font-black text-lg mb-2 text-slate-800 dark:text-slate-100">{customDialog.title}</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">{customDialog.message}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">{customDialog.message}</p>
             {customDialog.type === 'prompt' && (
               <input type="text" autoFocus value={customDialog.inputValue} onChange={e => setCustomDialog({...customDialog, inputValue: e.target.value})} className="w-full p-3 mb-6 bg-slate-50 dark:bg-slate-700 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-medium"/>
             )}
@@ -418,7 +402,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Toast 訊息通知 */}
+      {/* Toast 通知系統 */}
       {toast.show && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[999] animate-in slide-in-from-bottom-5 duration-300">
           <div className={`px-6 py-3 rounded-full font-bold shadow-lg flex items-center space-x-2 ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white dark:bg-white dark:text-slate-900'}`}>
