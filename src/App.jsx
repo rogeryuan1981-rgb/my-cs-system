@@ -1245,98 +1245,57 @@ export default function App() {
     );
   };
 
- const renderTicketTable = (dataList, currentPage, setCurrentPage) => {
-    const totalPages = Math.ceil(dataList.length / ITEMS_PER_PAGE) || 1;
-    const paginatedList = dataList.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-
+const renderTicketTable = () => {
+  // 防呆：如果沒有資料，顯示查無紀錄
+  if (!paginatedHistory || paginatedHistory.length === 0) {
     return (
-      // 🔽 修正點 1：將原本的 overflow-hidden 改為 overflow-visible
-      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 overflow-visible flex flex-col">
-        {/* 🔽 修正點 2：補回 pb-32 以確保表格下方留有空間供點擊與 Tooltip 展開 */}
-        <div className="max-md:overflow-x-auto min-h-[400px] pb-32">
-          <table className="w-full text-left border-collapse relative">
-            <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest sticky top-0 z-40">
-              <tr>
-                {currentUser.role === ROLES.ADMIN && (
-                  <th className="p-5 text-center w-12 rounded-tl-[2rem]">
-                    <input type="checkbox" className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={paginatedList.length > 0 && selectedTickets.length === paginatedList.length} onChange={(e) => setSelectedTickets(e.target.checked ? paginatedList.map(t => t.id) : [])} />
-                  </th>
-                )}
-                <th className={`p-5 text-center w-12 ${currentUser.role !== ROLES.ADMIN ? 'rounded-tl-[2rem]' : ''}`}>序號</th>
-                {renderSortHeader('案件號/日期', 'receiveTime')}
-                {renderSortHeader('院所', 'instName')}
-                {renderSortHeader('描述/回覆摘要', 'extraInfo')}
-                {renderSortHeader('建立/負責人', 'receiver')}
-                {renderSortHeader('進度', 'progress', 'center', false, true)}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
-              {paginatedList.length === 0 ? (
-                <tr><td colSpan={currentUser.role === ROLES.ADMIN ? "7" : "6"} className="p-12 text-center text-slate-400 dark:text-slate-500 font-bold">查無符合條件的案件</td></tr>
-              ) : (
-                paginatedList.map((t, index) => {
-                  const fullHistoryStr = formatRepliesHistory(t.replies, t.replyContent);
-                  const latestReplyStr = getLatestReply(t.replies, t.replyContent);
-                  return (
-                    <tr key={t.id} onClick={() => setViewModalTicket(t)} className={`hover:bg-slate-50/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer group border-b border-slate-100 dark:border-slate-700 relative hover:z-50 ${t.isDeleted ? 'opacity-50' : ''}`}>
-                      {currentUser.role === ROLES.ADMIN && (
-                        <td className="p-5 text-center" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" disabled={t.isDeleted} className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50" checked={selectedTickets.includes(t.id)} onChange={(e) => setSelectedTickets(e.target.checked ? [...selectedTickets, t.id] : selectedTickets.filter(id => id !== t.id))} />
-                        </td>
-                      )}
-                      <td className="p-5 text-center text-slate-400 dark:text-slate-500 font-bold text-xs">{(currentPage - 1) * ITEMS_PER_PAGE + index + 1}</td>
-                      <td className="p-5">
-                        <div className={`font-black text-slate-800 dark:text-slate-200 font-mono text-xs group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center ${t.isDeleted ? 'line-through' : ''}`}>
-                          {t.ticketId || '-'} <Eye size={12} className="ml-2 opacity-0 group-hover:opacity-100 text-blue-400" />
-                        </div>
-                        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()} / {t.channel}</div>
-                        {t.isDeleted && <span className="mt-1 inline-block bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-1.5 py-0.5 rounded text-[9px] font-black">已刪除</span>}
-                      </td>
-                      <td className="p-5">
-                        <div className={`text-slate-800 dark:text-slate-200 ${t.isDeleted ? 'line-through' : ''}`}>{t.instName}</div>
-                        <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-1">{t.instCode}</div>
-                      </td>
-                      <td className="p-5 max-w-[250px] relative group/tooltip" style={{ overflow: 'visible' }}>
-                         <div className="truncate text-slate-600 dark:text-slate-300 mb-1" title={t.extraInfo}>問: {t.extraInfo || '-'}</div>
-                         <div className="truncate text-slate-400 dark:text-slate-400 text-xs cursor-help">答: {latestReplyStr || '-'}</div>
-                         {fullHistoryStr && (
-                           <div className="absolute left-0 top-full mt-2 opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 z- w-[350px] p-5 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-2xl shadow-2xl pointer-events-none transition-all duration-200 border border-slate-700 dark:border-slate-600 text-left">
-                             <div className="absolute left-8 -top-1.5 w-3 h-3 bg-slate-800 dark:bg-slate-700 border-t border-l border-slate-700 dark:border-slate-600 transform rotate-45"></div>
-                             <div className="font-bold text-blue-300 mb-2 border-b border-slate-600 dark:border-slate-500 pb-2">完整回覆紀錄</div>
-                             <div className="whitespace-pre-wrap leading-relaxed text-slate-100">{fullHistoryStr}</div>
-                           </div>
-                         )}
-                      </td>
-                      <td className="p-5">
-                        <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[10px]" /><span>{t.receiver}</span></div>
-                        {t.assignee && <div className="flex items-center space-x-1.5 mt-2"><UserAvatar username={t.assignee} photoURL={userMap[t.assignee]?.photoURL} className="w-4 h-4 text-[8px]" /><div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-900/40 inline-block px-1.5 rounded">負責: {t.assignee}</div></div>}
-                      </td>
-                      <td className="p-5 text-center"><span className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span></td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* 🔽 分頁控制區塊 */}
-        {totalPages > 1 && (
-          <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-b-[2rem]">
-            <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 transition-colors text-slate-600 dark:text-slate-300 shadow-sm">
-              上一頁
-            </button>
-            <div className="text-xs font-bold text-slate-500 dark:text-slate-400 tracking-wider">
-              第 {currentPage} 頁 <span className="mx-2">/</span> 共 {totalPages} 頁
-            </div>
-            <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="px-4 py-2 text-sm font-bold rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 transition-colors text-slate-600 dark:text-slate-300 shadow-sm">
-              下一頁
-            </button>
-          </div>
-        )}
-      </div>
+      <tr>
+        <td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">
+          查無相關歷史紀錄
+        </td>
+      </tr>
     );
-  };
+  }
+
+  return paginatedHistory.map(t => (
+    <tr 
+      key={t.id} 
+      className="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group cursor-pointer"
+      // 【關鍵 1】整行點擊時，將當下的案件資料 (t) 寫入彈窗狀態
+      onClick={() => setViewModalTicket(t)}
+    >
+      <td className="p-6">
+        <div className="font-mono text-xs font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
+        <div className="text-[10px] text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
+      </td>
+      <td className="p-6">
+        <div className="font-black text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
+        <div className="text-[10px] font-mono text-slate-400 mt-0.5">{t.instCode}</div>
+      </td>
+      <td className="p-6 flex items-center space-x-3 py-10">
+        <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} />
+        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{t.receiver}</span>
+      </td>
+      <td className="p-6">
+        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${t.progress === '結案' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+          {t.progress || '待處理'}
+        </span>
+      </td>
+      <td className="p-6 text-center">
+        {/* 【關鍵 2】如果眼睛 icon 是個按鈕，必須加入 e.stopPropagation() 防止點擊衝突 */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewModalTicket(t);
+          }} 
+          className="p-3 hover:bg-white dark:hover:bg-slate-700 rounded-full text-slate-300 group-hover:text-blue-500 transition-all"
+        >
+          <Eye size={20}/>
+        </button>
+      </td>
+    </tr>
+  ));
+};
 
   const dashboardStats = useMemo(() => {
     const total = tickets.filter(t => !t.isDeleted).length;
