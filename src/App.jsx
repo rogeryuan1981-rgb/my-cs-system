@@ -1307,25 +1307,37 @@ export default function App() {
     );
   };
 
-const renderTicketTable = (data, currentPage, setCurrentPage) => {
+const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = false) => {
   const PAGE_SIZE = 50;
   const paginatedData = data.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   if (!paginatedData || paginatedData.length === 0) {
-    return <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td></tr>;
+    return <tr><td colSpan={isSelectable ? "6" : "5"} className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td></tr>;
   }
 
   return paginatedData.map(t => {
-    // 決定大頭貼顯示誰 (優先顯示目前的負責人)
     const activeHandler = t.assignee || t.receiver || "系統自動";
-    
-    // 決定文字顯示邏輯 (A / B 或 C)
-    const displayText = (t.assignee && t.assignee !== t.receiver) 
-      ? `${t.receiver} / ${t.assignee}` 
-      : (t.receiver || "系統自動");
+    const displayText = (t.assignee && t.assignee !== t.receiver) ? `${t.receiver} / ${t.assignee}` : (t.receiver || "系統自動");
 
     return (
       <tr key={t.id} className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer" onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }}>
+        
+        {/* ▼▼▼ 這是新增的勾選框 (只有在紀錄資料區才會顯示) ▼▼▼ */}
+        {isSelectable && (
+          <td className="p-6 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+            <input 
+              type="checkbox" 
+              checked={selectedTickets.includes(t.id)}
+              onChange={(e) => {
+                if (e.target.checked) setSelectedTickets([...selectedTickets, t.id]);
+                else setSelectedTickets(selectedTickets.filter(id => id !== t.id));
+              }}
+              className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+          </td>
+        )}
+        {/* ▲▲▲ 勾選框結束 ▲▲▲ */}
+
         <td className="p-6 align-middle">
           <div className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
           <div className="text-xs font-bold text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
@@ -1334,33 +1346,23 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
           <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
           <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
         </td>
-        
-        {/* ▼▼▼ 修改這裡：建檔人 / 處理人 ▼▼▼ */}
         <td className="p-6 align-middle">
           <div className="flex items-center space-x-3">
             <UserAvatar username={activeHandler} photoURL={userMap[activeHandler]?.photoURL} className="w-8 h-8" />
             <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
               {t.assignee && t.assignee !== t.receiver ? (
-                <>
-                  <span className="text-slate-400">{t.receiver}</span>
-                  <span className="mx-1 text-slate-300">/</span>
-                  <span className="text-blue-600 dark:text-blue-400">{t.assignee}</span>
-                </>
-              ) : (
-                displayText
-              )}
+                <><span className="text-slate-400">{t.receiver}</span><span className="mx-1 text-slate-300">/</span><span className="text-blue-600 dark:text-blue-400">{t.assignee}</span></>
+              ) : displayText}
             </span>
           </div>
         </td>
-        {/* ▲▲▲ 修改結束 ▲▲▲ */}
-
         <td className="p-6 align-middle">
-          <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
-            {t.progress || '待處理'}
+          <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : t.isDeleted ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+            {t.isDeleted ? '已作廢 (邏輯刪除)' : (t.progress || '待處理')}
           </span>
         </td>
         <td className="p-6 align-middle text-center">
-          <button className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
+          <button onClick={(e) => { e.stopPropagation(); setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }} className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
             <Eye size={20}/>
           </button>
         </td>
@@ -1787,30 +1789,86 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
             </div>
           )}
 
-          {/* TAB 6: ALL RECORDS (紀錄資料區) */}
+{/* TAB 6: ALL RECORDS (紀錄資料區) */}
           {activeTab === 'all-records' && currentUser.role === ROLES.ADMIN && (
-             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 max-w-[1400px] mx-auto">
-               <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 w-full px-2">
+               
+               {/* 頂部搜尋與工具列 */}
+               <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm w-full">
                  <div>
-                   <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
-                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">顯示資料庫中所有原始紀錄（不過濾任何條件），方便檢視與批次操作。</p>
+                   <h2 className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
+                   <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-2">顯示資料庫中所有原始紀錄，提供批次維護與刪除功能。</p>
                  </div>
-                 <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3">
+                 <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3 items-center">
+                   
+                   {/* 如果有勾選項目，就會自動出現這兩個刪除按鈕 */}
                    {selectedTickets.length > 0 && (
-                     <>
-                       <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-red-600 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-red-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in" title="標記為已刪除，保留於系統軌跡"><Trash2 size={16} /><span className="hidden md:inline">邏輯刪除 ({selectedTickets.length})</span></button>
-                       <button onClick={handleBatchHardDeleteTickets} className="flex items-center justify-center space-x-2 bg-slate-900 dark:bg-black text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-slate-700 transition-colors font-bold text-sm shrink-0 animate-in fade-in" title="從資料庫徹底抹除，不留任何軌跡"><X size={16} /><span className="hidden md:inline">徹底刪除 ({selectedTickets.length})</span></button>
-                     </>
+                     <div className="flex space-x-2 mr-2 animate-in fade-in zoom-in-95">
+                       <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-5 py-3.5 rounded-2xl shadow-sm hover:bg-orange-200 transition-colors font-black text-sm" title="標記為作廢，不從資料庫移除">
+                         <Trash2 size={18} /><span>邏輯刪除 ({selectedTickets.length})</span>
+                       </button>
+                       <button onClick={handleBatchHardDeleteTickets} className="flex items-center justify-center space-x-2 bg-red-600 text-white px-5 py-3.5 rounded-2xl shadow-lg hover:bg-red-700 transition-colors font-black text-sm" title="從資料庫徹底抹除">
+                         <X size={18} /><span>無痕徹底刪除 ({selectedTickets.length})</span>
+                       </button>
+                     </div>
                    )}
-                   <button onClick={handleExportExcel} className="flex items-center justify-center space-x-2 bg-green-600 dark:bg-green-500 text-white px-4 py-2.5 rounded-2xl shadow-sm hover:bg-green-700 dark:hover:bg-green-600 transition-colors font-bold text-sm shrink-0"><Download size={16} /><span className="hidden md:inline">匯出全部</span></button>
+                   
+                   <button onClick={handleExportExcel} className="flex items-center justify-center space-x-2 bg-green-600 text-white px-6 py-3.5 rounded-2xl shadow-lg hover:bg-green-700 transition-colors font-black text-sm">
+                     <Download size={18} /><span className="hidden md:inline">匯出全部</span>
+                   </button>
+                   
                    <div className="relative flex-1 xl:w-72">
-                     <Search size={18} className="absolute left-4 top-3 text-slate-400 dark:text-slate-500"/>
-                     <input type="text" placeholder="關鍵字搜尋..." value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"/>
+                     <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"/>
+                     <input type="text" placeholder="關鍵字搜尋..." value={allRecordsSearchTerm} onChange={(e)=>setAllRecordsSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-800 dark:text-slate-100"/>
                    </div>
                  </div>
                </div>
                
-               {renderTicketTable(allRecordsFiltered, allRecordsPage, setAllRecordsPage)}
+               {/* 表格外框與表頭 */}
+               <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden w-full">
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left border-collapse min-w-max">
+                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
+                       <tr>
+                         {/* 全選 Checkbox */}
+                         <th className="p-6 w-16 text-center">
+                            <input 
+                              type="checkbox" 
+                              className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              onChange={(e) => {
+                                 const pageData = allRecordsFiltered.slice((allRecordsPage - 1) * ITEMS_PER_PAGE, allRecordsPage * ITEMS_PER_PAGE);
+                                 if (e.target.checked) {
+                                   const newSelections = [...new Set([...selectedTickets, ...pageData.map(t => t.id)])];
+                                   setSelectedTickets(newSelections);
+                                 } else {
+                                   const pageIds = pageData.map(t => t.id);
+                                   setSelectedTickets(selectedTickets.filter(id => !pageIds.includes(id)));
+                                 }
+                              }}
+                              checked={
+                                 (() => {
+                                    const pageData = allRecordsFiltered.slice((allRecordsPage - 1) * ITEMS_PER_PAGE, allRecordsPage * ITEMS_PER_PAGE);
+                                    if (pageData.length === 0) return false;
+                                    return pageData.every(t => selectedTickets.includes(t.id));
+                                 })()
+                              }
+                            />
+                         </th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔/處理同仁</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">當前狀態</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">操作</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                       {/* 【重點】第 4 個參數傳入 true，告訴函式要顯示勾選框！ */}
+                       {renderTicketTable(allRecordsFiltered, allRecordsPage, setAllRecordsPage, true)}
+                     </tbody>
+                   </table>
+                 </div>
+                 <Pagination currentPage={allRecordsPage} totalCount={allRecordsFiltered ? allRecordsFiltered.length : 0} pageSize={ITEMS_PER_PAGE} onPageChange={setAllRecordsPage} />
+               </div>
              </div>
           )}
 
