@@ -2352,7 +2352,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
                         val={(modalEditForm || {}).assignee || (modalEditForm || {}).receiver} 
                         setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} 
                         type="select" 
-                        options={dbUsers.map(u => u.username)} 
+                        options={dbUsers
+                          .filter(u => u.role !== '後台管理者' && u.role !== '系統管理員' && u.role !== '紀錄檢視者')
+                          .map(u => u.username)
+                        } 
                       />
                       <EditField label="院所代碼" val={(modalEditForm || {}).instCode} setVal={(v) => setModalEditForm({...modalEditForm, instCode: v})} />
                       <EditField label="院所名稱" val={(modalEditForm || {}).instName} setVal={(v) => setModalEditForm({...modalEditForm, instName: v})} />
