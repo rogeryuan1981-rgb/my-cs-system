@@ -13,10 +13,17 @@ import {
 // 1. 環境配置與初始化 (直接整合，解決 Could not resolve 錯誤)
 // =============================================================================
 
-// 取得環境變數中的 Firebase 配置
+// 取得環境變數中的 Firebase 配置，若無則使用預設配置防止 auth/invalid-api-key 錯誤
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
-  : { /* 預防性的後備配置，實際執行時會由環境注入 */ };
+  : {
+      apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
+      authDomain: "customerservice-1f9c0.firebaseapp.com",
+      projectId: "customerservice-1f9c0",
+      storageBucket: "customerservice-1f9c0.firebasestorage.app",
+      messagingSenderId: "34677415846",
+      appId: "1:34677415846:web:880d8fafafbb66ad6fb967"
+    };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
