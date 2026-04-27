@@ -1315,34 +1315,58 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
     return <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">查無相關歷史紀錄</td></tr>;
   }
 
-  return paginatedData.map(t => (
-    <tr key={t.id} className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer" onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }}>
-      <td className="p-5 md:p-6 align-middle">
-        <div className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
-        <div className="text-xs font-bold text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
-      </td>
-      <td className="p-5 md:p-6 align-middle">
-        <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
-        <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
-      </td>
-      <td className="p-5 md:p-6 align-middle">
-        <div className="flex items-center space-x-3">
-          <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-8 h-8" />
-          <span className="text-sm font-bold text-slate-600 dark:text-slate-300">{t.receiver}</span>
-        </div>
-      </td>
-      <td className="p-5 md:p-6 align-middle">
-        <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
-          {t.progress || '待處理'}
-        </span>
-      </td>
-      <td className="p-5 md:p-6 align-middle text-center">
-        <button onClick={(e) => { e.stopPropagation(); setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }} className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
-          <Eye size={20}/>
-        </button>
-      </td>
-    </tr>
-  ));
+  return paginatedData.map(t => {
+    // 決定大頭貼顯示誰 (優先顯示目前的負責人)
+    const activeHandler = t.assignee || t.receiver || "系統自動";
+    
+    // 決定文字顯示邏輯 (A / B 或 C)
+    const displayText = (t.assignee && t.assignee !== t.receiver) 
+      ? `${t.receiver} / ${t.assignee}` 
+      : (t.receiver || "系統自動");
+
+    return (
+      <tr key={t.id} className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer" onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(false); }}>
+        <td className="p-6 align-middle">
+          <div className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
+          <div className="text-xs font-bold text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
+        </td>
+        <td className="p-6 align-middle">
+          <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
+          <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
+        </td>
+        
+        {/* ▼▼▼ 修改這裡：建檔人 / 處理人 ▼▼▼ */}
+        <td className="p-6 align-middle">
+          <div className="flex items-center space-x-3">
+            <UserAvatar username={activeHandler} photoURL={userMap[activeHandler]?.photoURL} className="w-8 h-8" />
+            <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+              {t.assignee && t.assignee !== t.receiver ? (
+                <>
+                  <span className="text-slate-400">{t.receiver}</span>
+                  <span className="mx-1 text-slate-300">/</span>
+                  <span className="text-blue-600 dark:text-blue-400">{t.assignee}</span>
+                </>
+              ) : (
+                displayText
+              )}
+            </span>
+          </div>
+        </td>
+        {/* ▲▲▲ 修改結束 ▲▲▲ */}
+
+        <td className="p-6 align-middle">
+          <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${t.progress === '結案' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+            {t.progress || '待處理'}
+          </span>
+        </td>
+        <td className="p-6 align-middle text-center">
+          <button className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
+            <Eye size={20}/>
+          </button>
+        </td>
+      </tr>
+    );
+  });
 };
 
   const dashboardStats = useMemo(() => {
@@ -1706,7 +1730,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage) => {
 {/* TAB: 歷史查詢 (寬版優化版) */}
           {activeTab === 'list' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full px-2">
-              
+              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
               {/* 頂部搜尋與工具列 (寬版) */}
               <div className="flex flex-wrap gap-4 items-end bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm w-full">
                 <div className="relative flex-1 min-w-[300px]">
