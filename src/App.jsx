@@ -953,7 +953,10 @@ export default function App() {
       const submissionData = { ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], createdAt: new Date().toISOString(), isDeleted: false };
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), submissionData);
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), {
+        ...submissionData,
+        receiver: currentUser?.username || submissionData.receiver || '系統防呆自動補登'
+      });
       
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       setFormData(prev => ({
