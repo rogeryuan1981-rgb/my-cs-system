@@ -780,6 +780,16 @@ export default function App() {
       console.error("更新 LINE UID 失敗", e);
     }
   };
+  const handleUpdateUserAssignWhenClosed = async (id, value) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { canAssignWhenClosed: value });
+      showToast('已更新使用者的結案指派權限！');
+    } catch (e) {
+      showToast("更新特權失敗", "error");
+    }
+  };
 
   const handleSaveOverdueHours = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
@@ -911,7 +921,7 @@ export default function App() {
     let newFormData = { ...formData, [name]: value };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
-    if (name === 'progress' && value === '結案') newFormData.assignee = '';
+    if (name === 'progress' && value === '結案' && !currentUser?.canAssignWhenClosed) newFormData.assignee = '';
     setFormData(newFormData);
   };
 
@@ -937,7 +947,7 @@ export default function App() {
     if (currentUser?.role === ROLES.VIEWER) { setSubmitStatus({ type: 'error', msg: '儲存失敗：您沒有新增權限' }); return; }
     
     const code = formData.instCode ? formData.instCode.trim() : '';
-    if (!code || (code !== '999' && !/^\d{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼數字或 999' });
+    if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼英數字或 999' });
     if (!formData.channel || !formData.category || !formData.status || !formData.progress) return setSubmitStatus({ type: 'error', msg: '請確實選擇下拉選單選項' });
     if (!formData.extraInfo?.trim() || !formData.replyContent?.trim()) return setSubmitStatus({ type: 'error', msg: '問題描述與答覆不能為空' });
 
@@ -1578,7 +1588,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     </div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
-                    <div className="md:col-span-1"><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label><input type="text" name="instCode" required pattern="^(\d{10}|999)$" title="請輸入 10 碼數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/></div>
+                    <div className="md:col-span-1"><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label><input type="text" name="instCode" required pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/></div>
                     <div className="md:col-span-2">
                       <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所名稱與層級</label>
                       <div className="flex space-x-4">
@@ -1595,7 +1605,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">類別 <span className="text-red-500 dark:text-red-400">*</span></label><select name="category" required value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">狀態 <span className="text-red-500 dark:text-red-400">*</span></label><select name="status" required value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" required value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : formData.progress === '' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}><option value="" disabled>請選擇...</option>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
-                    {formData.progress !== '結案' && (
+                    {(formData.progress !== '結案' || currentUser?.canAssignWhenClosed) && (
                       <div className="animate-in zoom-in-95 duration-200">
                         <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
                         <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
@@ -2248,13 +2258,23 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">群組歸屬</th><th className="p-4">LINE UID (修改後點空白)</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">結案指派特權</th><th className="p-4">群組歸屬</th><th className="p-4">LINE UID (修改後點空白)</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
                               <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                 <td className="p-4 flex items-center space-x-3 dark:text-slate-200"><UserAvatar username={u.username} photoURL={u.photoURL} className="w-8 h-8 text-xs shrink-0" /><span>{u.username}</span></td>
                                 <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs">{u.role}</span></td>
+                                <td className="p-4">
+                                  {u.role === ROLES.USER || u.role === ROLES.ADMIN ? (
+                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                      <input type="checkbox" checked={u.canAssignWhenClosed || false} onChange={(e) => handleUpdateUserAssignWhenClosed(u.id, e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer" />
+                                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">允許</span>
+                                    </label>
+                                  ) : (
+                                    <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
+                                  )}
+                                </td>
                                 <td className="p-4">
                                   {u.role === ROLES.USER ? (
                                     <input 
