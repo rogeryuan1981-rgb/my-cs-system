@@ -464,6 +464,8 @@ export default function App() {
   
   const [personnelStartDate, setPersonnelStartDate] = useState(getFirstDayOfMonth());
   const [personnelEndDate, setPersonnelEndDate] = useState(getLastDayOfMonth());
+  const [auditStartDate, setAuditStartDate] = useState(getFirstDayOfMonth());
+  const [auditEndDate, setAuditEndDate] = useState(getLastDayOfMonth());
   
   const [trendCategory, setTrendCategory] = useState('全類別');
   const [categoryViewMode, setCategoryViewMode] = useState('detail');
@@ -1047,12 +1049,26 @@ export default function App() {
   const pendingDeleteRequests = useMemo(() => tickets.filter(t => !t.isDeleted && t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
   const allEditLogs = useMemo(() => {
     let logs = [];
+    const start = new Date(`${auditStartDate}T00:00:00`);
+    const end = new Date(`${auditEndDate}T23:59:59.999`);
+
     tickets.forEach(t => {
       if (t.isDeleted) return;
-      if (Array.isArray(t.editLogs) && t.editLogs.length > 0) t.editLogs.forEach(log => logs.push({ ...log, ticketId: t.ticketId, instName: t.instName, recordId: t.id }));
+      if (Array.isArray(t.editLogs) && t.editLogs.length > 0) {
+        t.editLogs.forEach(log => {
+          // 僅篩選「問題敘述被修改」的紀錄 (排除強制維護的無意義標記)
+          if (log.type === 'extraInfo_edit' || (log.oldContent && log.newContent)) {
+            const logDate = new Date(log.time);
+            // 日期區間過濾
+            if (logDate >= start && logDate <= end) {
+              logs.push({ ...log, ticketId: t.ticketId, instName: t.instName, recordId: t.id });
+            }
+          }
+        });
+      }
     });
     return logs.sort((a, b) => new Date(b.time) - new Date(a.time));
-  }, [tickets]);
+  }, [tickets, auditStartDate, auditEndDate]);
 
   const handleApproveDelete = (ticketId, ticketInstName) => {
     showConfirm(`確定要【核准刪除】案件「${ticketInstName}」嗎？這將會進行邏輯刪除，並保留在紀錄資料區。`, async () => {
@@ -1960,24 +1976,40 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                  </div>
 
                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col max-h-[800px]">
-                   <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 原始內容修改日誌</h3>
-                   <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                     {allEditLogs.length === 0 ? (
-                       <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 rounded-2xl">尚無任何修改紀錄。</div>
-                     ) : (
-                       allEditLogs.map((log, idx) => (
-                         <div key={idx} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl shadow-sm">
-                           <div className="flex justify-between items-center mb-3 border-b border-slate-200 dark:border-slate-600 pb-2"><div className="font-black text-indigo-800 dark:text-indigo-300 text-xs">#{log.ticketId} - {log.instName}</div><div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{log.time}</div></div>
-                           <div className="space-y-3">
-                             <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">修改前原內容</div><div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded line-through decoration-red-400 dark:decoration-red-500 border border-slate-200 dark:border-slate-700">{log.oldContent || '(空)'}</div></div>
-                             <div><div className="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-1">修改後新內容</div><div className="text-xs text-slate-800 dark:text-slate-200 bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded border border-indigo-100 dark:border-indigo-800">{log.newContent || '(空)'}</div></div>
-                           </div>
-                           <div className="mt-3 flex justify-end items-center text-[10px] font-bold text-slate-500 dark:text-slate-400">修改人: <UserAvatar username={log.user} photoURL={userMap[log.user]?.photoURL} className="w-4 h-4 text-[6px] mx-1" /> <span className="text-indigo-600 dark:text-indigo-400">{log.user}</span></div>
-                         </div>
-                       ))
-                     )}
-                   </div>
-                 </div>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                      <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><FileText size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 問題敘述修改日誌</h3>
+                      
+                      {/* 加入日期區間選擇器 */}
+                      <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600 shrink-0">
+                        <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                        <input type="date" value={auditStartDate} onChange={e=>setAuditStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                        <span className="text-slate-300 dark:text-slate-500">~</span>
+                        <input type="date" value={auditEndDate} onChange={e=>setAuditEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                      {allEditLogs.length === 0 ? (
+                        <div className="h-40 flex items-center justify-center text-sm font-bold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 rounded-2xl">此區間內尚無任何修改紀錄。</div>
+                      ) : (
+                        allEditLogs.map((log, idx) => (
+                          <div key={idx} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 p-5 rounded-2xl shadow-sm">
+                            <div className="flex justify-between items-center mb-3 border-b border-slate-200 dark:border-slate-600 pb-2">
+                              <div className="font-black text-indigo-800 dark:text-indigo-300 text-xs">#{log.ticketId} - {log.instName}</div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{new Date(log.time).toLocaleString()}</div>
+                            </div>
+                            <div className="space-y-3">
+                              <div><div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">修改前原內容</div><div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 p-2 rounded line-through decoration-red-400 dark:decoration-red-500 border border-slate-200 dark:border-slate-700">{log.oldContent || '(空)'}</div></div>
+                              <div><div className="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-1">修改後新內容</div><div className="text-xs text-slate-800 dark:text-slate-200 bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded border border-indigo-100 dark:border-indigo-800">{log.newContent || '(空)'}</div></div>
+                            </div>
+                            <div className="mt-3 flex justify-end items-center text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                              修改人: <UserAvatar username={log.user} photoURL={userMap[log.user]?.photoURL} className="w-4 h-4 text-[6px] mx-1" /> <span className="text-indigo-600 dark:text-indigo-400">{log.user}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
                </div>
              </div>
           )}
