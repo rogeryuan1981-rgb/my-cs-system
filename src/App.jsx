@@ -1327,7 +1327,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   if (!paginatedData || paginatedData.length === 0) {
     return (
       <tr>
-        <td colSpan={isSelectable ? "6" : "5"} className="p-20 text-center text-slate-400 font-black text-lg">
+        <td colSpan={isSelectable ? "7" : "6"} className="p-20 text-center text-slate-400 font-black text-lg">
           查無相關歷史紀錄
         </td>
       </tr>
@@ -1335,10 +1335,9 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   }
 
   return paginatedData.map(t => {
-    // 【修正點】決定頭像顯示誰：優先處理人 (assignee)，若無則必有建檔人 (receiver)
+    // 決定頭像顯示誰：優先處理人 (assignee)，若無則必有建檔人 (receiver)
     const avatarUser = t.assignee || t.receiver;
-    
-    // 【修正點】決定文字顯示邏輯：決不出現系統自動
+    // 決定文字顯示邏輯：決不出現系統自動
     const hasAssignee = t.assignee && t.assignee !== t.receiver;
 
     return (
@@ -1371,6 +1370,19 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
         </td>
 
+        {/* ▼ 新增：管道與類別 ▼ */}
+        <td className="p-6 align-middle">
+          <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.category || '-'}</div>
+          <div className="text-xs font-bold text-slate-400 mt-1">{t.channel || '-'}</div>
+        </td>
+
+        {/* ▼ 新增：問題簡述 (限制寬度與最高2行) ▼ */}
+        <td className="p-6 align-middle">
+          <div className="text-sm font-medium text-slate-500 dark:text-slate-400 line-clamp-2 max-w-[200px] xl:max-w-[300px]" title={t.extraInfo}>
+            {t.extraInfo || '無描述'}
+          </div>
+        </td>
+
         <td className="p-6 align-middle">
           <div className="flex items-center space-x-3">
             <UserAvatar username={avatarUser} photoURL={userMap[avatarUser]?.photoURL} className="w-8 h-8" />
@@ -1382,7 +1394,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   <span className="text-blue-600 dark:text-blue-400">{t.assignee}</span>
                 </>
               ) : (
-                t.receiver // 至少顯示建檔人，絕不顯示系統自動
+                t.receiver 
               )}
             </span>
           </div>
@@ -1396,12 +1408,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           }`}>
             {t.isDeleted ? '已作廢 (邏輯刪除)' : (t.progress || '待處理')}
           </span>
-        </td>
-
-        <td className="p-6 align-middle text-center">
-          <button className="p-3 bg-slate-50 hover:bg-blue-100 dark:bg-slate-800 dark:hover:bg-slate-600 rounded-full text-slate-400 hover:text-blue-600 transition-all shadow-sm">
-            <Eye size={20}/>
-          </button>
         </td>
       </tr>
     );
@@ -1818,9 +1824,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <tr>
                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
+                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">管道與類別</th>
+                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">問題簡述</th>
                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔/處理同仁</th>
                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">當前狀態</th>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
@@ -1898,11 +1905,12 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                               }
                             />
                          </th>
-                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
-                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
-                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔/處理同仁</th>
-                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">當前狀態</th>
-                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">操作</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">管道與類別</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">問題簡述</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔/處理同仁</th>
+                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">當前狀態</th>
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
