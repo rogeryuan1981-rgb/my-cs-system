@@ -1413,7 +1413,14 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     const pending = tickets.filter(t => !t.isDeleted && t.progress !== '結案').length;
     const resolved = tickets.filter(t => !t.isDeleted && t.progress === '結案').length;
     const completionRate = total ? Math.round((resolved/total)*100) : 0;
-    
+    // --- 新增：計算當日數據 ---
+    const todayStr = getToday();
+    const todayTickets = tickets.filter(t => !t.isDeleted && t.receiveTime && t.receiveTime.startsWith(todayStr));
+    const todayTotal = todayTickets.length;
+    const todayPending = todayTickets.filter(t => t.progress !== '結案').length;
+    const todayResolved = todayTickets.filter(t => t.progress === '結案').length;
+    const todayCompletionRate = todayTotal ? Math.round((todayResolved/todayTotal)*100) : 0;
+    // ---------------------------
     const startDateObj = new Date(`${dashStartDate}T00:00:00`);
     const endDateObj = new Date(`${dashEndDate}T23:59:59.999`);
     const rangeTickets = tickets.filter(t => !t.isDeleted && new Date(t.receiveTime) >= startDateObj && new Date(t.receiveTime) <= endDateObj);
@@ -1467,7 +1474,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
       trendData.phoneToLine.push(monthTickets.filter(t => t.channel === '電話轉LINE').length);
     });
 
-    return { total, pending, resolved, completionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
+  return { total, pending, resolved, completionRate, todayTotal, todayPending, todayResolved, todayCompletionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
   }, [tickets, dashStartDate, dashEndDate, personnelStartDate, personnelEndDate, trendCategory, categories, categoryMapping, userMap]);
 
 
@@ -1973,17 +1980,40 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
               <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">進階統計區</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* 總件數卡片 */}
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
-                  <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
+                  <div>
+                    <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
+                    <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
+                  </div>
+                  <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-sm">
+                    <span className="font-bold text-slate-400 dark:text-slate-500">當日新增件數</span>
+                    <span className="font-black text-slate-700 dark:text-slate-200">+{dashboardStats.todayTotal} 件</span>
+                  </div>
                 </div>
+                
+                {/* 待處理件數卡片 */}
                 <div onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setHistoryProgress('未結案'); setSearchTerm(''); setActiveTab('list'); }} className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group" title="點擊檢視所有待處理案件">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRight className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
-                  <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
+                  <div>
+                    <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRight className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
+                    <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
+                  </div>
+                  <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-sm group-hover:border-red-100 dark:group-hover:border-red-900/30 transition-colors">
+                    <span className="font-bold text-slate-400 dark:text-slate-500">當日待處理</span>
+                    <span className="font-black text-red-500 dark:text-red-400">{dashboardStats.todayPending} 件</span>
+                  </div>
                 </div>
+
+                {/* 完成率卡片 */}
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
-                  <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
-                  <div className="text-5xl md:text-6xl font-black text-blue-600 dark:text-blue-400 leading-none text-right">{dashboardStats.completionRate}%</div>
+                  <div>
+                    <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">完成率</div>
+                    <div className="text-5xl md:text-6xl font-black text-blue-600 dark:text-blue-400 leading-none text-right">{dashboardStats.completionRate}%</div>
+                  </div>
+                  <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-sm">
+                    <span className="font-bold text-slate-400 dark:text-slate-500">當日完成率</span>
+                    <span className="font-black text-blue-600 dark:text-blue-400">{dashboardStats.todayCompletionRate}%</span>
+                  </div>
                 </div>
               </div>
 
