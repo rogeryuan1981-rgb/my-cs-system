@@ -1306,13 +1306,13 @@ export default function App() {
     return result;
   }, [tickets, debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
 
-  const renderSortHeader = (label, sortKey, align = 'left', isFirst = false, isLast = false) => {
+  const renderSortHeader = (label, sortKey, align = 'left') => {
     const isActive = sortConfig.key === sortKey;
     return (
-      <th className={`p-5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none ${align === 'center' ? 'text-center' : 'text-left'} ${isFirst ? 'rounded-tl-[2rem]' : ''} ${isLast ? 'rounded-tr-[2rem]' : ''}`} onClick={() => handleSort(sortKey)}>
-        <div className={`flex items-center ${align === 'center' ? 'justify-center' : 'justify-start'} group`}>
+      <th className="p-6 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors select-none group" onClick={() => handleSort(sortKey)}>
+        <div className={`flex items-center text-[11px] font-black uppercase tracking-widest ${align === 'center' ? 'justify-center' : 'justify-start'} ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
           {label}
-          <span className={`ml-1 flex flex-col ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400 dark:group-hover:text-slate-400'}`}>
+          <span className={`ml-2 flex flex-col transition-colors ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-slate-400'}`}>
             {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp size={14}/> : <ArrowDown size={14}/>) : <Menu size={14} />}
           </span>
         </div>
@@ -1822,12 +1822,12 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
                       <tr>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">管道與類別</th>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">問題簡述</th>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔/處理同仁</th>
-                        <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">當前狀態</th>
+                        {renderSortHeader('案號 / 日期', 'receiveTime')}
+                        {renderSortHeader('院所與代碼', 'instCode')}
+                        {renderSortHeader('管道與類別', 'category')}
+                        {renderSortHeader('問題簡述', 'extraInfo')}
+                        {renderSortHeader('建檔/處理同仁', 'receiver')}
+                        {renderSortHeader('當前狀態', 'progress')}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
@@ -1905,12 +1905,12 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                               }
                             />
                          </th>
-                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
-                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
-                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">管道與類別</th>
-                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">問題簡述</th>
-                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔/處理同仁</th>
-                          <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">當前狀態</th>
+                          {renderSortHeader('案號 / 日期', 'receiveTime')}
+                          {renderSortHeader('院所與代碼', 'instCode')}
+                          {renderSortHeader('管道與類別', 'category')}
+                          {renderSortHeader('問題簡述', 'extraInfo')}
+                          {renderSortHeader('建檔/處理同仁', 'receiver')}
+                          {renderSortHeader('當前狀態', 'progress')}
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
