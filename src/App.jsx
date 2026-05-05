@@ -2452,6 +2452,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
             </div>
           )}
 {/* 案件檢視與強制維護彈窗 (功能完整恢復版) */}
+      {/* 案件檢視與強制維護彈窗 (功能完整恢復版) */}
       {viewModalTicket && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-10 bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => { setViewModalTicket(null); setIsEditingModal(false); }}>
           <div className="bg-white dark:bg-slate-800 rounded-[3rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
@@ -2470,7 +2471,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
              {/* Content Area */}
              <div className="p-8 overflow-y-auto flex-1 space-y-10 bg-white dark:bg-slate-800">
                {!isEditingModal ? (
-                  // --- 檢視模式 (完整欄位呈現) ---
+                  // --- 檢視模式 (加入提問人資訊) ---
                   <div className="space-y-8 animate-in fade-in">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                        <InfoCard label="反映管道" value={viewModalTicket.channel} />
@@ -2478,9 +2479,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                        <InfoCard label="處理負責人" value={viewModalTicket.assignee || viewModalTicket.receiver} isHighlight={!!viewModalTicket.assignee} />
                        <InfoCard label="案件進度" value={viewModalTicket.progress} isHighlight={viewModalTicket.progress === '結案'} />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-900/30 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800">
+                    {/* 這裡改成 grid-cols-3，並加入提問人資訊 */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 dark:bg-slate-900/30 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800">
                        <InfoCard label="醫療院所" value={`${viewModalTicket.instName || '(無)'} ${viewModalTicket.instCode ? `(${viewModalTicket.instCode})` : ''}`} />
                        <InfoCard label="接收/來電時間" value={new Date(viewModalTicket.receiveTime).toLocaleString()} />
+                       <InfoCard label="提問人資訊" value={viewModalTicket.questioner || '未提供'} />
                     </div>
                     <div className="space-y-3">
                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-2 block">客戶反映內容描述</label>
@@ -2496,7 +2499,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     </div>
                   </div>
                ) : (
-                  // --- 強制維護模式 (加入負責人維護) ---
+                  // --- 強制維護模式 (維持原樣) ---
                   <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
                     <div className="p-5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl flex items-center text-orange-700 dark:text-orange-400 text-sm font-bold shadow-sm">
                       <AlertCircle size={20} className="mr-3 shrink-0" /> 
