@@ -410,6 +410,7 @@ export default function App() {
   const [categoryMapping, setCategoryMapping] = useState({});
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]); 
+  const [allowEmptyContent, setAllowEmptyContent] = useState(false);
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -604,10 +605,11 @@ export default function App() {
         setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
         setOverdueHours(data.overdueHours || 24);
         setHolidays(data.holidays || []);
+        setAllowEmptyContent(data.allowEmptyContent || false);
       } else {
         setDoc(buildDocPath('cs_settings', 'dropdowns'), {
           channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: []
+          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: [], allowEmptyContent: false
         });
       }
     });
@@ -793,6 +795,18 @@ export default function App() {
     }
   };
 
+  const handleToggleAllowEmptyContent = async (currentValue) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { allowEmptyContent: !currentValue }, { merge: true });
+      showToast(!currentValue ? "彈性建檔已開啟：現在可以空白建檔！" : "彈性建檔已關閉：恢復必填限制！");
+    } catch (e) {
+      showToast("更新參數失敗：" + e.message, 'error');
+    }
+  };
+  
   const handleSaveOverdueHours = async () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
@@ -951,7 +965,9 @@ export default function App() {
     const code = formData.instCode ? formData.instCode.trim() : '';
     if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼英數字或 999' });
     if (!formData.channel || !formData.category || !formData.status || !formData.progress) return setSubmitStatus({ type: 'error', msg: '請確實選擇下拉選單選項' });
-    if (!formData.extraInfo?.trim() || !formData.replyContent?.trim()) return setSubmitStatus({ type: 'error', msg: '問題描述與答覆不能為空' });
+    if (!allowEmptyContent && (!formData.extraInfo?.trim() || !formData.replyContent?.trim())) {
+      return setSubmitStatus({ type: 'error', msg: '問題描述與答覆不能為空' });
+    }
 
     try {
       setSubmitStatus({ type: 'loading', msg: '儲存中...' });
@@ -1645,18 +1661,18 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     )}
                   </div>
                   <div className="space-y-6">
-                    <div>
-                      <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">詳細問題描述 <span className="text-red-500 dark:text-red-400">*</span></label>
-                      <textarea name="extraInfo" required minLength="2" value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
-                    </div>
-                    <div>
-                      <div className="flex justify-between items-end mb-2">
-                        <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">給予的初步答覆 <span className="text-red-500 dark:text-red-400">*</span></label>
-                        <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                      <div>
+                        <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">詳細問題描述 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
+                        <textarea name="extraInfo" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
                       </div>
-                      <textarea id="replyContent" name="replyContent" required minLength="2" value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
+                      <div>
+                        <div className="flex justify-between items-end mb-2">
+                          <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
+                          <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                        </div>
+                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
+                      </div>
                     </div>
-                  </div>
                 </div>
 
                 <div className="flex justify-end pt-4 pb-12">
@@ -2298,6 +2314,28 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       </button>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
+                  </div>
+                  {/* 新增：特殊時期彈性建檔開關 */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mt-8">
+                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><AlertCircle size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統防呆限制管理</h3>
+                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-700/50 rounded-[1.5rem] border border-slate-100 dark:border-slate-600 transition-colors">
+                      <div className="pr-6">
+                        <div className="font-black text-sm text-slate-800 dark:text-slate-100 mb-1 flex items-center">
+                          開放空白內容建檔 (免填問題與答覆) 
+                          {allowEmptyContent && <span className="ml-3 bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400 px-2 py-0.5 rounded text-[10px] uppercase tracking-widest animate-pulse">作用中</span>}
+                        </div>
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
+                          啟用後，新增案件時「詳細問題描述」與「初步答覆」將變為非必填項。<br/>
+                          <span className="text-orange-500 dark:text-orange-400">⚠️ 建議僅在突發大量進線需快速建檔時暫時開啟，以免產生過多無效內容紀錄。</span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleToggleAllowEmptyContent(allowEmptyContent)} 
+                        className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none shadow-inner ${allowEmptyContent ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${allowEmptyContent ? 'translate-x-6' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Holidays Management */}
