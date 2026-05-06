@@ -1840,7 +1840,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <tr>
                         {renderSortHeader('案號 / 日期', 'receiveTime')}
                         {renderSortHeader('院所與代碼', 'instCode')}
-                        {renderSortHeader('管道與類別', 'category')}
+                        {renderSortHeader('類別與管道', 'category')}
                         {renderSortHeader('問題簡述', 'extraInfo')}
                         {renderSortHeader('建檔/處理同仁', 'receiver')}
                         {renderSortHeader('當前狀態', 'progress')}
@@ -1923,7 +1923,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                          </th>
                           {renderSortHeader('案號 / 日期', 'receiveTime')}
                           {renderSortHeader('院所與代碼', 'instCode')}
-                          {renderSortHeader('管道與類別', 'category')}
+                          {renderSortHeader('類別與管道', 'category')}
                           {renderSortHeader('問題簡述', 'extraInfo')}
                           {renderSortHeader('建檔/處理同仁', 'receiver')}
                           {renderSortHeader('當前狀態', 'progress')}
