@@ -448,6 +448,7 @@ export default function App() {
   // --- 分頁狀態 ---
   const [historyPage, setHistoryPage] = useState(1);
   const [allRecordsPage, setAllRecordsPage] = useState(1);
+  const [anomalyPage, setAnomalyPage] = useState(1);
   const ITEMS_PER_PAGE = 50;
 
   useEffect(() => { 
@@ -1338,6 +1339,29 @@ export default function App() {
     return result;
   }, [tickets, debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
 
+  // --- 自動偵測異常紀錄 (Admin Only) ---
+  const anomalousTickets = useMemo(() => {
+    if (currentUser?.role !== ROLES.ADMIN) return [];
+    return tickets.filter(t => !t.isDeleted).map(t => {
+      let reasons = [];
+      // 偵測各種可能遺失的必填欄位
+      if (!t.receiver || t.receiver.trim() === '') reasons.push('建檔人空白');
+      if (!t.channel || t.channel.trim() === '') reasons.push('管道空白');
+      if (!t.category || t.category.trim() === '') reasons.push('類別空白');
+      if (!t.status || t.status.trim() === '') reasons.push('狀態空白');
+      if (!t.progress || t.progress.trim() === '') reasons.push('進度空白');
+      if (!t.instCode || t.instCode.trim() === '') reasons.push('院所代碼空白');
+      if (!t.extraInfo || t.extraInfo.trim() === '') reasons.push('問題描述空白');
+      if (!t.replyContent || t.replyContent.trim() === '') reasons.push('答覆內容空白');
+
+      // 如果有任何異常，就把原因打包進去並回傳
+      if (reasons.length > 0) {
+        return { ...t, anomalyReasons: reasons };
+      }
+      return null;
+    }).filter(Boolean).sort((a, b) => new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
+  }, [tickets, currentUser]);
+
   const renderSortHeader = (label, sortKey, align = 'left') => {
     const isActive = sortConfig.key === sortKey;
     return (
@@ -1593,6 +1617,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           {renderNavButton('list', List, '歷史查詢區')}
           {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區')}
           {renderNavButton('dashboard', LayoutDashboard, '進階統計區')}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區')}
           {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區')}
           {renderNavButton('settings', Settings, '系統設定區')}
         </nav>
@@ -1956,6 +1981,76 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
              </div>
           )}
 
+          {/* TAB 8: ANOMALY (異常資料維護區 - Admin Only) */}
+          {activeTab === 'anomaly' && currentUser.role === ROLES.ADMIN && (
+             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 w-full px-2">
+               <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                 <div>
+                   <h2 className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0 flex items-center">
+                     <AlertCircle className="mr-3 text-red-500" size={28}/> 異常資料維護區
+                     {anomalousTickets.length > 0 && <span className="ml-3 bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 px-3 py-1 rounded-xl text-sm font-black animate-pulse">{anomalousTickets.length} 筆異常待處理</span>}
+                   </h2>
+                   <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-2">
+                     系統自動偵測遺失核心欄位（如建檔人、院所代碼）或因彈性建檔而缺少內容的紀錄。點擊即可直接進入強制維護模式補齊資料。
+                   </p>
+                 </div>
+               </div>
+               
+               <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden w-full">
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left border-collapse min-w-max">
+                     <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
+                       <tr>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">案號 / 日期</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">院所與代碼</th>
+                         <th className="p-6 text-[11px] font-black text-red-500 uppercase tracking-widest">系統偵測異常原因</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">建檔同仁</th>
+                         <th className="p-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">快速修復</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                       {anomalousTickets.length === 0 ? (
+                         <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-black text-lg">目前資料庫非常健康，無任何異常紀錄 🎉</td></tr>
+                       ) : (
+                         anomalousTickets.slice((anomalyPage - 1) * ITEMS_PER_PAGE, anomalyPage * ITEMS_PER_PAGE).map(t => (
+                           <tr key={t.id} onClick={() => { setViewModalTicket(t); setModalEditForm({...t}); setIsEditingModal(true); }} className="hover:bg-red-50/50 dark:hover:bg-red-900/20 transition-colors border-b border-slate-50 dark:border-slate-700/50 group cursor-pointer">
+                             <td className="p-6 align-middle">
+                               <div className="font-mono text-sm font-black text-blue-600 dark:text-blue-400">{t.ticketId}</div>
+                               <div className="text-xs font-bold text-slate-400 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</div>
+                             </td>
+                             <td className="p-6 align-middle">
+                               <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.instName || '(無名稱)'}</div>
+                               <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode || '(無代碼)'}</div>
+                             </td>
+                             <td className="p-6 align-middle">
+                               <div className="flex flex-wrap gap-2 max-w-[300px]">
+                                 {t.anomalyReasons.map((reason, i) => (
+                                   <span key={i} className="px-2.5 py-1 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 rounded-lg text-[10px] font-black shadow-sm">{reason}</span>
+                                 ))}
+                               </div>
+                             </td>
+                             <td className="p-6 align-middle">
+                               <div className="flex items-center space-x-2">
+                                 <UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-8 h-8" />
+                                 <span className="text-sm font-bold text-slate-600 dark:text-slate-300">{t.receiver || '未知 (空字串)'}</span>
+                               </div>
+                             </td>
+                             <td className="p-6 align-middle text-center">
+                               <button className="px-4 py-2 bg-slate-100 hover:bg-red-100 dark:bg-slate-700 dark:hover:bg-red-900/50 text-slate-500 hover:text-red-600 dark:text-slate-300 dark:hover:text-red-400 rounded-xl transition-all shadow-sm font-black text-xs flex items-center justify-center mx-auto">
+                                 <Edit size={14} className="mr-1.5"/> 立即補齊
+                               </button>
+                             </td>
+                           </tr>
+                         ))
+                       )}
+                     </tbody>
+                   </table>
+                 </div>
+                 <Pagination currentPage={anomalyPage} totalCount={anomalousTickets.length} pageSize={ITEMS_PER_PAGE} onPageChange={setAnomalyPage} />
+               </div>
+             </div>
+          )}
+          
           {/* TAB 7: AUDIT (申請與日誌區 - Admin Only) */}
           {activeTab === 'audit' && currentUser.role === ROLES.ADMIN && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8 max-w-[1400px] mx-auto">
