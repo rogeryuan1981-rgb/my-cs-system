@@ -2220,11 +2220,27 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     <form onSubmit={handleSaveLeave} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end bg-slate-50 dark:bg-slate-700/30 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
                       <div>
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假開始日期</label>
-                        <input type="date" value={leaveForm.start} onChange={e=>setLeaveForm({...leaveForm, start: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"/>
+                        <input 
+                          type={leaveForm.start ? "date" : "text"} 
+                          onFocus={(e) => e.target.type = 'date'} 
+                          onBlur={(e) => { if(!e.target.value) e.target.type = 'text'; }} 
+                          placeholder="尚未設定" 
+                          value={leaveForm.start} 
+                          onChange={e=>setLeaveForm({...leaveForm, start: e.target.value})} 
+                          className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"
+                        />
                       </div>
                       <div>
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假結束日期</label>
-                        <input type="date" value={leaveForm.end} onChange={e=>setLeaveForm({...leaveForm, end: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"/>
+                        <input 
+                          type={leaveForm.end ? "date" : "text"} 
+                          onFocus={(e) => e.target.type = 'date'} 
+                          onBlur={(e) => { if(!e.target.value) e.target.type = 'text'; }} 
+                          placeholder="尚未設定" 
+                          value={leaveForm.end} 
+                          onChange={e=>setLeaveForm({...leaveForm, end: e.target.value})} 
+                          className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:light] dark:[color-scheme:dark]"
+                        />
                       </div>
                       <div>
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">選擇代理人</label>
