@@ -2310,8 +2310,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   {/* Users Management */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與權限管理</h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      <div className="bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
+                    {/* 將原本的 1:1 改成 1:2 的比例 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      {/* 左側新增表單：佔 1 份寬度 */}
+                      <div className="lg:col-span-1 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
                         <h4 className="font-bold text-sm mb-4 dark:text-slate-200">建立新用戶</h4>
                         <form onSubmit={handleAddUser} className="space-y-4">
                           <input type="text" required placeholder="設定帳號 (將顯示為負責人)" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
@@ -2323,10 +2325,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                           </select>
                           <input type="text" placeholder="綁定 LINE UID (U開頭... 非必填)" value={newUser.lineUserId || ''} onChange={e=>setNewUser({...newUser, lineUserId:e.target.value})} className="w-full p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-xl font-medium outline-none"/>
                           <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
-                        </form>
+                       </form>
                       </div>
-                      <div className="overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
-                        <table className="w-full text-left">
+                      {/* 右側使用者清單：佔 2 份寬度 */}
+                      <div className="lg:col-span-2 overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
+                        <table className="w-full text-left whitespace-nowrap">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
                             <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">結案指派特權</th><th className="p-4">群組歸屬</th><th className="p-4">LINE UID (修改後點空白)</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
