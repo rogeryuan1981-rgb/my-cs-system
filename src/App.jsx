@@ -2217,6 +2217,23 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8 mt-8">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><UserPlus size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 請假與代理人設定</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">當您設定了休假區間與代理人後，在該區間內，系統會自動將您的逾期案件推播轉發給代理人。</p>
+                    {/* ▼▼▼ 新增：目前代理狀態提示框 ▼▼▼ */}
+                    {activeUser?.delegateUser && (
+                      <div className="mb-6 p-5 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 rounded-2xl flex items-center animate-in zoom-in-95 duration-300 shadow-sm">
+                        <div className="bg-indigo-100 dark:bg-indigo-900/50 p-2 rounded-full mr-4 shrink-0">
+                          <CheckCircle size={24} className="text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-indigo-800 dark:text-indigo-300 mb-1">您的代理設定目前已記錄在系統中</div>
+                          <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                            排定休假：<span className="font-mono bg-white/50 dark:bg-slate-800/50 px-1 rounded">{activeUser.leaveStart}</span> ~ <span className="font-mono bg-white/50 dark:bg-slate-800/50 px-1 rounded">{activeUser.leaveEnd}</span> 
+                            <span className="mx-2">|</span> 
+                            職務代理人：<span className="font-black text-sm">{activeUser.delegateUser}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {/* ▲▲▲ 新增結束 ▲▲▲ */}
                     <form onSubmit={handleSaveLeave} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end bg-slate-50 dark:bg-slate-700/30 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
                       <div>
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假開始日期</label>
