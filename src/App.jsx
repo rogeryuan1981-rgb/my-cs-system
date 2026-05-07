@@ -236,16 +236,20 @@ const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
   };
 
   const handleDrop = async (e, dropIdx) => {
-    e.preventDefault();
-    if (draggedIdx === null || draggedIdx === dropIdx) return;
-    const newItems = [...safeItems];
-    const [moved] = newItems.splice(draggedIdx, 1);
-    newItems.splice(dropIdx, 0, moved);
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-    await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
-    setDraggedIdx(null);
-  };
+    e.preventDefault();
+    if (draggedIdx === null || draggedIdx === dropIdx) return;
+    const newItems = [...safeItems];
+    const [moved] = newItems.splice(draggedIdx, 1);
+    newItems.splice(dropIdx, 0, moved);
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
+      setDraggedIdx(null);
+    } catch (error) {
+      showToast('排序更新失敗：' + error.message, 'error');
+    }
+  };
 
   return (
     <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 flex flex-col h-full">
@@ -767,24 +771,27 @@ export default function App() {
   };
 
   const handleUpdateUserRegion = async (id, regionValue) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { region: regionValue.trim() });
-    } catch (e) {
-      console.error("更新地區失敗", e);
-    }
-  };
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { region: regionValue.trim() });
+      showToast('群組歸屬已更新！');
+    } catch (e) {
+      showToast('更新地區失敗：' + e.message, 'error');
+    }
+  };
 
-  const handleUpdateUserLineId = async (id, lineIdValue) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
-    } catch (e) {
-      console.error("更新 LINE UID 失敗", e);
-    }
-  };
+  const handleUpdateUserLineId = async (id, lineIdValue) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
+      showToast('LINE UID 已更新綁定！');
+    } catch (e) {
+      showToast('更新 LINE UID 失敗：' + e.message, 'error');
+    }
+  };
+  
   const handleUpdateUserAssignWhenClosed = async (id, value) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
@@ -1075,13 +1082,21 @@ export default function App() {
   };
 
   const handleModalSave = async () => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), modalEditForm);
-      showToast('強制修改成功！'); setViewModalTicket(null); setIsEditingModal(false);
-    } catch (error) { showToast('修改失敗：' + error.message, 'error'); }
-  };
+    if (currentUser?.role !== ROLES.ADMIN || !modalEditForm || !viewModalTicket) return;
+    try {
+      const payload = {
+        ...modalEditForm,
+        editLogs: [...(viewModalTicket.editLogs || []), { time: new Date().toISOString(), user: currentUser?.username || '系統員', action: '強制維護更新' }]
+      };
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), payload);
+      showToast('案件資料已成功強制更新'); 
+      setViewModalTicket(null); 
+      setIsEditingModal(false);
+    } catch (error) { 
+      showToast('更新失敗，請檢查權限：' + error.message, 'error'); 
+    }
+  };
 
   const pendingDeleteRequests = useMemo(() => tickets.filter(t => !t.isDeleted && t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
   const allEditLogs = useMemo(() => {
@@ -1261,11 +1276,18 @@ export default function App() {
     } catch (e) { showToast('新增失敗', 'error'); }
   };
 
-  const handleDeleteInst = async (id) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-    await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
-  };
+  const handleDeleteInst = (id) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    showConfirm('確定要刪除這筆院所資料嗎？', async () => {
+      try {
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await deleteDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'mohw_institutions', id) : doc(db, 'mohw_institutions', id));
+        showToast('院所資料已成功刪除');
+      } catch (error) {
+        showToast('刪除失敗：' + error.message, 'error');
+      }
+    });
+  };
 
   const handleClearAllInsts = () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
@@ -2796,18 +2818,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <button onClick={() => setViewModalTicket(null)} className="px-12 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-slate-700 transition-all shadow-xl shadow-slate-200 dark:shadow-none">關閉視窗</button>
                    ) : (
                       <button 
-                        onClick={async () => {
-                          if (!modalEditForm || !viewModalTicket) return;
-                          try {
-                            await updateDoc(doc(db, 'cs_records', viewModalTicket.id), {
-                              ...modalEditForm,
-                              editLogs: [...(viewModalTicket.editLogs || []), { time: new Date().toISOString(), user: currentUser?.username || '系統員', action: '強制維護更新' }]
-                            });
-                            showToast('案件資料已成功強制更新', 'success');
-                            setIsEditingModal(false);
-                            setViewModalTicket(null);
-                          } catch (e) { showToast('更新失敗，請檢查權限', 'error'); }
-                        }} 
+                        onClick={handleModalSave} 
                         className="px-12 py-4 bg-green-600 text-white rounded-2xl font-black hover:bg-green-700 transition-all flex items-center shadow-xl shadow-green-200 dark:shadow-none"
                       >
                         <Save size={20} className="mr-2" /> 儲存變更
