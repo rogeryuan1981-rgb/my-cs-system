@@ -479,6 +479,7 @@ export default function App() {
 
   const [settingsTab, setSettingsTab] = useState('general');
   const [isTriggering, setIsTriggering] = useState(false); 
+  const [isProcessing, setIsProcessing] = useState(false); // 新增：防止關鍵動作連點
 
   const [newHoliday, setNewHoliday] = useState({ start: '', end: '', note: '' }); 
   const [leaveForm, setLeaveForm] = useState({ start: '', end: '', delegate: '' }); 
@@ -979,8 +980,17 @@ export default function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (currentUser?.role === ROLES.VIEWER) { setSubmitStatus({ type: 'error', msg: '儲存失敗：您沒有新增權限' }); return; }
     
+    // 1. 防連點鎖定：如果正在處理中，直接跳出不執行
+    if (isProcessing) return;
+
+    // 2. 權限檢查
+    if (currentUser?.role === ROLES.VIEWER) { 
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：您沒有新增權限' }); 
+      return; 
+    }
+    
+    // 3. 基礎欄位驗證
     const code = formData.instCode ? formData.instCode.trim() : '';
     if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼英數字或 999' });
     if (!formData.channel || !formData.category || !formData.status || !formData.progress) return setSubmitStatus({ type: 'error', msg: '請確實選擇下拉選單選項' });
@@ -988,23 +998,60 @@ export default function App() {
       return setSubmitStatus({ type: 'error', msg: '問題描述與答覆不能為空' });
     }
 
+    // --- 4. 重要優化：送出前強制「同步補齊」院所名稱 (解決手速過快沒觸發 Blur 的問題) ---
+    let finalInstName = formData.instName;
+    let finalInstLevel = formData.instLevel;
+    
+    if (code && code !== '999') {
+      const paddedCode = code.padStart(10, '0');
+      const matchedData = instMap[code] || instMap[paddedCode]; // 同步從記憶體地圖抓取
+      if (matchedData) {
+        finalInstName = matchedData.name;
+        finalInstLevel = matchedData.level;
+      } else if (finalInstName.includes('查無資料') || !finalInstName) {
+        finalInstName = '查無資料，請確認代碼或手動新增';
+        finalInstLevel = '';
+      }
+    }
+    // -----------------------------------------------------------------------------
+
     try {
+      // 開啟全域鎖定與 Loading 狀態
+      setIsProcessing(true);
       setSubmitStatus({ type: 'loading', msg: '儲存中...' });
+
+      // 5. 案件編號生成邏輯 (保留您原有的邏輯)
       const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const todayTickets = tickets.filter(t => t.ticketId && t.ticketId.startsWith(todayStr));
       let maxSeq = 0;
       todayTickets.forEach(t => { const seq = parseInt(t.ticketId.slice(8), 10); if (!isNaN(seq) && seq > maxSeq) maxSeq = seq; });
       const newTicketId = todayStr + String(maxSeq + 1).padStart(5, '0');
 
+      // 6. 回覆軌跡初始化
       const initialReplies = formData.replyContent ? [{ time: getFormatDate(), user: currentUser.username, content: formData.replyContent }] : [];
-      const submissionData = { ...formData, ticketId: newTicketId, replies: initialReplies, editLogs: [], createdAt: new Date().toISOString(), isDeleted: false };
+
+      // 7. 封裝最終資料 (強制寫入剛剛同步查到的名稱與層級)
+      const submissionData = { 
+        ...formData, 
+        instCode: code.length < 10 && code !== '999' ? code.padStart(10, '0') : code,
+        instName: finalInstName,
+        instLevel: finalInstLevel,
+        ticketId: newTicketId, 
+        replies: initialReplies, 
+        editLogs: [], 
+        createdAt: new Date().toISOString(), 
+        isDeleted: false 
+      };
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      
+      // 8. 執行資料庫寫入
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), {
         ...submissionData,
         receiver: currentUser?.username || submissionData.receiver || '系統防呆自動補登'
       });
       
+      // 9. 成功後的狀態更新與表單重置 (保留您原有的邏輯)
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       setFormData(prev => ({
         ...getInitialForm(currentUser.username, channels, progresses),
@@ -1012,8 +1059,14 @@ export default function App() {
         category: '', status: '',
         progress: (Array.isArray(progresses) && progresses.includes(prev.progress)) ? prev.progress : (progresses[0] || '待處理')
       }));
+      
       setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
-    } catch (error) { setSubmitStatus({ type: 'error', msg: '儲存失敗。' }); }
+    } catch (error) { 
+      setSubmitStatus({ type: 'error', msg: '儲存失敗：' + error.message }); 
+    } finally {
+      // 10. 無論成功或失敗，最後都解開連點鎖定
+      setIsProcessing(false);
+    }
   };
 
   const maintainTicketsList = useMemo(() => {
@@ -1082,21 +1135,23 @@ export default function App() {
   };
 
   const handleModalSave = async () => {
-    if (currentUser?.role !== ROLES.ADMIN || !modalEditForm || !viewModalTicket) return;
-    try {
+    if (currentUser?.role !== ROLES.ADMIN || !modalEditForm || !viewModalTicket || isProcessing) return;
+    setIsProcessing(true);
+    try {
       const payload = {
         ...modalEditForm,
         editLogs: [...(viewModalTicket.editLogs || []), { time: new Date().toISOString(), user: currentUser?.username || '系統員', action: '強制維護更新' }]
       };
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), payload);
-      showToast('案件資料已成功強制更新'); 
-      setViewModalTicket(null); 
-      setIsEditingModal(false);
-    } catch (error) { 
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', modalEditForm.id) : doc(db, 'cs_records', modalEditForm.id), payload);
+      showToast('案件資料已成功強制更新'); 
+      setViewModalTicket(null); setIsEditingModal(false);
+    } catch (error) { 
       showToast('更新失敗，請檢查權限：' + error.message, 'error'); 
+    } finally {
+      setIsProcessing(false);
     }
-  };
+  };
 
   const pendingDeleteRequests = useMemo(() => tickets.filter(t => !t.isDeleted && t.deleteRequest && t.deleteRequest.status === 'pending'), [tickets]);
   const allEditLogs = useMemo(() => {
@@ -1150,34 +1205,34 @@ export default function App() {
   };
 
   const handleBatchDeleteTickets = () => {
-    if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
+    if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0 || isProcessing) return;
     showConfirm(`【警告】確定要刪除選取的 ${selectedTickets.length} 筆紀錄嗎？這將會標記為「已刪除」並保留於資料區。`, async () => {
+      setIsProcessing(true);
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
         let batch = writeBatch(db); let count = 0;
         for (let i = 0; i < selectedTickets.length; i++) {
           batch.update(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', selectedTickets[i]) : doc(db, 'cs_records', selectedTickets[i]), {
-              isDeleted: true,
-              deletedAt: getFormatDate(),
-              deletedBy: currentUser.username
+              isDeleted: true, deletedAt: getFormatDate(), deletedBy: currentUser.username
           });
           count++;
           if (count === 400) { await batch.commit(); batch = writeBatch(db); count = 0; }
         }
         if (count > 0) await batch.commit();
         setSelectedTickets([]); showToast(`成功邏輯刪除 ${selectedTickets.length} 筆紀錄。`);
-      } catch (error) { showToast("批次刪除失敗：" + error.message, 'error'); }
+      } catch (error) { showToast("批次刪除失敗：" + error.message, 'error'); } finally { setIsProcessing(false); }
     });
   };
 
   // 徹底刪除 (Hard Delete) 函式 (因為需要輸入 DELETE 防呆，這裡保留 prompt)
   const handleBatchHardDeleteTickets = async () => {
-    if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0) return;
+    if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0 || isProcessing) return;
     const confirmText = window.prompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`);
     if (confirmText !== 'DELETE') {
       if (confirmText !== null) showToast('驗證碼不符，已取消徹底刪除操作。', 'error');
       return;
     }
+    setIsProcessing(true);
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       let batch = writeBatch(db); let count = 0;
@@ -1188,7 +1243,7 @@ export default function App() {
       }
       if (count > 0) await batch.commit();
       setSelectedTickets([]); showToast(`成功徹底刪除 ${selectedTickets.length} 筆紀錄！`);
-    } catch (error) { showToast("徹底刪除失敗：" + error.message, 'error'); }
+    } catch (error) { showToast("徹底刪除失敗：" + error.message, 'error'); } finally { setIsProcessing(false); }
   };
 
   const handleExportExcel = () => {
@@ -1207,7 +1262,26 @@ export default function App() {
     }));
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
-    window.XLSX.writeFile(wb, `客服紀錄匯出_${getToday().replace(/-/g, '')}.xlsx`);
+
+    // --- 新增：智能動態檔名產生邏輯 ---
+    let filenameParts = ['客服紀錄'];
+    if (activeTab === 'all-records') {
+      filenameParts.push('資料總表');
+      if (allRecordsSearchTerm) filenameParts.push(allRecordsSearchTerm);
+    } else {
+      if (historyProgress && historyProgress !== '全部') filenameParts.push(historyProgress);
+      if (searchTerm) filenameParts.push(searchTerm);
+      if (historyStartDate || historyEndDate) {
+        const startStr = historyStartDate ? historyStartDate.replace(/-/g, '') : '不限';
+        const endStr = historyEndDate ? historyEndDate.replace(/-/g, '') : '不限';
+        filenameParts.push(startStr === endStr ? startStr : `${startStr}至${endStr}`);
+      }
+    }
+    if (filenameParts.length === 1 || filenameParts.length === 2) filenameParts.push(getToday().replace(/-/g, '')); // 若條件太少，補上今天日期
+    const dynamicFilename = filenameParts.join('_') + '.xlsx';
+    // ------------------------------------
+
+    window.XLSX.writeFile(wb, dynamicFilename);
     showToast('匯出成功！');
   };
 
@@ -2819,9 +2893,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                    ) : (
                       <button 
                         onClick={handleModalSave} 
-                        className="px-12 py-4 bg-green-600 text-white rounded-2xl font-black hover:bg-green-700 transition-all flex items-center shadow-xl shadow-green-200 dark:shadow-none"
+                        disabled={isProcessing}
+                        className="px-12 py-4 bg-green-600 text-white rounded-2xl font-black hover:bg-green-700 transition-all flex items-center shadow-xl shadow-green-200 dark:shadow-none disabled:bg-slate-400 disabled:cursor-not-allowed"
                       >
-                        <Save size={20} className="mr-2" /> 儲存變更
+                        {isProcessing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div> : <Save size={20} className="mr-2" />}
+                        {isProcessing ? '儲存中...' : '儲存變更'}
                       </button>
                    )}
                 </div>
