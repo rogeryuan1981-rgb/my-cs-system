@@ -796,6 +796,17 @@ export default function App() {
     }
   };
 
+  const handleUpdateUserProxy = async (id, value) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { operationProxy: value });
+      showToast('已更新職務接管(代理)人！');
+    } catch (e) {
+      showToast("更新代理人失敗", "error");
+    }
+  };
+  
   const handleToggleAllowEmptyContent = async (currentValue) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
     try {
@@ -1004,13 +1015,22 @@ export default function App() {
       if (t.isDeleted) return false;
       const matchSearch = debouncedMaintainSearchTerm ? ((t.ticketId || '').includes(debouncedMaintainSearchTerm) || (t.instName || '').includes(debouncedMaintainSearchTerm)) : true;
       if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : t.progress !== '結案'; 
-      const isMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
+      
+      // 判斷是否為本人
+      const isOriginalMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
+      
+      // 判斷是否為接管代理：檢查這張單的「建檔人」或「處理人」，是否把職務接管給了現在登入的我
+      const isProxyMine = (userMap[t.receiver] && userMap[t.receiver].operationProxy === currentUser.username) || 
+                          (userMap[t.assignee] && userMap[t.assignee].operationProxy === currentUser.username);
+      
+      const isMine = isOriginalMine || isProxyMine;
       const isUnresolved = t.progress !== '結案';
+      
       return debouncedMaintainSearchTerm ? isMine && isUnresolved && matchSearch : isMine && isUnresolved;
     });
     result.sort((a, b) => maintainSortOrder === 'asc' ? new Date(a.receiveTime).getTime() - new Date(b.receiveTime).getTime() : new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
     return result;
-  }, [tickets, currentUser, debouncedMaintainSearchTerm, maintainSortOrder]);
+  }, [tickets, currentUser, debouncedMaintainSearchTerm, maintainSortOrder, userMap]);
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
@@ -2497,7 +2517,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <div className="lg:col-span-2 overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left whitespace-nowrap">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
-                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">結案指派特權</th><th className="p-4">群組歸屬</th><th className="p-4">LINE UID (修改後點空白)</th><th className="p-4 text-center">刪除</th></tr>
+                            <tr><th className="p-4">帳號/頭像</th><th className="p-4">權限</th><th className="p-4">結案指派特權</th><th className="p-4">職務接管(代理)</th><th className="p-4">群組歸屬</th><th className="p-4">LINE UID (修改後點空白)</th><th className="p-4 text-center">刪除</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm font-medium">
                             {(Array.isArray(dbUsers)?dbUsers:[]).map(u => (
@@ -2514,6 +2534,24 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                                     <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
                                   )}
                                 </td>
+                                {/* ▼▼▼ 這是新加的「職務接管(代理)」下拉選單 ▼▼▼ */}
+                                <td className="p-4">
+                                  {u.role === ROLES.USER ? (
+                                    <select 
+                                      value={u.operationProxy || ''} 
+                                      onChange={(e) => handleUpdateUserProxy(u.id, e.target.value)}
+                                      className="w-full min-w-[100px] p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs font-bold"
+                                    >
+                                      <option value="">-- 無 --</option>
+                                      {dbUsers.filter(user => user.username !== u.username && user.role === ROLES.USER).map(user => (
+                                        <option key={user.id} value={user.username}>{user.username}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
+                                  )}
+                                </td>
+                                {/* ▲▲▲ 新加結束 ▲▲▲ */}
                                 <td className="p-4">
                                   {u.role === ROLES.USER ? (
                                     <input 
