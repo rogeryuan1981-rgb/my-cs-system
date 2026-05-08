@@ -1710,7 +1710,18 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
 
   return (
     <div className={isDarkMode ? 'dark' : ''}>
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
+      {/* --- 全域 RWD 自適應縮放魔法 --- */}
+      <style>{`
+        /* 標準螢幕維持 Tailwind 預設的 16px */
+        /* 螢幕大於 1440px (一般大螢幕)，整體放大約 6% */
+        @media (min-width: 1440px) { html { font-size: 17px !important; } }
+        /* 螢幕大於 1920px (Full HD/超寬螢幕)，整體放大約 18% */
+        @media (min-width: 1920px) { html { font-size: 19px !important; } }
+        /* 螢幕大於 2560px (2K/4K/34吋等級)，整體放大約 31% */
+        @media (min-width: 2560px) { html { font-size: 21px !important; } }
+      `}</style>
+
+      <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       
       {/* Sidebar Wrapper */}
       <div className={`bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300 h-screen shrink-0 z-50 overflow-hidden ${isPinned ? 'w-64 relative' : `fixed w-64 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`} lg:relative lg:translate-x-0 lg:w-64 lg:shadow-none`}>
