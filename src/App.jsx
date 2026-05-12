@@ -180,31 +180,32 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
 };
 
 // --- 新增：坐標軸垂直長條圖組件 ---
+// --- 改良版：動態角度感應垂直長條圖組件 ---
 const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
-  if (!data || Object.keys(data).length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold">無數據</div>;
+  if (!data || Object.keys(data).length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500 font-black">無數據</div>;
 
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
   const labels = entries.map(e => e[0]);
   const values = entries.map(e => e[1]);
   const maxVal = Math.max(...values, 10);
   
-  const height = 300, width = 800, paddingX = 60, paddingY = 60; // 增加下邊距給傾斜文字
+  const height = 300, width = 800, paddingX = 60, paddingY = 60;
   const chartWidth = width - paddingX * 2;
   const chartHeight = height - paddingY * 2;
-  const barWidth = (chartWidth / labels.length) * 0.5; // 長條寬度
+  const barWidth = (chartWidth / labels.length) * 0.5;
   const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
-  const axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8";
+  const axisTextColor = isDarkMode ? "#94a3b8" : "#64748b"; // 稍微加深顏色
 
   return (
     <div className="w-full overflow-x-auto scrollbar-hide mt-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-72 md:h-80 min-w-[600px] drop-shadow-sm">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto min-h-[300px] min-w-[600px] drop-shadow-sm">
         {/* 背景網格與 Y 軸數值 */}
         {[0, 0.5, 1].map(ratio => {
           const y = height - paddingY - ratio * chartHeight;
           return (
             <g key={ratio}>
               <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
-              <text x={paddingX - 10} y={y + 4} fontSize="13" fill={axisTextColor} textAnchor="end" fontWeight="bold">{Math.round(maxVal * ratio)}</text>
+              <text x={paddingX - 12} y={y + 4} fontSize="14" fill={axisTextColor} textAnchor="end" fontWeight="900">{Math.round(maxVal * ratio)}</text>
             </g>
           );
         })}
@@ -215,6 +216,12 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
           const barHeight = (val / maxVal) * chartHeight;
           const y = height - paddingY - barHeight;
 
+          // ✨ 智慧邏輯：判斷字數決定角度
+          const isLongText = label.length > 4;
+          const rotateAngle = isLongText ? 35 : 0;
+          const textAnchor = isLongText ? "start" : "middle";
+          const yOffset = isLongText ? 15 : 25;
+
           return (
             <g key={label} className="cursor-pointer group" onClick={() => onClick && onClick(label)}>
               <rect 
@@ -224,22 +231,22 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
                 height={barHeight} 
                 fill={color} 
                 rx="6"
-                className="transition-all duration-500 ease-out group-hover:brightness-110 group-hover:opacity-80"
+                className="transition-all duration-500 ease-out group-hover:brightness-125"
               />
-              {/* 頂部數值 */}
+              {/* 頂部數值 - 永遠顯示且加粗 */}
               {val > 0 && (
-                <text x={x} y={y - 8} fontSize="14" fill={color} textAnchor="middle" fontWeight="black" className="transition-all">
+                <text x={x} y={y - 10} fontSize="15" fill={isDarkMode ? "#cbd5e1" : "#1e293b"} textAnchor="middle" fontWeight="900" className="transition-all">
                   {val}
                 </text>
               )}
-              {/* X 軸標籤 (傾斜 45 度) */}
-              <g transform={`translate(${x}, ${height - paddingY + 15})`}>
+              {/* X 軸標籤 - 動態旋轉 */}
+              <g transform={`translate(${x}, ${height - paddingY + yOffset})`}>
                 <text 
-                  transform="rotate(35)" 
-                  fontSize="12" 
+                  transform={`rotate(${rotateAngle})`} 
+                  fontSize="13" 
                   fill={axisTextColor} 
-                  fontWeight="bold" 
-                  textAnchor="start"
+                  fontWeight="900" 
+                  textAnchor={textAnchor}
                   className="select-none group-hover:fill-blue-500 transition-colors"
                 >
                   {label.length > 12 ? label.substring(0, 11) + '..' : label}
