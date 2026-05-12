@@ -2379,32 +2379,31 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
               </div>
 
               {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
-              {/* 這裡使用了 Grid 佈局，在大螢幕 (lg) 時會自動並排成兩欄 */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* 圖表區：改回垂直堆疊佈局，確保每張圖都有足夠寬度 */}
+              <div className="space-y-8">
                 
-                {/* 圖表區 1: 坐標軸長條圖 (服務類別分佈) */}
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
-                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                {/* 圖表區 1: 服務類別分佈 (滿版寬度) */}
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div>
                       <div className="flex items-center space-x-4">
                         <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務類別分佈</h3>
                         <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                          <button onClick={() => setCategoryViewMode('detail')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>細項類別</button>
-                          <button onClick={() => setCategoryViewMode('major')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>大類別彙整</button>
+                          <button onClick={() => setCategoryViewMode('detail')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>細項類別</button>
+                          <button onClick={() => setCategoryViewMode('major')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>大類別彙整</button>
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 font-medium italic">點擊下方標籤或長條可直接跳轉明細</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 font-black italic">💡 點擊下方標籤或長條可直接跳轉歷史查詢區</p>
                     </div>
                     <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
-                      <Calendar size={14} className="text-slate-400 dark:text-slate-400 ml-2"/>
-                      <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
-                      <span className="text-slate-300 dark:text-slate-500">~</span>
-                      <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                      <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                      <span className="text-slate-300 dark:text-slate-500 font-bold">~</span>
+                      <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
                     </div>
                   </div>
                   
-                  {/* 使用新組件 */}
-                  <div className="flex-1">
+                  <div className="w-full">
                     <BarChart 
                       data={categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData} 
                       isDarkMode={isDarkMode}
@@ -2414,25 +2413,25 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   </div>
                 </div>
 
-                {/* 圖表區 2: 坐標軸長條圖 (案件處理人員統計) */}
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
-                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                {/* 圖表區 2: 人員與區域統計 (滿版寬度) */}
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">人員與區域統計</h3>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">案件處理人員與群組統計</h3>
                       <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                        <button onClick={() => setPersonnelViewMode('assignee')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'assignee' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>處理人員</button>
-                        <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>群組區域</button>
+                        <button onClick={() => setPersonnelViewMode('assignee')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'assignee' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>處理人員</button>
+                        <button onClick={() => setPersonnelViewMode('region')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>群組區域</button>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
-                      <Calendar size={14} className="text-slate-400 dark:text-slate-400 ml-2"/>
-                      <input type="date" value={personnelStartDate} onChange={e=>setPersonnelStartDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
-                      <span className="text-slate-300 dark:text-slate-500">~</span>
-                      <input type="date" value={personnelEndDate} onChange={e=>setPersonnelEndDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                      <input type="date" value={personnelStartDate} onChange={e=>setPersonnelStartDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                      <span className="text-slate-300 dark:text-slate-500 font-bold">~</span>
+                      <input type="date" value={personnelEndDate} onChange={e=>setPersonnelEndDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
                     </div>
                   </div>
 
-                  <div className="flex-1">
+                  <div className="w-full">
                     <BarChart 
                       data={personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData} 
                       isDarkMode={isDarkMode}
@@ -2440,35 +2439,32 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* 圖表區 3: 線型圖 (月趨勢) */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <div className="flex justify-between items-center mb-8">
-                  <div>
-                    <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">近半年趨勢走勢圖</h3>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 font-medium">觀測各類別每月份案件數量波動</p>
+                {/* 圖表區 3: 趨勢走勢圖 (維持滿版寬度) */}
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <div className="flex justify-between items-center mb-8">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">近半年趨勢走勢圖</h3>
+                      <p className="text-xs text-slate-400 dark:text-slate-50 mt-1 font-bold">觀測各管道每月份案件數量波動</p>
+                    </div>
+                    <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl font-black text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="全類別">-- 綜合全類別 --</option>
+                      {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
                   </div>
-                  <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="全類別">-- 綜合全類別 --</option>
-                    {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
-                  </select>
+                  
+                  <LineChart 
+                    datasets={[
+                      { label: '總計', data: dashboardStats.trendData.total, color: '#94a3b8', dashed: true },
+                      { label: '電話', data: dashboardStats.trendData.phone, color: '#3b82f6' },
+                      { label: 'LINE', data: dashboardStats.trendData.line, color: '#10b981' },
+                      { label: '電話轉LINE', data: dashboardStats.trendData.phoneToLine, color: '#f59e0b' }
+                    ]} 
+                    labels={dashboardStats.monthLabels.map(m => m.replace('-','/'))} 
+                    isDarkMode={isDarkMode} 
+                  />
                 </div>
-                
-                <LineChart 
-                  datasets={[
-                    { label: '總計', data: dashboardStats.trendData.total, color: '#94a3b8', dashed: true },
-                    { label: '電話', data: dashboardStats.trendData.phone, color: '#3b82f6' },
-                    { label: 'LINE', data: dashboardStats.trendData.line, color: '#10b981' },
-                    { label: '電話轉LINE', data: dashboardStats.trendData.phoneToLine, color: '#f59e0b' }
-                  ]} 
-                  labels={dashboardStats.monthLabels.map(m => m.replace('-','/'))} 
-                  isDarkMode={isDarkMode} 
-                />
               </div>
-
-            </div>
-          )}
 
           {/* TAB 5: SETTINGS (系統設定區) */}
           {activeTab === 'settings' && (
