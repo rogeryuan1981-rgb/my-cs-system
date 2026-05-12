@@ -7,7 +7,7 @@ import {
   Menu, Eye, Moon, Sun, Camera, ArrowRight, Pin, Timer, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -414,7 +414,9 @@ export default function App() {
   const [categoryMapping, setCategoryMapping] = useState({});
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]); 
+
   const [allowEmptyContent, setAllowEmptyContent] = useState(false);
+  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState(30); // 新增：閒置登出時間 (預設 30 分鐘)
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
@@ -541,6 +543,43 @@ export default function App() {
   }, [firebaseUser, dbUsers]);
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
+  // --- 資安：單一登入踢除機制 (Single Sign-On Kick-out) ---
+  useEffect(() => {
+    if (activeUser && activeUser.sessionId) {
+      const currentSessionId = sessionStorage.getItem('cs_session_id');
+      // 如果資料庫裡的鑰匙，跟這台電腦記憶體裡的鑰匙不一樣，代表被別人登入了！
+      if (currentSessionId && activeUser.sessionId !== currentSessionId) {
+        alert('⚠️ 系統安全提示：您的帳號已在其他裝置或瀏覽器登入，為確保資訊安全，您已被強制登出。');
+        handleLogout();
+      }
+    }
+  }, [activeUser]);
+
+  // --- 資安：閒置自動登出機制 ---
+  useEffect(() => {
+    if (!currentUser || idleTimeoutMinutes <= 0) return;
+    let timeoutId;
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        alert(`⚠️ 系統安全提示：您已閒置超過 ${idleTimeoutMinutes} 分鐘，系統已為您自動登出。`);
+        handleLogout();
+      }, idleTimeoutMinutes * 60 * 1000);
+    };
+
+    // 監聽任何滑鼠移動、點擊、鍵盤打字來重置計時器
+    window.addEventListener('mousemove', resetTimer);
+    window.addEventListener('keydown', resetTimer);
+    window.addEventListener('click', resetTimer);
+    resetTimer(); // 啟動第一次計時
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+      window.removeEventListener('click', resetTimer);
+    };
+  }, [currentUser, idleTimeoutMinutes]);
 
   useEffect(() => {
     if (activeUser) {
@@ -612,10 +651,11 @@ export default function App() {
         setOverdueHours(data.overdueHours || 24);
         setHolidays(data.holidays || []);
         setAllowEmptyContent(data.allowEmptyContent || false);
+        setIdleTimeoutMinutes(data.idleTimeoutMinutes || 30);
       } else {
         setDoc(buildDocPath('cs_settings', 'dropdowns'), {
           channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: [], allowEmptyContent: false
+          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: [], allowEmptyContent: false, idleTimeoutMinutes: 30
         });
       }
     });
@@ -643,13 +683,26 @@ export default function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
+    const trimmedUsername = loginForm.username.trim();
     const email = getEmailFromUsername(trimmedUsername);
     try {
+      // 1. 強制設定為：瀏覽器一關閉就註銷 Auth Token
+      await setPersistence(auth, browserSessionPersistence);
+      
       await signInWithEmailAndPassword(auth, email, loginForm.password);
       const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
+        
+        // --- 產生唯一的 Session 鑰匙並寫入資料庫 ---
+        const newSessionId = Date.now().toString() + Math.random().toString(36).substring(7);
+        sessionStorage.setItem('cs_session_id', newSessionId);
+        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', matchedUser.id) : doc(db, 'cs_users', matchedUser.id), {
+          sessionId: newSessionId
+        });
+        // ----------------------------------------
+
         setFormData(getInitialForm(matchedUser.username, channels, progresses));
         
         if (matchedUser.forcePasswordChange) {
@@ -667,8 +720,15 @@ export default function App() {
         const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
           try {
+            await setPersistence(auth, browserSessionPersistence);
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
             if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', legacyUser.username);
+            
+            const newSessionId = Date.now().toString() + Math.random().toString(36).substring(7);
+            sessionStorage.setItem('cs_session_id', newSessionId);
+            const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+            await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', legacyUser.id) : doc(db, 'cs_users', legacyUser.id), { sessionId: newSessionId });
+
             setFormData(getInitialForm(legacyUser.username, channels, progresses));
             setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form');
             setAuthError('');
@@ -716,6 +776,7 @@ export default function App() {
   const handleLogout = async () => { 
     await auth.signOut();
     try {
+      sessionStorage.removeItem('cs_session_id'); // 清除本地鑰匙
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
       else await signInAnonymously(auth);
     } catch (e) {}
@@ -834,6 +895,18 @@ export default function App() {
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
       await setDoc(docRef, { overdueHours }, { merge: true });
       showToast("逾期判定時數已成功更新！");
+    } catch (e) {
+      showToast("更新失敗：" + e.message, 'error');
+    }
+  };
+  // ▼▼▼ 直接貼在它的下方，這是新加的函式 ▼▼▼
+  const handleSaveIdleTimeout = async () => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { idleTimeoutMinutes }, { merge: true });
+      showToast("系統閒置自動登出時間已更新！");
     } catch (e) {
       showToast("更新失敗：" + e.message, 'error');
     }
@@ -2523,19 +2596,28 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
 
               {settingsTab === 'system' && currentUser.role === ROLES.ADMIN && (
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8">
-                  {/* System Parameters (Overdue Hours & Manual Trigger) */}
-                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Timer size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統逾期參數設定</h3>
-                    <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4">
-                      <label className="text-sm font-bold text-slate-700 dark:text-slate-300">逾期判定時數 (小時)：</label>
-                      <input type="number" min="1" value={overdueHours} onChange={e => setOverdueHours(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
-                      <button onClick={handleSaveOverdueHours} className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-all">儲存參數</button>
-                      <button onClick={handleManualTrigger} disabled={isTriggering} className="w-full md:w-auto px-6 py-3 bg-amber-500 text-white rounded-xl hover:bg-amber-600 shadow-md font-black text-sm transition-all disabled:opacity-50 flex items-center justify-center">
-                        {isTriggering ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div> : null}
-                        強制觸發推播
-                      </button>
+                  {/* System Parameters (Overdue Hours & Idle Timeout) */}
+                  <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm space-y-8">
+                    <div>
+                      <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Timer size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 系統逾期與時效設定</h3>
+                      <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4 mb-4">
+                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300 w-48 shrink-0">逾期判定時數 (小時)：</label>
+                        <input type="number" min="1" value={overdueHours} onChange={e => setOverdueHours(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
+                        <button onClick={handleSaveOverdueHours} className="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm transition-all">儲存逾期參數</button>
+                        <button onClick={handleManualTrigger} disabled={isTriggering} className="w-full md:w-auto px-6 py-3 bg-amber-500 text-white rounded-xl hover:bg-amber-600 shadow-md font-black text-sm transition-all disabled:opacity-50 flex items-center justify-center">
+                          {isTriggering ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div> : null}
+                          強制觸發推播
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 font-medium">設定後，維護區內未結案且超過此時數的案件，將會顯示閃爍紅色的「逾期」提示標籤。</p>
+                    <div className="border-t border-slate-100 dark:border-slate-700 pt-6">
+                      <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-4">
+                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300 w-48 shrink-0">閒置自動登出 (分鐘)：</label>
+                        <input type="number" min="1" max="1440" value={idleTimeoutMinutes} onChange={e => setIdleTimeoutMinutes(Number(e.target.value))} className="w-full md:w-32 p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
+                        <button onClick={handleSaveIdleTimeout} className="w-full md:w-auto px-6 py-3 bg-slate-800 dark:bg-slate-600 text-white rounded-xl hover:bg-slate-900 dark:hover:bg-slate-500 shadow-md font-black text-sm transition-all">儲存閒置參數</button>
+                      </div>
+                      <p className="text-xs text-orange-500 dark:text-orange-400 mt-3 font-medium">⚠️ 提示：為確保資安，同仁在系統閒置超過此分鐘數未操作，或是使用其他電腦/瀏覽器再次登入時，原先的連線將被自動強制登出。關閉瀏覽器分頁也會立即登出。</p>
+                    </div>
                   </div>
                   {/* 新增：特殊時期彈性建檔開關 */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mt-8">
