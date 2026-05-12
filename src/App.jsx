@@ -179,8 +179,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   );
 };
 
-// --- 新增：坐標軸垂直長條圖組件 ---
-// --- 改良版：動態角度感應垂直長條圖組件 ---
+// --- 最終優化版：長文字自適應垂直長條圖組件 ---
 const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
   if (!data || Object.keys(data).length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500 font-black">無數據</div>;
 
@@ -189,19 +188,20 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
   const values = entries.map(e => e[1]);
   const maxVal = Math.max(...values, 10);
   
-  const height = 300, width = 800, paddingX = 60, paddingY = 60;
+  // height 增加到 380，paddingY (底部空間) 增加到 120
+  const height = 380, width = 800, paddingX = 60, paddingTop = 30, paddingBottom = 120;
   const chartWidth = width - paddingX * 2;
-  const chartHeight = height - paddingY * 2;
+  const chartHeight = height - paddingTop - paddingBottom;
   const barWidth = (chartWidth / labels.length) * 0.5;
   const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
-  const axisTextColor = isDarkMode ? "#94a3b8" : "#64748b"; // 稍微加深顏色
+  const axisTextColor = isDarkMode ? "#94a3b8" : "#64748b";
 
   return (
-    <div className="w-full overflow-x-auto scrollbar-hide mt-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto min-h-[300px] min-w-[600px] drop-shadow-sm">
+    <div className="w-full overflow-x-auto scrollbar-hide mt-2">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto min-h-[400px] min-w-[700px] drop-shadow-sm">
         {/* 背景網格與 Y 軸數值 */}
         {[0, 0.5, 1].map(ratio => {
-          const y = height - paddingY - ratio * chartHeight;
+          const y = height - paddingBottom - ratio * chartHeight;
           return (
             <g key={ratio}>
               <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
@@ -214,13 +214,13 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
         {entries.map(([label, val], i) => {
           const x = paddingX + (i * (chartWidth / (labels.length || 1))) + (chartWidth / labels.length / 2);
           const barHeight = (val / maxVal) * chartHeight;
-          const y = height - paddingY - barHeight;
+          const y = height - paddingBottom - barHeight;
 
-          // ✨ 智慧邏輯：判斷字數決定角度
-          const isLongText = label.length > 4;
+          // 智慧判斷：標籤超過 3 個字就傾斜，並稍微縮小極長文字的字級
+          const isLongText = label.length > 3;
           const rotateAngle = isLongText ? 35 : 0;
           const textAnchor = isLongText ? "start" : "middle";
-          const yOffset = isLongText ? 15 : 25;
+          const labelFontSize = label.length > 10 ? "11" : "13";
 
           return (
             <g key={label} className="cursor-pointer group" onClick={() => onClick && onClick(label)}>
@@ -231,32 +231,32 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
                 height={barHeight} 
                 fill={color} 
                 rx="6"
-                className="transition-all duration-500 ease-out group-hover:brightness-125"
+                className="transition-all duration-500 ease-out group-hover:brightness-125 shadow-lg"
               />
-              {/* 頂部數值 - 永遠顯示且加粗 */}
+              {/* 頂部數值 - 始終加粗顯示 */}
               {val > 0 && (
-                <text x={x} y={y - 10} fontSize="15" fill={isDarkMode ? "#cbd5e1" : "#1e293b"} textAnchor="middle" fontWeight="900" className="transition-all">
+                <text x={x} y={y - 10} fontSize="15" fill={isDarkMode ? "#cbd5e1" : "#1e293b"} textAnchor="middle" fontWeight="900">
                   {val}
                 </text>
               )}
-              {/* X 軸標籤 - 動態旋轉 */}
-              <g transform={`translate(${x}, ${height - paddingY + yOffset})`}>
+              {/* X 軸標籤 - 針對長文字優化位置 */}
+              <g transform={`translate(${x}, ${height - paddingBottom + 18})`}>
                 <text 
                   transform={`rotate(${rotateAngle})`} 
-                  fontSize="13" 
+                  fontSize={labelFontSize}
                   fill={axisTextColor} 
                   fontWeight="900" 
                   textAnchor={textAnchor}
                   className="select-none group-hover:fill-blue-500 transition-colors"
                 >
-                  {label.length > 12 ? label.substring(0, 11) + '..' : label}
+                  {label}
                 </text>
               </g>
             </g>
           );
         })}
         {/* 基準底線 */}
-        <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke={gridColor} strokeWidth="2" />
+        <line x1={paddingX} y1={height - paddingBottom} x2={width - paddingX} y2={height - paddingBottom} stroke={gridColor} strokeWidth="2" />
       </svg>
     </div>
   );
