@@ -2466,6 +2466,9 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 </div>
               </div>
 
+            </div>
+          )}
+
           {/* TAB 5: SETTINGS (系統設定區) */}
           {activeTab === 'settings' && (
             <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8 max-w-[1400px] mx-auto">
