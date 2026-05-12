@@ -179,6 +179,82 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   );
 };
 
+// --- 新增：坐標軸垂直長條圖組件 ---
+const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
+  if (!data || Object.keys(data).length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold">無數據</div>;
+
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const labels = entries.map(e => e[0]);
+  const values = entries.map(e => e[1]);
+  const maxVal = Math.max(...values, 10);
+  
+  const height = 300, width = 800, paddingX = 60, paddingY = 60; // 增加下邊距給傾斜文字
+  const chartWidth = width - paddingX * 2;
+  const chartHeight = height - paddingY * 2;
+  const barWidth = (chartWidth / labels.length) * 0.5; // 長條寬度
+  const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
+  const axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8";
+
+  return (
+    <div className="w-full overflow-x-auto scrollbar-hide mt-4">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-72 md:h-80 min-w-[600px] drop-shadow-sm">
+        {/* 背景網格與 Y 軸數值 */}
+        {[0, 0.5, 1].map(ratio => {
+          const y = height - paddingY - ratio * chartHeight;
+          return (
+            <g key={ratio}>
+              <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
+              <text x={paddingX - 10} y={y + 4} fontSize="13" fill={axisTextColor} textAnchor="end" fontWeight="bold">{Math.round(maxVal * ratio)}</text>
+            </g>
+          );
+        })}
+
+        {/* 長條圖實體 */}
+        {entries.map(([label, val], i) => {
+          const x = paddingX + (i * (chartWidth / (labels.length || 1))) + (chartWidth / labels.length / 2);
+          const barHeight = (val / maxVal) * chartHeight;
+          const y = height - paddingY - barHeight;
+
+          return (
+            <g key={label} className="cursor-pointer group" onClick={() => onClick && onClick(label)}>
+              <rect 
+                x={x - barWidth / 2} 
+                y={y} 
+                width={barWidth} 
+                height={barHeight} 
+                fill={color} 
+                rx="6"
+                className="transition-all duration-500 ease-out group-hover:brightness-110 group-hover:opacity-80"
+              />
+              {/* 頂部數值 */}
+              {val > 0 && (
+                <text x={x} y={y - 8} fontSize="14" fill={color} textAnchor="middle" fontWeight="black" className="transition-all">
+                  {val}
+                </text>
+              )}
+              {/* X 軸標籤 (傾斜 45 度) */}
+              <g transform={`translate(${x}, ${height - paddingY + 15})`}>
+                <text 
+                  transform="rotate(35)" 
+                  fontSize="12" 
+                  fill={axisTextColor} 
+                  fontWeight="bold" 
+                  textAnchor="start"
+                  className="select-none group-hover:fill-blue-500 transition-colors"
+                >
+                  {label.length > 12 ? label.substring(0, 11) + '..' : label}
+                </text>
+              </g>
+            </g>
+          );
+        })}
+        {/* 基準底線 */}
+        <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke={gridColor} strokeWidth="2" />
+      </svg>
+    </div>
+  );
+};
+
 const CannedMessagesModal = ({ messages, onClose }) => {
   const [copyId, setCopyId] = useState(null);
   const handleCopy = (text, idx) => {
@@ -2296,88 +2372,67 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
               </div>
 
               {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                  <div>
-                    <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務類別分佈</h3>
-                      <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                        <button onClick={() => setCategoryViewMode('detail')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>細項類別</button>
-                        <button onClick={() => setCategoryViewMode('major')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>大類別彙整</button>
+              {/* 這裡使用了 Grid 佈局，在大螢幕 (lg) 時會自動並排成兩欄 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                
+                {/* 圖表區 1: 坐標軸長條圖 (服務類別分佈) */}
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                    <div>
+                      <div className="flex items-center space-x-4">
+                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務類別分佈</h3>
+                        <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                          <button onClick={() => setCategoryViewMode('detail')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>細項類別</button>
+                          <button onClick={() => setCategoryViewMode('major')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>大類別彙整</button>
+                        </div>
                       </div>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 font-medium italic">點擊下方標籤或長條可直接跳轉明細</p>
                     </div>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 font-medium">點擊長條圖可直接跳轉至歷史查詢區檢視該分類資料</p>
+                    <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
+                      <Calendar size={14} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                      <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                      <span className="text-slate-300 dark:text-slate-500">~</span>
+                      <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
-                    <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
-                    <input type="date" value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
-                    <span className="text-slate-300 dark:text-slate-500">~</span>
-                    <input type="date" value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                  
+                  {/* 使用新組件 */}
+                  <div className="flex-1">
+                    <BarChart 
+                      data={categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData} 
+                      isDarkMode={isDarkMode}
+                      color={isDarkMode ? "#818cf8" : "#6366f1"}
+                      onClick={(cat) => handleCategoryClick(cat)}
+                    />
                   </div>
                 </div>
-                
-                {categoryViewMode === 'major' && Object.keys(dashboardStats.aggregatedCategoryData).length === 0 ? (
-                  <div className="h-[320px] flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm bg-slate-50 dark:bg-slate-700/30 rounded-2xl mt-4">目前無大類別資料，請至「系統設定區」進行歸屬設定。</div>
-                ) : (
-                  <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
-                    {Object.entries(categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData).sort((a,b)=>b[1]-a[1]).map(([cat, count]) => {
-                        const currentData = categoryViewMode === 'detail' ? dashboardStats.categoryData : dashboardStats.aggregatedCategoryData;
-                        const maxVal = Math.max(...Object.values(currentData), 1);
-                        const heightPct = (count / maxVal) * 100;
-                        const barColorClass = categoryViewMode === 'detail' ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-blue-500 dark:bg-blue-400';
-                        const textColorClass = categoryViewMode === 'detail' ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'group-hover:text-blue-600 dark:group-hover:text-blue-400';
-                        return (
-                          <div key={cat} onClick={() => handleCategoryClick(cat)} title="點擊查看此分類歷史紀錄" className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500 cursor-pointer">
-                            <div className="absolute -top-8 text-slate-900 dark:text-slate-800 bg-slate-100 dark:bg-slate-200 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">{count} 件</div>
-                            <div className="w-10 bg-slate-100 dark:bg-slate-700 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner"><div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div></div>
-                            <div className={`text-[12px] font-bold text-slate-500 dark:text-slate-400 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>{cat}</div>
-                          </div>
-                        );
-                    })}
-                  </div>
-                )}
-              </div>
 
-              {/* 圖表區 2: 負責人與地區分佈 (切換直條圖) */}
-              <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                  <div>
+                {/* 圖表區 2: 坐標軸長條圖 (案件處理人員統計) */}
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
                     <div className="flex items-center space-x-4">
-                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">案件處理人員統計</h3>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">人員與區域統計</h3>
                       <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
                         <button onClick={() => setPersonnelViewMode('assignee')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'assignee' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>處理人員</button>
-                        <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>群組</button>
+                        <button onClick={() => setPersonnelViewMode('region')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${personnelViewMode === 'region' ? 'bg-white dark:bg-slate-600 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>群組區域</button>
                       </div>
                     </div>
+                    <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
+                      <Calendar size={14} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                      <input type="date" value={personnelStartDate} onChange={e=>setPersonnelStartDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                      <span className="text-slate-300 dark:text-slate-500">~</span>
+                      <input type="date" value={personnelEndDate} onChange={e=>setPersonnelEndDate(e.target.value)} className="bg-transparent text-[11px] font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
-                    <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
-                    <input type="date" value={personnelStartDate} onChange={e=>setPersonnelStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
-                    <span className="text-slate-300 dark:text-slate-500">~</span>
-                    <input type="date" value={personnelEndDate} onChange={e=>setPersonnelEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+
+                  <div className="flex-1">
+                    <BarChart 
+                      data={personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData} 
+                      isDarkMode={isDarkMode}
+                      color={personnelViewMode === 'assignee' ? "#6366f1" : "#10b981"}
+                    />
                   </div>
                 </div>
-                
-                {Object.keys(personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData).length === 0 ? (
-                  <div className="h-[320px] flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm bg-slate-50 dark:bg-slate-700/30 rounded-2xl mt-4">目前無相關資料。</div>
-                ) : (
-                  <div className="flex h-[320px] items-end space-x-4 md:space-x-8 overflow-x-auto pb-4 pt-12 px-4">
-                    {Object.entries(personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData).sort((a,b)=>b[1]-a[1]).map(([key, count]) => {
-                        const currentData = personnelViewMode === 'assignee' ? dashboardStats.assigneeData : dashboardStats.regionData;
-                        const maxVal = Math.max(...Object.values(currentData), 1);
-                        const heightPct = (count / maxVal) * 100;
-                        const barColorClass = personnelViewMode === 'assignee' ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-emerald-500 dark:bg-emerald-400';
-                        const textColorClass = personnelViewMode === 'assignee' ? 'group-hover:text-indigo-600 dark:group-hover:text-indigo-400' : 'group-hover:text-emerald-600 dark:group-hover:text-emerald-400';
-                        return (
-                          <div key={key} className="group flex flex-col items-center justify-end h-full w-12 shrink-0 relative animate-in fade-in duration-500">
-                            <div className="absolute -top-8 text-slate-900 dark:text-slate-800 bg-slate-100 dark:bg-slate-200 px-2 py-1 rounded-md text-[11px] font-bold whitespace-nowrap z-10 shadow-sm transition-transform transform group-hover:-translate-y-1">{count} 件</div>
-                            <div className="w-10 bg-slate-100 dark:bg-slate-700 rounded-t-full h-full flex flex-col justify-end overflow-hidden relative group-hover:shadow-inner"><div className={`w-full ${barColorClass} rounded-t-full transition-all duration-1000 ease-out group-hover:brightness-110`} style={{ height: `${heightPct}%` }}></div></div>
-                            <div className={`text-[12px] font-bold text-slate-500 dark:text-slate-400 mt-4 h-32 text-center leading-tight [writing-mode:vertical-rl] transition-colors tracking-widest select-none ${textColorClass}`}>{key}</div>
-                          </div>
-                        );
-                    })}
-                  </div>
-                )}
               </div>
 
               {/* 圖表區 3: 線型圖 (月趨勢) */}
