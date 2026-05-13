@@ -11,6 +11,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, 
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+const [showCannedPopup, setShowCannedPopup] = useState(false);
 
 // --- 強制設定 Tailwind CSS 支援 Class 切換深色模式 ---
 if (typeof window !== 'undefined') {
@@ -1778,16 +1779,25 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     );
   }
 
-  const renderNavButton = (id, Icon, label) => (
+  const renderNavButton = (id, Icon, label, isExpanded) => (
     <button 
       onClick={() => {
         setActiveTab(id);
         if (!isPinned && window.innerWidth < 1024) setIsSidebarOpen(false);
       }} 
-      className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}
+      className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all duration-200 group ${
+        activeTab === id 
+        ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' 
+        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
+      }`}
     >
-      <Icon size={20} />
-      <span className="font-bold text-sm tracking-wide">{label}</span>
+      <Icon size={20} className="shrink-0" />
+      {/* 使用 opacity-0 與 overflow-hidden 解決文字擠壓問題，並加上動畫 */}
+      <span className={`ml-3 font-bold text-sm tracking-wide whitespace-nowrap transition-all duration-300 ${
+        isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'
+      }`}>
+        {label}
+      </span>
     </button>
   );
 
@@ -1832,7 +1842,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
         </div>
 
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto mt-2">
-          {/* 這裡的 renderNavButton 會根據 (isPinned || isSidebarOpen) 自動顯示/隱藏文字 */}
           {currentUser.role !== ROLES.VIEWER && (
             <>
               {renderNavButton('form', Plus, '新增紀錄區', isPinned || isSidebarOpen)}
@@ -1843,6 +1852,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區', isPinned || isSidebarOpen)}
           {renderNavButton('dashboard', LayoutDashboard, '進階統計區', isPinned || isSidebarOpen)}
           {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區', isPinned || isSidebarOpen)}
           {renderNavButton('settings', Settings, '系統設定區', isPinned || isSidebarOpen)}
         </nav>
       </div>
@@ -1916,7 +1926,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                           <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
                           <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
                         </div>
-                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
+                        <textarea id="replyContent" name="replyContent" onFocus={() => setShowCannedPopup(true)} required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
                       </div>
                     </div>
                 </div>
