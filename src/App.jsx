@@ -689,17 +689,20 @@ export default function App() {
     const unsubSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), docSnap => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setChannels(data.channels || []); setCategories(data.categories || []);
-        setStatuses(data.statuses || []); setProgresses(data.progresses || []);
-        setCannedMessages(data.cannedMessages || []); setCategoryMapping(data.categoryMapping || {});
+        setChannels(data.channels || []); 
+        setCategories(data.categories || []);
+        setStatuses(data.statuses || []); 
+        setProgresses(data.progresses || []);
+        setCannedMessages(data.cannedMessages || []); 
+        setCategoryMapping(data.categoryMapping || {});
         setOverdueHours(data.overdueHours || 24);
         setHolidays(data.holidays || []);
         setAllowEmptyContent(data.allowEmptyContent || false);
       } else {
-        setDoc(buildDocPath('cs_settings', 'dropdowns'), {
-          channels: ["電話", "LINE"], categories: ["慢防-成人預防保健", "其他"], statuses: ["詢問步驟", "其他"],
-          progresses: ["待處理", "處理中", "待回覆", "結案"], cannedMessages: ["請提供更詳細的相關資訊以便查詢"], categoryMapping: {}, overdueHours: 24, holidays: [], allowEmptyContent: false
-        });
+        // 🛡️ 防護修正：資料不存在時，僅在 Console 提示，絕對不自動寫入預設值
+        console.warn("⚠️ 系統警示：找不到 cs_settings 設定文件，請檢查資料庫路徑或手動於後台重新設定。");
+        // 初始化為空，避免畫面掛掉，但不會去寫入資料庫
+        setChannels([]); setCategories([]); setStatuses([]); setProgresses([]);
       }
     });
 
