@@ -4,10 +4,10 @@ import {
   PhoneCall, MessageCircle, Clock, Save, FileText, Search, CheckCircle, AlertCircle, User, 
   List, LayoutDashboard, Plus, X, Settings, Trash2, Upload, Database, Edit, UserPlus, 
   Shield, Lock, Calendar, Copy, Check, ArrowUp, ArrowDown, MessageSquare, Download, 
-  Menu, Eye, Moon, Sun, Camera, ArrowRight, Pin, Timer, ChevronLeft, ChevronRight
+  Menu, Eye, Moon, Sun, Camera, ArrowRight, Pin, Timer, ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -20,7 +20,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --- System Variables ---
-const APP_VERSION = "v3.8 (全面現代化提示版)";
+const APP_VERSION = "v3.9 (智慧佈局與神速輸入版)";
 
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -179,7 +179,6 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   );
 };
 
-// --- 最終優化版：長文字自適應垂直長條圖組件 ---
 const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
   if (!data || Object.keys(data).length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500 font-black">無數據</div>;
 
@@ -188,7 +187,6 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
   const values = entries.map(e => e[1]);
   const maxVal = Math.max(...values, 10);
   
-  // height 增加到 380，paddingY (底部空間) 增加到 120
   const height = 380, width = 800, paddingX = 60, paddingTop = 30, paddingBottom = 120;
   const chartWidth = width - paddingX * 2;
   const chartHeight = height - paddingTop - paddingBottom;
@@ -199,7 +197,6 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
   return (
     <div className="w-full overflow-x-auto scrollbar-hide mt-2">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto min-h-[400px] min-w-[700px] drop-shadow-sm">
-        {/* 背景網格與 Y 軸數值 */}
         {[0, 0.5, 1].map(ratio => {
           const y = height - paddingBottom - ratio * chartHeight;
           return (
@@ -210,13 +207,11 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
           );
         })}
 
-        {/* 長條圖實體 */}
         {entries.map(([label, val], i) => {
           const x = paddingX + (i * (chartWidth / (labels.length || 1))) + (chartWidth / labels.length / 2);
           const barHeight = (val / maxVal) * chartHeight;
           const y = height - paddingBottom - barHeight;
 
-          // 智慧判斷：標籤超過 3 個字就傾斜，並稍微縮小極長文字的字級
           const isLongText = label.length > 3;
           const rotateAngle = isLongText ? 35 : 0;
           const textAnchor = isLongText ? "start" : "middle";
@@ -233,13 +228,11 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
                 rx="6"
                 className="transition-all duration-500 ease-out group-hover:brightness-125 shadow-lg"
               />
-              {/* 頂部數值 - 始終加粗顯示 */}
               {val > 0 && (
                 <text x={x} y={y - 10} fontSize="15" fill={isDarkMode ? "#cbd5e1" : "#1e293b"} textAnchor="middle" fontWeight="900">
                   {val}
                 </text>
               )}
-              {/* X 軸標籤 - 針對長文字優化位置 */}
               <g transform={`translate(${x}, ${height - paddingBottom + 18})`}>
                 <text 
                   transform={`rotate(${rotateAngle})`} 
@@ -255,39 +248,8 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
             </g>
           );
         })}
-        {/* 基準底線 */}
         <line x1={paddingX} y1={height - paddingBottom} x2={width - paddingX} y2={height - paddingBottom} stroke={gridColor} strokeWidth="2" />
       </svg>
-    </div>
-  );
-};
-
-const CannedMessagesModal = ({ messages, onClose }) => {
-  const [copyId, setCopyId] = useState(null);
-  const handleCopy = (text, idx) => {
-    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); setCopyId(idx); setTimeout(() => { setCopyId(null); onClose(); }, 500); } catch (err) { console.error('Copy failed', err); }
-    document.body.removeChild(ta);
-  };
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white dark:bg-slate-800 rounded-[2rem] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
-          <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-blue-600 dark:text-blue-400"/> 選擇罐頭回覆</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"><X size={20}/></button>
-        </div>
-        <div className="p-6 space-y-3 overflow-y-auto flex-1">
-          {(Array.isArray(messages)?messages:[]).map((m, idx) => (
-            <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-2xl border border-slate-100 dark:border-slate-600 hover:border-blue-300 dark:border-blue-500 hover:shadow-md transition-all group relative cursor-pointer" onClick={() => handleCopy(m, idx)}>
-              <p className="text-sm text-slate-600 dark:text-slate-200 line-clamp-4 pr-6">{m}</p>
-              <button className="absolute top-2 right-2 p-1.5 bg-white dark:bg-slate-600 rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400">
-                {copyId === idx ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-              </button>
-            </div>
-          ))}
-          {(!messages || messages.length === 0) && <p className="text-xs text-slate-400 text-center py-6">目前尚無罐頭文字。</p>}
-        </div>
-      </div>
     </div>
   );
 };
@@ -319,20 +281,20 @@ const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
   };
 
   const handleDrop = async (e, dropIdx) => {
-    e.preventDefault();
-    if (draggedIdx === null || draggedIdx === dropIdx) return;
-    const newItems = [...safeItems];
-    const [moved] = newItems.splice(draggedIdx, 1);
-    newItems.splice(dropIdx, 0, moved);
+    e.preventDefault();
+    if (draggedIdx === null || draggedIdx === dropIdx) return;
+    const newItems = [...safeItems];
+    const [moved] = newItems.splice(draggedIdx, 1);
+    newItems.splice(dropIdx, 0, moved);
     try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
-      await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
-      setDraggedIdx(null);
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { [dbKey]: newItems }, { merge: true });
+      setDraggedIdx(null);
     } catch (error) {
       showToast('排序更新失敗：' + error.message, 'error');
     }
-  };
+  };
 
   return (
     <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 flex flex-col h-full">
@@ -402,7 +364,7 @@ const useDebounce = (value, delay) => {
 // --- 主應用程式 App ---
 // -------------------------------------------------
 
-// 輔助組件：分頁器 (補回遺失的元件)
+// 輔助組件：分頁器
 const Pagination = ({ currentPage, totalCount, pageSize, onPageChange }) => {
   const totalPages = Math.ceil(totalCount / pageSize);
   if (totalCount === 0) return null;
@@ -432,7 +394,7 @@ const Pagination = ({ currentPage, totalCount, pageSize, onPageChange }) => {
   );
 };
 
-// 輔助組件：精緻的資訊卡片 (用於檢視模式)
+// 輔助組件：精緻的資訊卡片
 const InfoCard = ({ label, value, isHighlight }) => (
   <div className={`p-4 rounded-2xl border ${isHighlight ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'}`}>
     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{label}</span>
@@ -440,10 +402,8 @@ const InfoCard = ({ label, value, isHighlight }) => (
   </div>
 );
 
-// 輔助組件：表單輸入框 (用於強制維護模式)
-// 輔助組件：表單輸入框 (防彈安全版，保證不白屏)
+// 輔助組件：表單輸入框
 const EditField = ({ label, val, setVal, type = "text", options = [] }) => {
-  // 強制確保 options 絕對是陣列，防止 .map 崩潰
   const safeOptions = Array.isArray(options) ? options : [];
   
   return (
@@ -487,7 +447,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('form'); 
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitStatus, setSubmitStatus] = useState({ type: '', msg: '' });
 
   const [channels, setChannels] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -498,7 +457,10 @@ export default function App() {
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]); 
   const [allowEmptyContent, setAllowEmptyContent] = useState(false);
-  const [showCannedModal, setShowCannedModal] = useState(false);
+  
+  // 新增：防呆/加載與罐頭文字專用 State
+  const [isInstLoaded, setIsInstLoaded] = useState(false);
+  const [cannedPopupTarget, setCannedPopupTarget] = useState(null); // 'form' 或 'maintenance'
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState([]); 
@@ -562,7 +524,7 @@ export default function App() {
 
   const [settingsTab, setSettingsTab] = useState('general');
   const [isTriggering, setIsTriggering] = useState(false); 
-  const [isProcessing, setIsProcessing] = useState(false); // 新增：防止關鍵動作連點
+  const [isProcessing, setIsProcessing] = useState(false); 
 
   const [newHoliday, setNewHoliday] = useState({ start: '', end: '', note: '' }); 
   const [leaveForm, setLeaveForm] = useState({ start: '', end: '', delegate: '' }); 
@@ -587,11 +549,11 @@ export default function App() {
     const map = {}; dbUsers.forEach(u => map[u.username] = u); return map;
   }, [dbUsers]);
 
-// --- 現代化提示系統與強制改密碼 State ---
+  // --- 現代化提示系統與強制改密碼 State ---
   const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
   const [confirmDialog, setConfirmDialog] = useState({ show: false, msg: '', onConfirm: null });
   const [showForcePwdModal, setShowForcePwdModal] = useState(false);
-  const [forcePwdForm, setForcePwdForm] = useState({ newPwd: '', confirmPwd: '' }); // ✅ 修復：補上漏掉的密碼表單狀態
+  const [forcePwdForm, setForcePwdForm] = useState({ newPwd: '', confirmPwd: '' });
 
   const showToast = (msg, type = 'success') => {
     setToast({ show: true, msg, type });
@@ -625,6 +587,32 @@ export default function App() {
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
+  // --- 資安：閒置自動登出機制 (純前端防護版) ---
+  useEffect(() => {
+    if (!currentUser) return;
+    let timeoutId;
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      // 30 分鐘 = 30 * 60 * 1000 = 1800000 毫秒
+      timeoutId = setTimeout(() => {
+        alert("⚠️ 系統安全提示：您已閒置超過 30 分鐘，為保護資訊安全，系統已自動登出。");
+        handleLogout();
+      }, 30 * 60 * 1000);
+    };
+
+    window.addEventListener('mousemove', resetTimer);
+    window.addEventListener('keydown', resetTimer);
+    window.addEventListener('click', resetTimer);
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+      window.removeEventListener('click', resetTimer);
+    };
+  }, [currentUser]);
+
   useEffect(() => {
     if (activeUser) {
       setLeaveForm({ start: activeUser.leaveStart || '', end: activeUser.leaveEnd || '', delegate: activeUser.delegateUser || '' });
@@ -654,7 +642,6 @@ export default function App() {
   }, []);
 
   // --- Data Fetching ---
-// --- Data Fetching ---
   useEffect(() => {
     if (!firebaseUser) return;
     const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : []; 
@@ -671,7 +658,6 @@ export default function App() {
         if (data.isChunk && data.payload) {
           try { 
             JSON.parse(data.payload).forEach(item => { 
-              // 🔽 這裡修復了原先 instListList 的拼寫錯誤，改回正確的 instList
               instList.push({ id: doc.id, isChunk: true, ...item }); 
               map[item.code] = { name: item.name, level: item.level }; 
             }); 
@@ -683,7 +669,9 @@ export default function App() {
           map[data.code] = { name: data.name, level: data.level }; 
         }
       });
-      setInstitutions(instList); setInstMap(map);
+      setInstitutions(instList); 
+      setInstMap(map);
+      setIsInstLoaded(true); // 標記載入完成，防白屏解鎖
     });
     
     const unsubSettings = onSnapshot(buildDocPath('cs_settings', 'dropdowns'), docSnap => {
@@ -699,9 +687,8 @@ export default function App() {
         setHolidays(data.holidays || []);
         setAllowEmptyContent(data.allowEmptyContent || false);
       } else {
-        // 🛡️ 防護修正：資料不存在時，僅在 Console 提示，絕對不自動寫入預設值
+        // 🛡️ 防護修正：資料不存在時，僅在 Console 提示，絕對不自動寫入預設值蓋掉資料
         console.warn("⚠️ 系統警示：找不到 cs_settings 設定文件，請檢查資料庫路徑或手動於後台重新設定。");
-        // 初始化為空，避免畫面掛掉，但不會去寫入資料庫
         setChannels([]); setCategories([]); setStatuses([]); setProgresses([]);
       }
     });
@@ -729,10 +716,13 @@ export default function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
+    const trimmedUsername = loginForm.username.trim();
     const email = getEmailFromUsername(trimmedUsername);
     try {
+      // 🛡️ 資安防護：設定瀏覽器分頁關閉即自動登出
+      await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, loginForm.password);
+      
       const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
@@ -753,6 +743,7 @@ export default function App() {
         const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
           try {
+            await setPersistence(auth, browserSessionPersistence);
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
             if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', legacyUser.username);
             setFormData(getInitialForm(legacyUser.username, channels, progresses));
@@ -778,8 +769,9 @@ export default function App() {
     if (dbUsers.length > 0) return;
     if (loginForm.password.length < 6) return setAuthError('密碼長度至少需要 6 個字元！');
     try {
-      const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除空白
+      const trimmedUsername = loginForm.username.trim();
       const email = getEmailFromUsername(trimmedUsername);
+      await setPersistence(auth, browserSessionPersistence);
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
@@ -813,7 +805,7 @@ export default function App() {
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN) return;
-    const trimmedUsername = newUser.username.trim(); // ✅ 自動清除空白
+    const trimmedUsername = newUser.username.trim();
     if (dbUsers.some(u => u.username === trimmedUsername)) return showToast('帳號名稱已存在', 'error');
     if (newUser.password.length < 6) return showToast('密碼長度至少需要 6 個字元！', 'error');
     try {
@@ -858,26 +850,26 @@ export default function App() {
   };
 
   const handleUpdateUserRegion = async (id, regionValue) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { region: regionValue.trim() });
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { region: regionValue.trim() });
       showToast('群組歸屬已更新！');
-    } catch (e) {
-      showToast('更新地區失敗：' + e.message, 'error');
-    }
-  };
+    } catch (e) {
+      showToast('更新地區失敗：' + e.message, 'error');
+    }
+  };
 
-  const handleUpdateUserLineId = async (id, lineIdValue) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
-    try {
-      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
+  const handleUpdateUserLineId = async (id, lineIdValue) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { lineUserId: lineIdValue.trim() });
       showToast('LINE UID 已更新綁定！');
-    } catch (e) {
-      showToast('更新 LINE UID 失敗：' + e.message, 'error');
-    }
-  };
+    } catch (e) {
+      showToast('更新 LINE UID 失敗：' + e.message, 'error');
+    }
+  };
   
   const handleUpdateUserAssignWhenClosed = async (id, value) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
@@ -1066,31 +1058,26 @@ export default function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // 1. 防連點鎖定：如果正在處理中，直接跳出不執行
     if (isProcessing) return;
 
-    // 2. 權限檢查
     if (currentUser?.role === ROLES.VIEWER) { 
-      setSubmitStatus({ type: 'error', msg: '儲存失敗：您沒有新增權限' }); 
+      showToast('儲存失敗：您沒有新增權限', 'error'); 
       return; 
     }
     
-    // 3. 基礎欄位驗證
     const code = formData.instCode ? formData.instCode.trim() : '';
-    if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼英數字或 999' });
-    if (!formData.channel || !formData.category || !formData.status || !formData.progress) return setSubmitStatus({ type: 'error', msg: '請確實選擇下拉選單選項' });
+    if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return showToast('儲存失敗：院所代碼必須為 10 碼英數字或 999', 'error');
+    if (!formData.channel || !formData.category || !formData.status || !formData.progress) return showToast('儲存失敗：請確實選擇下拉選單選項', 'error');
     if (!allowEmptyContent && (!formData.extraInfo?.trim() || !formData.replyContent?.trim())) {
-      return setSubmitStatus({ type: 'error', msg: '問題描述與答覆不能為空' });
+      return showToast('儲存失敗：問題描述與答覆不能為空', 'error');
     }
 
-    // --- 4. 重要優化：送出前強制「同步補齊」院所名稱 (解決手速過快沒觸發 Blur 的問題) ---
     let finalInstName = formData.instName;
     let finalInstLevel = formData.instLevel;
     
     if (code && code !== '999') {
       const paddedCode = code.padStart(10, '0');
-      const matchedData = instMap[code] || instMap[paddedCode]; // 同步從記憶體地圖抓取
+      const matchedData = instMap[code] || instMap[paddedCode];
       if (matchedData) {
         finalInstName = matchedData.name;
         finalInstLevel = matchedData.level;
@@ -1099,24 +1086,18 @@ export default function App() {
         finalInstLevel = '';
       }
     }
-    // -----------------------------------------------------------------------------
 
     try {
-      // 開啟全域鎖定與 Loading 狀態
       setIsProcessing(true);
-      setSubmitStatus({ type: 'loading', msg: '儲存中...' });
 
-      // 5. 案件編號生成邏輯 (保留您原有的邏輯)
       const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const todayTickets = tickets.filter(t => t.ticketId && t.ticketId.startsWith(todayStr));
       let maxSeq = 0;
       todayTickets.forEach(t => { const seq = parseInt(t.ticketId.slice(8), 10); if (!isNaN(seq) && seq > maxSeq) maxSeq = seq; });
       const newTicketId = todayStr + String(maxSeq + 1).padStart(5, '0');
 
-      // 6. 回覆軌跡初始化
       const initialReplies = formData.replyContent ? [{ time: getFormatDate(), user: currentUser.username, content: formData.replyContent }] : [];
 
-      // 7. 封裝最終資料 (強制寫入剛剛同步查到的名稱與層級)
       const submissionData = { 
         ...formData, 
         instCode: code.length < 10 && code !== '999' ? code.padStart(10, '0') : code,
@@ -1131,14 +1112,13 @@ export default function App() {
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       
-      // 8. 執行資料庫寫入
       await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'cs_records') : collection(db, 'cs_records'), {
         ...submissionData,
         receiver: currentUser?.username || submissionData.receiver || '系統防呆自動補登'
       });
       
-      // 9. 成功後的狀態更新與表單重置 (保留您原有的邏輯)
-      setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
+      // 成功儲存，觸發非阻斷式 Toast
+      showToast(`案件 ${newTicketId} 建立成功！`);
       setFormData(prev => ({
         ...getInitialForm(currentUser.username, channels, progresses),
         channel: (Array.isArray(channels) && channels.includes(prev.channel)) ? prev.channel : (channels[0] || ''),
@@ -1146,11 +1126,9 @@ export default function App() {
         progress: (Array.isArray(progresses) && progresses.includes(prev.progress)) ? prev.progress : (progresses[0] || '待處理')
       }));
       
-      setTimeout(() => setSubmitStatus({ type: '', msg: '' }), 4000);
     } catch (error) { 
-      setSubmitStatus({ type: 'error', msg: '儲存失敗：' + error.message }); 
+      showToast('儲存失敗：' + error.message, 'error'); 
     } finally {
-      // 10. 無論成功或失敗，最後都解開連點鎖定
       setIsProcessing(false);
     }
   };
@@ -1162,10 +1140,7 @@ export default function App() {
       const matchSearch = debouncedMaintainSearchTerm ? ((t.ticketId || '').includes(debouncedMaintainSearchTerm) || (t.instName || '').includes(debouncedMaintainSearchTerm)) : true;
       if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : t.progress !== '結案'; 
       
-      // 判斷是否為本人
       const isOriginalMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
-      
-      // 判斷是否為接管代理：檢查這張單的「建檔人」或「處理人」，是否把職務接管給了現在登入的我
       const isProxyMine = (userMap[t.receiver] && userMap[t.receiver].operationProxy === currentUser.username) || 
                           (userMap[t.assignee] && userMap[t.assignee].operationProxy === currentUser.username);
       
@@ -1310,7 +1285,6 @@ export default function App() {
     });
   };
 
-  // 徹底刪除 (Hard Delete) 函式 (因為需要輸入 DELETE 防呆，這裡保留 prompt)
   const handleBatchHardDeleteTickets = async () => {
     if (currentUser?.role !== ROLES.ADMIN || selectedTickets.length === 0 || isProcessing) return;
     const confirmText = window.prompt(`【危險操作 - 徹底刪除】\n您即將「永久刪除」 ${selectedTickets.length} 筆測試紀錄。\n此操作會從資料庫中完全抹除，無法復原且不留軌跡！\n\n請輸入大寫「DELETE」以確認執行：`);
@@ -1349,7 +1323,6 @@ export default function App() {
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
 
-    // --- 新增：智能動態檔名產生邏輯 ---
     let filenameParts = ['客服紀錄'];
     if (activeTab === 'all-records') {
       filenameParts.push('資料總表');
@@ -1363,9 +1336,8 @@ export default function App() {
         filenameParts.push(startStr === endStr ? startStr : `${startStr}至${endStr}`);
       }
     }
-    if (filenameParts.length === 1 || filenameParts.length === 2) filenameParts.push(getToday().replace(/-/g, '')); // 若條件太少，補上今天日期
+    if (filenameParts.length === 1 || filenameParts.length === 2) filenameParts.push(getToday().replace(/-/g, ''));
     const dynamicFilename = filenameParts.join('_') + '.xlsx';
-    // ------------------------------------
 
     window.XLSX.writeFile(wb, dynamicFilename);
     showToast('匯出成功！');
@@ -1437,7 +1409,7 @@ export default function App() {
   };
 
   const handleDeleteInst = (id) => {
-    if (currentUser?.role !== ROLES.ADMIN) return;
+    if (currentUser?.role !== ROLES.ADMIN) return;
     showConfirm('確定要刪除這筆院所資料嗎？', async () => {
       try {
         const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
@@ -1447,7 +1419,7 @@ export default function App() {
         showToast('刪除失敗：' + error.message, 'error');
       }
     });
-  };
+  };
 
   const handleClearAllInsts = () => {
     if (currentUser?.role !== ROLES.ADMIN) return;
@@ -1503,7 +1475,17 @@ export default function App() {
   const filteredInsts = useMemo(() => institutions.filter(inst => (inst.code||'').includes(instSearchTerm) || (inst.name||'').includes(instSearchTerm)), [institutions, instSearchTerm]);
 
   const handleSort = (key) => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
+  
   const handleCategoryClick = (cat) => { setHistoryStartDate(dashStartDate); setHistoryEndDate(dashEndDate); setSearchTerm(cat); setActiveTab('list'); };
+
+  // --- 新增：回歸正常查詢邏輯 ---
+  const handleResetHistoryFilters = () => {
+    setSearchTerm('');
+    setHistoryStartDate(getFirstDayOfMonth());
+    setHistoryEndDate(getLastDayOfMonth());
+    setHistoryProgress('全部');
+    setSortConfig({ key: 'receiveTime', direction: 'desc' });
+  };
 
   const filteredAndSortedHistory = useMemo(() => {
     let result = tickets.filter(t => {
@@ -1541,12 +1523,10 @@ export default function App() {
     return result;
   }, [tickets, debouncedAllRecordsSearchTerm, sortConfig, categoryMapping]);
 
-  // --- 自動偵測異常紀錄 (Admin Only) ---
   const anomalousTickets = useMemo(() => {
     if (currentUser?.role !== ROLES.ADMIN) return [];
     return tickets.filter(t => !t.isDeleted).map(t => {
       let reasons = [];
-      // 偵測各種可能遺失的必填欄位
       if (!t.receiver || t.receiver.trim() === '') reasons.push('建檔人空白');
       if (!t.channel || t.channel.trim() === '') reasons.push('管道空白');
       if (!t.category || t.category.trim() === '') reasons.push('類別空白');
@@ -1556,7 +1536,6 @@ export default function App() {
       if (!t.extraInfo || t.extraInfo.trim() === '') reasons.push('問題描述空白');
       if (!t.replyContent || t.replyContent.trim() === '') reasons.push('答覆內容空白');
 
-      // 如果有任何異常，就把原因打包進去並回傳
       if (reasons.length > 0) {
         return { ...t, anomalyReasons: reasons };
       }
@@ -1593,9 +1572,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   }
 
   return paginatedData.map(t => {
-    // 決定頭像顯示誰：優先處理人 (assignee)，若無則必有建檔人 (receiver)
     const avatarUser = t.assignee || t.receiver;
-    // 決定文字顯示邏輯：決不出現系統自動
     const hasAssignee = t.assignee && t.assignee !== t.receiver;
 
     return (
@@ -1628,13 +1605,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
         </td>
 
-        {/* ▼ 新增：管道與類別 ▼ */}
         <td className="p-6 align-middle">
           <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.category || '-'}</div>
           <div className="text-xs font-bold text-slate-400 mt-1">{t.channel || '-'}</div>
         </td>
 
-        {/* ▼ 新增：問題簡述 (限制寬度與最高2行) ▼ */}
         <td className="p-6 align-middle">
           <div className="text-sm font-medium text-slate-500 dark:text-slate-400 line-clamp-2 max-w-[200px] xl:max-w-[300px]" title={t.extraInfo}>
             {t.extraInfo || '無描述'}
@@ -1677,14 +1652,14 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     const pending = tickets.filter(t => !t.isDeleted && t.progress !== '結案').length;
     const resolved = tickets.filter(t => !t.isDeleted && t.progress === '結案').length;
     const completionRate = total ? Math.round((resolved/total)*100) : 0;
-    // --- 新增：計算當日數據 ---
+    
     const todayStr = getToday();
     const todayTickets = tickets.filter(t => !t.isDeleted && t.receiveTime && t.receiveTime.startsWith(todayStr));
     const todayTotal = todayTickets.length;
     const todayPending = todayTickets.filter(t => t.progress !== '結案').length;
     const todayResolved = todayTickets.filter(t => t.progress === '結案').length;
     const todayCompletionRate = todayTotal ? Math.round((todayResolved/todayTotal)*100) : 0;
-    // ---------------------------
+    
     const startDateObj = new Date(`${dashStartDate}T00:00:00`);
     const endDateObj = new Date(`${dashEndDate}T23:59:59.999`);
     const rangeTickets = tickets.filter(t => !t.isDeleted && new Date(t.receiveTime) >= startDateObj && new Date(t.receiveTime) <= endDateObj);
@@ -1774,23 +1749,33 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
               </>
             )}
             {authError && <p className="text-sm text-red-500 dark:text-red-400 font-bold text-center animate-pulse">{authError}</p>}
-            <button type="submit" className="w-full py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg shadow-blue-200 dark:shadow-none active:scale-95 flex justify-center items-center">{isFirstTime ? '初始化資料庫' : <><Lock size={16} className="mr-2"/> 登入系統</>}</button>
+            <button type="submit" className="w-full py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-blue-700 dark:bg-blue-600 transition-all shadow-lg shadow-blue-200 dark:shadow-none active:scale-95 flex justify-center items-center">{isFirstTime ? '初始化資料庫' : <><Lock size={16} className="mr-2"/> 登入系統</>}</button>
           </form>
         </div>
       </div>
     );
   }
 
-  const renderNavButton = (id, Icon, label) => (
+  // --- 改良：側邊欄導覽按鈕 ---
+  const renderNavButton = (id, Icon, label, isExpanded) => (
     <button 
       onClick={() => {
         setActiveTab(id);
         if (!isPinned && window.innerWidth < 1024) setIsSidebarOpen(false);
       }} 
-      className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}
+      className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all duration-200 group ${
+        activeTab === id 
+        ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' 
+        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
+      }`}
     >
-      <Icon size={20} />
-      <span className="font-bold text-sm tracking-wide">{label}</span>
+      <Icon size={20} className="shrink-0" />
+      {/* 使用 opacity-0 與 overflow-hidden 解決文字擠壓問題 */}
+      <span className={`ml-3 font-bold text-sm tracking-wide whitespace-nowrap transition-all duration-300 ${
+        isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'
+      }`}>
+        {label}
+      </span>
     </button>
   );
 
@@ -1809,35 +1794,75 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
 
       <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       
-      {/* Sidebar Wrapper */}
-      <div className={`bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300 h-screen shrink-0 z-50 overflow-hidden ${isPinned ? 'w-64 relative' : `fixed w-64 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`} lg:relative lg:translate-x-0 lg:w-64 lg:shadow-none`}>
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
-          <div className="flex items-center space-x-3"><div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div><h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">客服中心</h1></div>
-          <div className="flex items-center space-x-1 lg:hidden">
-            <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><Pin size={18} className={isPinned ? "" : "-rotate-45"} /></button>
-            {!isPinned && <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={18} /></button>}
-          </div>
-        </div>
-        <div className="px-6 py-4 flex items-center space-x-3 shrink-0"><UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm" /><div><div className="font-bold text-sm dark:text-slate-200">{activeUser.username}</div><div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div></div></div>
-        <div className="px-6 pb-2 shrink-0">
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors">
-            <span className="flex items-center">{isDarkMode ? <Moon size={16} className="mr-2 text-indigo-400" /> : <Sun size={16} className="mr-2 text-amber-500" />}{isDarkMode ? '深色模式' : '淺色模式'}</span>
-            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-colors ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}><div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} /></div>
+      {/* Sidebar Wrapper - 智慧內縮版本 */}
+      <div 
+        onMouseEnter={() => !isPinned && window.innerWidth >= 1024 && setIsSidebarOpen(true)}
+        onMouseLeave={() => !isPinned && window.innerWidth >= 1024 && setIsSidebarOpen(false)}
+        className={`bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300 h-screen shrink-0 z-50 overflow-hidden fixed lg:relative ${
+          isPinned 
+            ? 'w-64 translate-x-0' 
+            : (isSidebarOpen 
+                ? 'w-64 translate-x-0 shadow-2xl' 
+                : 'w-64 -translate-x-full lg:w-20 lg:translate-x-0 lg:shadow-none'
+              )
+        }`}
+      >
+        <div className={`p-4 lg:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center shrink-0 ${isPinned || isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+           <div className="flex items-center space-x-3 overflow-hidden">
+              <div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner shrink-0"><PhoneCall size={22} /></div>
+              <h1 className={`text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>客服中心</h1>
+           </div>
+          
+          <button 
+            onClick={() => setIsPinned(!isPinned)} 
+            className={`p-1.5 rounded-lg transition-colors hidden lg:block shrink-0 ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+          >
+            <Pin size={18} className={isPinned ? "" : "-rotate-45"} />
           </button>
         </div>
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto border-t border-slate-100 dark:border-slate-700 mt-2 pt-4">
-          {currentUser.role !== ROLES.VIEWER && <>{renderNavButton('form', Plus, '新增紀錄區')}{renderNavButton('maintenance', Edit, '紀錄維護區')}</>}
-          {renderNavButton('list', List, '歷史查詢區')}
-          {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區')}
-          {renderNavButton('dashboard', LayoutDashboard, '進階統計區')}
-          {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區')}
-          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區')}
-          {renderNavButton('settings', Settings, '系統設定區')}
+
+        <div className={`px-4 lg:px-6 py-4 flex items-center shrink-0 transition-all duration-300 ${isPinned || isSidebarOpen ? 'space-x-3' : 'justify-center'}`}>
+          <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm shrink-0" />
+          <div className={`transition-all duration-300 overflow-hidden whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>
+            <div className="font-bold text-sm dark:text-slate-200 truncate">{activeUser.username}</div>
+            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div>
+          </div>
+        </div>
+
+        <div className="px-4 lg:px-6 pb-2 shrink-0">
+          <button onClick={() => setIsDarkMode(!isDarkMode)} className={`w-full flex items-center rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all overflow-hidden ${isPinned || isSidebarOpen ? 'px-4 py-2.5 justify-between' : 'p-2.5 justify-center'}`}>
+            <span className="flex items-center shrink-0">
+              {isDarkMode ? <Moon size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-indigo-400 transition-all`} /> : <Sun size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-amber-500 transition-all`} />}
+              <span className={`text-sm font-bold transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>
+                {isDarkMode ? '深色模式' : '淺色模式'}
+              </span>
+            </span>
+            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-all duration-300 shrink-0 ${isPinned || isSidebarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-0 hidden'} ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+              <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} />
+            </div>
+          </button>
+        </div>
+
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto mt-2 border-t border-slate-100 dark:border-slate-700 pt-4">
+          {currentUser.role !== ROLES.VIEWER && (
+            <>
+              {renderNavButton('form', Plus, '新增紀錄區', isPinned || isSidebarOpen)}
+              {renderNavButton('maintenance', Edit, '紀錄維護區', isPinned || isSidebarOpen)}
+            </>
+          )}
+          {renderNavButton('list', List, '歷史查詢區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區', isPinned || isSidebarOpen)}
+          {renderNavButton('dashboard', LayoutDashboard, '進階統計區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區', isPinned || isSidebarOpen)}
+          {renderNavButton('settings', Settings, '系統設定區', isPinned || isSidebarOpen)}
         </nav>
-        <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0"><button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button></div>
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0">
+          <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button>
+        </div>
       </div>
 
-      {!isPinned && isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
+      {!isPinned && isSidebarOpen && window.innerWidth < 1024 && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300 min-w-0">
@@ -1857,7 +1882,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
               <div className="mb-8 flex justify-between items-end">
                 <div><h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">新增紀錄區</h2><p className="text-sm text-slate-400 dark:text-slate-400 mt-2">以 <span className="font-bold text-blue-600 dark:text-blue-400">{currentUser.username}</span> 身份登錄。</p></div>
               </div>
-              {submitStatus.msg && <div className={`p-4 rounded-2xl flex items-center space-x-3 border ${submitStatus.type === 'success' ? 'bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-400 border-green-100 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/40 text-red-700 dark:text-red-400 border-red-100 dark:border-red-800'}`}><CheckCircle size={20}/><span className="font-bold">{submitStatus.msg}</span></div>}
               <form onSubmit={handleSubmit} className="space-y-8">
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
@@ -1871,7 +1895,25 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     </div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
-                    <div className="md:col-span-1"><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label><input type="text" name="instCode" required pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/></div>
+                    
+                    {/* 院所代碼加上載入防護機制 */}
+                    <div className="md:col-span-1">
+                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <input 
+                        type="text" 
+                        name="instCode" 
+                        required 
+                        pattern="^([A-Za-z0-9]{10}|999)$" 
+                        title="請輸入 10 碼英數字，或填寫 999" 
+                        value={formData.instCode} 
+                        onChange={handleFormChange} 
+                        onBlur={handleInstCodeBlur} 
+                        disabled={!isInstLoaded}
+                        className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500 disabled:bg-slate-100 disabled:dark:bg-slate-800 disabled:cursor-not-allowed" 
+                        placeholder={isInstLoaded ? "輸入10碼後點擊空白處" : "資料庫同步中..."}
+                      />
+                    </div>
+                    
                     <div className="md:col-span-2">
                       <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所名稱與層級</label>
                       <div className="flex space-x-4">
@@ -1905,18 +1947,40 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       </div>
                       <div>
                         <div className="flex justify-between items-end mb-2">
-                          <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
-                          <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                          <label className="text-xs font-bold block text-slate-700 dark:text-slate-300 flex items-center">
+                            給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
+                            {cannedPopupTarget === 'form' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
+                          </label>
                         </div>
-                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
+                        <textarea 
+                          id="replyContent" 
+                          name="replyContent" 
+                          required={!allowEmptyContent} 
+                          minLength={allowEmptyContent ? "0" : "2"} 
+                          value={formData.replyContent} 
+                          onChange={handleFormChange} 
+                          onFocus={() => setCannedPopupTarget('form')}
+                          rows="4" 
+                          className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" 
+                          placeholder="點擊此處即可快速選擇罐頭文字..."
+                        ></textarea>
                       </div>
                     </div>
                 </div>
 
-                <div className="flex justify-end pt-4 pb-12">
-                  <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-1 active:scale-95'}`}>
-                    {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
-                    {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
+                {/* 儲存按鈕：置中寬版設計 */}
+                <div className="flex justify-center pt-8 pb-12 w-full">
+                  <button 
+                    type="submit" 
+                    disabled={isProcessing || currentUser.role === ROLES.VIEWER} 
+                    className={`w-full max-w-2xl py-5 text-white rounded-[2rem] font-black flex items-center justify-center shadow-2xl transition-all ${
+                      currentUser.role === ROLES.VIEWER 
+                      ? 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed' 
+                      : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:scale-[1.02] active:scale-95'
+                    }`}
+                  >
+                    {isProcessing ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={24} className="mr-3"/>} 
+                    {currentUser.role === ROLES.VIEWER ? '唯讀模式無法儲存' : '確認並儲存此筆客服案件'}
                   </button>
                 </div>
               </form>
@@ -2029,10 +2093,19 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                          </div>
                          <div>
                            <div className="flex justify-between items-end mb-2">
-                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">追加新答覆 / 註記</label>
-                             <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center">
+                               追加新答覆 / 註記
+                               {cannedPopupTarget === 'maintenance' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
+                             </label>
                            </div>
-                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入新的答覆，或點擊上方按鈕複製罐頭文字貼上..."></textarea>
+                           <textarea 
+                             value={maintainForm.newReply} 
+                             onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} 
+                             onFocus={() => setCannedPopupTarget('maintenance')}
+                             rows="4" 
+                             className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" 
+                             placeholder="點擊此處即可快速選擇罐頭文字..."
+                           ></textarea>
                          </div>
                        </form>
                      </div>
@@ -2049,11 +2122,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
              </div>
           )}
 
-{/* TAB: 歷史查詢 (寬版優化版) */}
+          {/* TAB: 歷史查詢 (寬版優化版) */}
           {activeTab === 'list' && (
             <div className="space-y-6 animate-in fade-in duration-500 w-full px-2">
               <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">歷史查詢區</h2>
-              {/* 頂部搜尋與工具列 (寬版) */}
+              
               <div className="flex flex-wrap gap-4 items-end bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm w-full">
                 <div className="relative flex-1 min-w-[300px]">
                   <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
@@ -2077,6 +2150,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 </div>
 
                 <div className="flex gap-2">
+                  <button onClick={handleResetHistoryFilters} className="px-6 py-4 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-[1.5rem] font-black shadow-sm flex items-center transition-all active:scale-95" title="一鍵清除所有搜尋與篩選條件">
+                    <RefreshCw size={18} className="mr-2"/>
+                    <span className="hidden md:inline">重置</span>
+                  </button>
                   <button onClick={handleExportExcel} className="px-6 py-4 bg-green-600 hover:bg-green-700 text-white rounded-[1.5rem] font-black shadow-lg flex items-center transition-all active:scale-95">
                     <Download size={18} className="mr-2"/> 匯出
                   </button>
@@ -2086,7 +2163,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 </div>
               </div>
 
-              {/* 寬版表格容器 */}
               <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden w-full">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
@@ -2110,11 +2186,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
             </div>
           )}
 
-{/* TAB 6: ALL RECORDS (紀錄資料區) */}
+          {/* TAB 6: ALL RECORDS (紀錄資料區) */}
           {activeTab === 'all-records' && currentUser.role === ROLES.ADMIN && (
              <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-6 w-full px-2">
                
-               {/* 頂部搜尋與工具列 */}
                <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm w-full">
                  <div>
                    <h2 className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tight shrink-0">紀錄資料區</h2>
@@ -2122,7 +2197,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                  </div>
                  <div className="flex flex-col md:flex-row w-full xl:w-auto gap-3 items-center">
                    
-                   {/* 如果有勾選項目，就會自動出現這兩個刪除按鈕 */}
                    {selectedTickets.length > 0 && (
                      <div className="flex space-x-2 mr-2 animate-in fade-in zoom-in-95">
                        <button onClick={handleBatchDeleteTickets} className="flex items-center justify-center space-x-2 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-5 py-3.5 rounded-2xl shadow-sm hover:bg-orange-200 transition-colors font-black text-sm" title="標記為作廢，不從資料庫移除">
@@ -2145,13 +2219,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                  </div>
                </div>
                
-               {/* 表格外框與表頭 */}
                <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden w-full">
                  <div className="overflow-x-auto">
                    <table className="w-full text-left border-collapse min-w-max">
                      <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
                        <tr>
-                         {/* 全選 Checkbox */}
                          <th className="p-6 w-16 text-center">
                             <input 
                               type="checkbox" 
@@ -2184,7 +2256,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
-                       {/* 【重點】第 4 個參數傳入 true，告訴函式要顯示勾選框！ */}
                        {renderTicketTable(allRecordsFiltered, allRecordsPage, setAllRecordsPage, true)}
                      </tbody>
                    </table>
@@ -2381,8 +2452,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 </div>
               </div>
 
-              {/* 圖表區 1: 垂直長條圖 (自訂區間) */}
-              {/* 圖表區：改回垂直堆疊佈局，確保每張圖都有足夠寬度 */}
+              {/* 圖表區：垂直堆疊佈局 */}
               <div className="space-y-8">
                 
                 {/* 圖表區 1: 服務類別分佈 (滿版寬度) */}
@@ -2519,7 +2589,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8 mt-8">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><UserPlus size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 請假與代理人設定</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">當您設定了休假區間與代理人後，在該區間內，系統會自動將您的逾期案件推播轉發給代理人。</p>
-                    {/* ▼▼▼ 新增：目前代理狀態提示框 ▼▼▼ */}
                     {activeUser?.delegateUser && (
                       <div className="mb-6 p-5 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 rounded-2xl flex items-center animate-in zoom-in-95 duration-300 shadow-sm">
                         <div className="bg-indigo-100 dark:bg-indigo-900/50 p-2 rounded-full mr-4 shrink-0">
@@ -2535,7 +2604,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         </div>
                       </div>
                     )}
-                    {/* ▲▲▲ 新增結束 ▲▲▲ */}
                     <form onSubmit={handleSaveLeave} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end bg-slate-50 dark:bg-slate-700/30 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
                       <div>
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">請假開始日期</label>
@@ -2627,7 +2695,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   {/* Holidays Management */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Calendar size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 國定假日與停發推播區間</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手手動強制推播）。</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">設定的期間內，系統不會自動發送推播通知，並且在計算案件逾期時數時會「自動扣除」這些天數（不影響手動強制推播）。</p>
                     
                     <form onSubmit={handleAddHoliday} className="flex flex-col md:flex-row gap-4 items-end mb-8 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-2xl border border-slate-100 dark:border-slate-700">
                       <div>
@@ -2667,9 +2735,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   {/* Users Management */}
                   <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><Shield size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 使用者與權限管理</h3>
-                    {/* 將原本的 1:1 改成 1:2 的比例 */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      {/* 左側新增表單：佔 1 份寬度 */}
                       <div className="lg:col-span-1 bg-slate-50 dark:bg-slate-700/50 p-6 rounded-[1.5rem] border border-slate-100 dark:border-slate-700">
                         <h4 className="font-bold text-sm mb-4 dark:text-slate-200">建立新用戶</h4>
                         <form onSubmit={handleAddUser} className="space-y-4">
@@ -2684,7 +2750,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                           <button type="submit" className="w-full py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md">新增用戶</button>
                        </form>
                       </div>
-                      {/* 右側使用者清單：佔 2 份寬度 */}
                       <div className="lg:col-span-2 overflow-auto border border-slate-200 dark:border-slate-700 rounded-[1.5rem] bg-white dark:bg-slate-800 h-[320px]">
                         <table className="w-full text-left whitespace-nowrap">
                           <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest z-10">
@@ -2705,7 +2770,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                                     <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
                                   )}
                                 </td>
-                                {/* ▼▼▼ 這是新加的「職務接管(代理)」下拉選單 ▼▼▼ */}
                                 <td className="p-4">
                                   {u.role === ROLES.USER ? (
                                     <select 
@@ -2722,7 +2786,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                                     <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
                                   )}
                                 </td>
-                                {/* ▲▲▲ 新加結束 ▲▲▲ */}
                                 <td className="p-4">
                                   {u.role === ROLES.USER ? (
                                     <input 
@@ -2821,11 +2884,6 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
             </div>
           )}
 
-          {/* Canned Messages Modal */}
-          {showCannedModal && (
-            <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />
-          )}
-
           {/* Toast 元件 */}
           {toast.show && (
             <div className={`fixed bottom-8 right-8 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center animate-in slide-in-from-bottom-5 fade-in duration-300 font-bold ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900'}`}>
@@ -2869,125 +2927,57 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
               </div>
             </div>
           )}
-{/* 案件檢視與強制維護彈窗 (功能完整恢復版) */}
-      {/* 案件檢視與強制維護彈窗 (功能完整恢復版) */}
-      {viewModalTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-10 bg-slate-900/80 backdrop-blur-sm animate-in fade-in" onClick={() => { setViewModalTicket(null); setIsEditingModal(false); }}>
-          <div className="bg-white dark:bg-slate-800 rounded-[3rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col border border-slate-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-             
-             {/* Header */}
-             <div className="p-8 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50 rounded-t-[3rem] shrink-0">
-               <div>
-                 <h3 className="font-black text-2xl text-slate-800 dark:text-white flex items-center">
-                   案件詳細紀錄 <span className="ml-4 px-4 py-1.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded-xl text-sm font-black shadow-inner">{viewModalTicket.ticketId}</span>
-                 </h3>
-                 <p className="text-sm font-bold text-slate-400 mt-2">案件建立於：{new Date(viewModalTicket.createdAt || viewModalTicket.receiveTime).toLocaleString()}</p>
-               </div>
-               <button onClick={() => { setViewModalTicket(null); setIsEditingModal(false); }} className="p-3 bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-full transition-all shadow-sm"><X size={24} className="text-slate-500"/></button>
-             </div>
 
-             {/* Content Area */}
-             <div className="p-8 overflow-y-auto flex-1 space-y-10 bg-white dark:bg-slate-800">
-               {!isEditingModal ? (
-                  // --- 檢視模式 (加入提問人資訊) ---
-                  <div className="space-y-8 animate-in fade-in">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                       <InfoCard label="反映管道" value={viewModalTicket.channel} />
-                       <InfoCard label="業務類別" value={viewModalTicket.category} />
-                       <InfoCard label="處理負責人" value={viewModalTicket.assignee || viewModalTicket.receiver} isHighlight={!!viewModalTicket.assignee} />
-                       <InfoCard label="案件進度" value={viewModalTicket.progress} isHighlight={viewModalTicket.progress === '結案'} />
-                    </div>
-                    {/* 這裡改成 grid-cols-3，並加入提問人資訊 */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 dark:bg-slate-900/30 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800">
-                       <InfoCard label="醫療院所" value={`${viewModalTicket.instName || '(無)'} ${viewModalTicket.instCode ? `(${viewModalTicket.instCode})` : ''}`} />
-                       <InfoCard label="接收/來電時間" value={new Date(viewModalTicket.receiveTime).toLocaleString()} />
-                       <InfoCard label="提問人資訊" value={viewModalTicket.questioner || '未提供'} />
-                    </div>
-                    <div className="space-y-3">
-                       <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-2 block">客戶反映內容描述</label>
-                       <div className="p-8 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-[2.5rem] text-sm leading-relaxed dark:text-slate-200 whitespace-pre-wrap shadow-inner">
-                          {viewModalTicket.extraInfo || '尚未填寫描述'}
-                       </div>
-                    </div>
-                    <div className="space-y-3">
-                       <label className="text-[11px] font-black text-blue-500 uppercase tracking-widest ml-2 flex items-center"><MessageSquare size={16} className="mr-2"/> 完整回覆軌跡與歷程</label>
-                       <div className="p-8 bg-blue-50/30 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-[2.5rem] text-sm leading-relaxed whitespace-pre-wrap dark:text-blue-200 shadow-inner">
-                          {formatRepliesHistory(viewModalTicket.replies, viewModalTicket.replyContent) || '尚未有回覆紀錄'}
-                       </div>
-                    </div>
-                  </div>
-               ) : (
-                  // --- 強制維護模式 (維持原樣) ---
-                  <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-                    <div className="p-5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl flex items-center text-orange-700 dark:text-orange-400 text-sm font-bold shadow-sm">
-                      <AlertCircle size={20} className="mr-3 shrink-0" /> 
-                      管理員強制維護中：您可以修正包含處理人在內的所有核心欄位。
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 dark:bg-slate-900/50 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-700">
-                      <EditField label="反映管道" val={(modalEditForm || {}).channel} setVal={(v) => setModalEditForm({...modalEditForm, channel: v})} type="select" options={channels} />
-                      <EditField label="業務類別" val={(modalEditForm || {}).category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} type="select" options={categories} />
-                      <EditField label="案件進度" val={(modalEditForm || {}).progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} type="select" options={progresses} />
-                      <EditField 
-                        label="負責同仁 (處理人)" 
-                        val={(modalEditForm || {}).assignee || (modalEditForm || {}).receiver} 
-                        setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} 
-                        type="select" 
-                        options={dbUsers
-                          .filter(u => u.role !== '後台管理者' && u.role !== '系統管理員' && u.role !== '紀錄檢視者')
-                          .map(u => u.username)
-                        } 
-                      />
-                      <EditField label="院所代碼" val={(modalEditForm || {}).instCode} setVal={(v) => setModalEditForm({...modalEditForm, instCode: v})} />
-                      <EditField label="院所名稱" val={(modalEditForm || {}).instName} setVal={(v) => setModalEditForm({...modalEditForm, instName: v})} />
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-700 space-y-6">
-                      <EditField label="反映內容描述" val={(modalEditForm || {}).extraInfo} setVal={(v) => setModalEditForm({...modalEditForm, extraInfo: v})} type="textarea" />
-                      <EditField label="初步/最新回覆" val={(modalEditForm || {}).replyContent} setVal={(v) => setModalEditForm({...modalEditForm, replyContent: v})} type="textarea" />
-                    </div>
-                  </div>
-               )}
-             </div>
-             
-             {/* Action Buttons */}
-             <div className="p-8 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0 rounded-b-[3rem]">
-                {currentUser?.role === ROLES.ADMIN ? (
-                   !isEditingModal ? (
-                      <button onClick={() => { setModalEditForm({...viewModalTicket}); setIsEditingModal(true); }} className="px-8 py-4 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded-2xl font-black hover:bg-orange-200 transition-all flex items-center shadow-sm">
-                        <Edit size={18} className="mr-2"/> 強制維護
-                      </button>
-                   ) : (
-                      <button onClick={() => setIsEditingModal(false)} className="px-8 py-4 bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 rounded-2xl font-black hover:bg-slate-300 transition-all shadow-sm">
-                        取消編輯
-                      </button>
-                   )
-                ) : <div className="p-4"></div>}
-                
-                <div className="flex space-x-4">
-                   {!isEditingModal ? (
-                      <button onClick={() => setViewModalTicket(null)} className="px-12 py-4 bg-slate-800 dark:bg-slate-600 text-white rounded-2xl font-black hover:bg-slate-700 transition-all shadow-xl shadow-slate-200 dark:shadow-none">關閉視窗</button>
-                   ) : (
-                      <button 
-                        onClick={handleModalSave} 
-                        disabled={isProcessing}
-                        className="px-12 py-4 bg-green-600 text-white rounded-2xl font-black hover:bg-green-700 transition-all flex items-center shadow-xl shadow-green-200 dark:shadow-none disabled:bg-slate-400 disabled:cursor-not-allowed"
-                      >
-                        {isProcessing ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div> : <Save size={20} className="mr-2" />}
-                        {isProcessing ? '儲存中...' : '儲存變更'}
-                      </button>
-                   )}
+          {/* 右下角自動感應罐頭視窗 */}
+          {showCannedPopup && (
+            <div className="fixed bottom-6 right-6 z-[60] w-80 animate-in slide-in-from-right-10 duration-300">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-blue-100 dark:border-slate-700 flex flex-col max-h-[400px] overflow-hidden">
+                <div className="p-4 border-b border-slate-50 dark:border-slate-700 flex justify-between items-center bg-blue-50/50 dark:bg-slate-900/50">
+                  <span className="text-sm font-black text-blue-600 flex items-center"><MessageSquare size={16} className="mr-2"/> 快速插入回覆</span>
+                  <button onClick={() => setShowCannedPopup(false)} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
                 </div>
-             </div>
-          </div>
-        </div>
-      )}
-{/* 案件檢視與強制維護彈窗 (功能完整恢復版)結尾 */}
+                <div className="p-2 overflow-y-auto space-y-1">
+                  {cannedMessages.map((m, idx) => (
+                    <button
+                      key={idx}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (cannedPopupTarget === 'form') {
+                          const separator = formData.replyContent ? "\n" : "";
+                          setFormData(prev => ({ ...prev, replyContent: prev.replyContent + separator + m }));
+                        } else if (cannedPopupTarget === 'maintenance') {
+                          const separator = maintainForm.newReply ? "\n" : "";
+                          setMaintainForm(prev => ({ ...prev, newReply: prev.newReply + separator + m }));
+                        }
+                      }}
+                      className="w-full text-left p-3 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors border border-transparent hover:border-blue-100"
+                    >
+                      {m}
+                    </button>
+                  ))}
+                  {cannedMessages.length === 0 && <div className="p-4 text-center text-xs text-slate-400">目前尚無罐頭文字</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 全域點擊偵測器 (放在視窗外面，點擊非罐頭視窗與非輸入框則關閉) */}
+          {showCannedPopup && (
+            <div 
+              className="fixed inset-0 z-50 pointer-events-auto" 
+              onClick={(e) => {
+                if (e.target.id !== 'replyContent' && !e.target.closest('.fixed.bottom-6.right-6')) {
+                   setShowCannedPopup(false);
+                }
+              }}
+            />
+          )}
+
         </div>
       </div>
     </div>
-    </div>
   );
 }
-
 
 const container = document.getElementById('root');
 if (container) {
