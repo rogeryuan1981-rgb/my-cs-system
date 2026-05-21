@@ -1504,7 +1504,13 @@ export default function App() {
 
   const handleSort = (key) => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
   const handleCategoryClick = (cat) => { setHistoryStartDate(dashStartDate); setHistoryEndDate(dashEndDate); setSearchTerm(cat); setActiveTab('list'); };
-
+  const handleResetHistoryFilters = () => {
+    setSearchTerm('');
+    setHistoryStartDate(getFirstDayOfMonth());
+    setHistoryEndDate(getLastDayOfMonth());
+    setHistoryProgress('全部');
+    setSortConfig({ key: 'receiveTime', direction: 'desc' });
+  };
   const filteredAndSortedHistory = useMemo(() => {
     let result = tickets.filter(t => {
       if (t.isDeleted) return false;
@@ -2077,6 +2083,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 </div>
 
                 <div className="flex gap-2">
+                  <button onClick={handleResetHistoryFilters} className="px-6 py-4 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-[1.5rem] font-black shadow-sm flex items-center transition-all active:scale-95" title="一鍵清除所有搜尋與篩選條件">
+                    <RefreshCw size={18} className="mr-2"/>
+                    <span className="hidden md:inline">重置</span>
+                  </button>
                   <button onClick={handleExportExcel} className="px-6 py-4 bg-green-600 hover:bg-green-700 text-white rounded-[1.5rem] font-black shadow-lg flex items-center transition-all active:scale-95">
                     <Download size={18} className="mr-2"/> 匯出
                   </button>
