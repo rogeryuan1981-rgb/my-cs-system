@@ -498,7 +498,8 @@ export default function App() {
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]); 
   const [allowEmptyContent, setAllowEmptyContent] = useState(false);
-  const [showCannedModal, setShowCannedModal] = useState(false);
+  const [showCannedPopup, setShowCannedPopup] = useState(false);
+  const [cannedPopupTarget, setCannedPopupTarget] = useState(null);
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState([]); 
@@ -1911,10 +1912,12 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       </div>
                       <div>
                         <div className="flex justify-between items-end mb-2">
-                          <label className="text-xs font-bold block text-slate-700 dark:text-slate-300">給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
-                          <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                          <label className="text-xs font-bold block text-slate-700 dark:text-slate-300 flex items-center">
+                            給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
+                            {cannedPopupTarget === 'form' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
+                          </label>
                         </div>
-                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="給予的初步答覆..."></textarea>
+                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} onFocus={() => { setCannedPopupTarget('form'); setShowCannedPopup(true); }} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" placeholder="點擊此處，右下角即可快速選擇罐頭文字..."></textarea>
                       </div>
                     </div>
                 </div>
@@ -2035,10 +2038,19 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                          </div>
                          <div>
                            <div className="flex justify-between items-end mb-2">
-                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 block">追加新答覆 / 註記</label>
-                             <button type="button" onClick={() => setShowCannedModal(true)} className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><MessageSquare size={14} className="mr-1"/> 呼叫罐頭文字</button>
+                             <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center">
+                               追加新答覆 / 註記
+                               {cannedPopupTarget === 'maintenance' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
+                             </label>
                            </div>
-                           <textarea value={maintainForm.newReply} onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} rows="4" className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入新的答覆，或點擊上方按鈕複製罐頭文字貼上..."></textarea>
+                           <textarea 
+                             value={maintainForm.newReply} 
+                             onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} 
+                             onFocus={() => { setCannedPopupTarget('maintenance'); setShowCannedPopup(true); }}
+                             rows="4" 
+                             className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" 
+                             placeholder="點擊此處，右下角即可快速選擇罐頭文字..."
+                           ></textarea>
                          </div>
                        </form>
                      </div>
@@ -2831,9 +2843,49 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
             </div>
           )}
 
-          {/* Canned Messages Modal */}
-          {showCannedModal && (
-            <CannedMessagesModal messages={cannedMessages} onClose={() => setShowCannedModal(false)} />
+          {/* 右下角自動感應罐頭視窗 */}
+          {showCannedPopup && (
+            <div className="fixed bottom-6 right-6 z-[60] w-80 animate-in slide-in-from-right-10 duration-300">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-blue-100 dark:border-slate-700 flex flex-col max-h-[400px] overflow-hidden">
+                <div className="p-4 border-b border-slate-50 dark:border-slate-700 flex justify-between items-center bg-blue-50/50 dark:bg-slate-900/50">
+                  <span className="text-sm font-black text-blue-600 flex items-center"><MessageSquare size={16} className="mr-2"/> 快速插入回覆</span>
+                  <button onClick={() => setShowCannedPopup(false)} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
+                </div>
+                <div className="p-2 overflow-y-auto space-y-1">
+                  {cannedMessages.map((m, idx) => (
+                    <button
+                      key={idx}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (cannedPopupTarget === 'form') {
+                          const separator = formData.replyContent ? "\n" : "";
+                          setFormData(prev => ({ ...prev, replyContent: prev.replyContent + separator + m }));
+                        } else if (cannedPopupTarget === 'maintenance') {
+                          const separator = maintainForm.newReply ? "\n" : "";
+                          setMaintainForm(prev => ({ ...prev, newReply: prev.newReply + separator + m }));
+                        }
+                      }}
+                      className="w-full text-left p-3 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors border border-transparent hover:border-blue-100"
+                    >
+                      {m}
+                    </button>
+                  ))}
+                  {cannedMessages.length === 0 && <div className="p-4 text-center text-xs text-slate-400">目前尚無罐頭文字</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 全域點擊偵測器 (點擊旁邊空白處自動關閉) */}
+          {showCannedPopup && (
+            <div 
+              className="fixed inset-0 z-50 pointer-events-auto" 
+              onClick={(e) => {
+                if (e.target.id !== 'replyContent' && !e.target.closest('.fixed.bottom-6.right-6')) {
+                   setShowCannedPopup(false);
+                }
+              }}
+            />
           )}
 
           {/* Toast 元件 */}
