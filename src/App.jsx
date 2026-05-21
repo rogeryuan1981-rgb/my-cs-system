@@ -1817,16 +1817,24 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     );
   }
 
-  const renderNavButton = (id, Icon, label) => (
+  const renderNavButton = (id, Icon, label, isExpanded) => (
     <button 
       onClick={() => {
         setActiveTab(id);
         if (!isPinned && window.innerWidth < 1024) setIsSidebarOpen(false);
       }} 
-      className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}
+      className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all duration-200 group ${
+        activeTab === id 
+        ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' 
+        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
+      }`}
     >
-      <Icon size={20} />
-      <span className="font-bold text-sm tracking-wide">{label}</span>
+      <Icon size={20} className="shrink-0" />
+      <span className={`ml-3 font-bold text-sm tracking-wide whitespace-nowrap transition-all duration-300 ${
+        isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'
+      }`}>
+        {label}
+      </span>
     </button>
   );
 
@@ -1845,32 +1853,58 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
 
       <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       
-      {/* Sidebar Wrapper */}
-      <div className={`bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300 h-screen shrink-0 z-50 overflow-hidden ${isPinned ? 'w-64 relative' : `fixed w-64 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`} lg:relative lg:translate-x-0 lg:w-64 lg:shadow-none`}>
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
-          <div className="flex items-center space-x-3"><div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner"><PhoneCall size={22} /></div><h1 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight">客服中心</h1></div>
-          <div className="flex items-center space-x-1 lg:hidden">
-            <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}><Pin size={18} className={isPinned ? "" : "-rotate-45"} /></button>
-            {!isPinned && <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={18} /></button>}
-          </div>
-        </div>
-        <div className="px-6 py-4 flex items-center space-x-3 shrink-0"><UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm" /><div><div className="font-bold text-sm dark:text-slate-200">{activeUser.username}</div><div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div></div></div>
-        <div className="px-6 pb-2 shrink-0">
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors">
-            <span className="flex items-center">{isDarkMode ? <Moon size={16} className="mr-2 text-indigo-400" /> : <Sun size={16} className="mr-2 text-amber-500" />}{isDarkMode ? '深色模式' : '淺色模式'}</span>
-            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-colors ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}><div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} /></div>
+      {/* Sidebar Wrapper - 智慧內縮版本 */}
+      <div 
+        onMouseEnter={() => !isPinned && window.innerWidth >= 1024 && setIsSidebarOpen(true)}
+        onMouseLeave={() => !isPinned && window.innerWidth >= 1024 && setIsSidebarOpen(false)}
+        className={`bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300 h-screen shrink-0 z-50 overflow-hidden fixed lg:relative ${
+          isPinned ? 'w-64 translate-x-0' : (isSidebarOpen ? 'w-64 translate-x-0 shadow-2xl' : 'w-64 -translate-x-full lg:w-20 lg:translate-x-0 lg:shadow-none')
+        }`}
+      >
+        <div className={`p-4 lg:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center shrink-0 ${isPinned || isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+           <div className="flex items-center space-x-3 overflow-hidden">
+              <div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner shrink-0"><PhoneCall size={22} /></div>
+              <h1 className={`text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>客服中心</h1>
+           </div>
+          <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors hidden lg:block shrink-0 ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+            <Pin size={18} className={isPinned ? "" : "-rotate-45"} />
           </button>
         </div>
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto border-t border-slate-100 dark:border-slate-700 mt-2 pt-4">
-          {currentUser.role !== ROLES.VIEWER && <>{renderNavButton('form', Plus, '新增紀錄區')}{renderNavButton('maintenance', Edit, '紀錄維護區')}</>}
-          {renderNavButton('list', List, '歷史查詢區')}
-          {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區')}
-          {renderNavButton('dashboard', LayoutDashboard, '進階統計區')}
-          {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區')}
-          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區')}
-          {renderNavButton('settings', Settings, '系統設定區')}
+
+        <div className={`px-4 lg:px-6 py-4 flex items-center shrink-0 transition-all duration-300 ${isPinned || isSidebarOpen ? 'space-x-3' : 'justify-center'}`}>
+          <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm shrink-0" />
+          <div className={`transition-all duration-300 overflow-hidden whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>
+            <div className="font-bold text-sm dark:text-slate-200 truncate">{activeUser.username}</div>
+            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div>
+          </div>
+        </div>
+
+        <div className="px-4 lg:px-6 pb-2 shrink-0">
+          <button onClick={() => setIsDarkMode(!isDarkMode)} className={`w-full flex items-center rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all overflow-hidden ${isPinned || isSidebarOpen ? 'px-4 py-2.5 justify-between' : 'p-2.5 justify-center'}`}>
+            <span className="flex items-center shrink-0">
+              {isDarkMode ? <Moon size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-indigo-400 transition-all`} /> : <Sun size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-amber-500 transition-all`} />}
+              <span className={`text-sm font-bold transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>{isDarkMode ? '深色模式' : '淺色模式'}</span>
+            </span>
+            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-all duration-300 shrink-0 ${isPinned || isSidebarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-0 hidden'} ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+              <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} />
+            </div>
+          </button>
+        </div>
+
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto mt-2 border-t border-slate-100 dark:border-slate-700 pt-4">
+          {currentUser.role !== ROLES.VIEWER && (
+            <>{renderNavButton('form', Plus, '新增紀錄區', isPinned || isSidebarOpen)}{renderNavButton('maintenance', Edit, '紀錄維護區', isPinned || isSidebarOpen)}</>
+          )}
+          {renderNavButton('list', List, '歷史查詢區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區', isPinned || isSidebarOpen)}
+          {renderNavButton('dashboard', LayoutDashboard, '進階統計區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區', isPinned || isSidebarOpen)}
+          {renderNavButton('settings', Settings, '系統設定區', isPinned || isSidebarOpen)}
         </nav>
-        <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0"><button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button></div>
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0">
+          <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button>
+        </div>
       </div>
 
       {!isPinned && isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
