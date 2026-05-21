@@ -7,7 +7,7 @@ import {
   Menu, Eye, Moon, Sun, Camera, ArrowRight, Pin, Timer, ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, updateDoc, writeBatch, setDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -626,6 +626,32 @@ export default function App() {
 
   const activeUser = dbUsers.find(u => u.id === currentUser?.id) || currentUser;
 
+  // --- 加入：30 分鐘閒置自動登出機制 ---
+  useEffect(() => {
+    if (!currentUser) return;
+    let timeoutId;
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      // 30 分鐘 = 30 * 60 * 1000 = 1800000 毫秒
+      timeoutId = setTimeout(() => {
+        alert("⚠️ 系統安全提示：您已閒置超過 30 分鐘，為保護資訊安全，系統已自動登出。");
+        handleLogout();
+      }, 30 * 60 * 1000);
+    };
+
+    window.addEventListener('mousemove', resetTimer);
+    window.addEventListener('keydown', resetTimer);
+    window.addEventListener('click', resetTimer);
+    resetTimer(); // 初始化啟動計時
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+      window.removeEventListener('click', resetTimer);
+    };
+  }, [currentUser]);
+
   useEffect(() => {
     if (activeUser) {
       setLeaveForm({ start: activeUser.leaveStart || '', end: activeUser.leaveEnd || '', delegate: activeUser.delegateUser || '' });
@@ -733,6 +759,7 @@ export default function App() {
     const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
     const email = getEmailFromUsername(trimmedUsername);
     try {
+      await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, loginForm.password);
       const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
       if (matchedUser) {
@@ -754,6 +781,7 @@ export default function App() {
         const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
           try {
+            await setPersistence(auth, browserSessionPersistence);
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
             if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', legacyUser.username);
             setFormData(getInitialForm(legacyUser.username, channels, progresses));
@@ -781,6 +809,7 @@ export default function App() {
     try {
       const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除空白
       const email = getEmailFromUsername(trimmedUsername);
+      await setPersistence(auth, browserSessionPersistence);
       await createUserWithEmailAndPassword(auth, email, loginForm.password);
       
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
