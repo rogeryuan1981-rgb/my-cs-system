@@ -1817,16 +1817,24 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     );
   }
 
-  const renderNavButton = (id, Icon, label) => (
+  const renderNavButton = (id, Icon, label, isExpanded) => (
     <button 
       onClick={() => {
         setActiveTab(id);
         if (!isPinned && window.innerWidth < 1024) setIsSidebarOpen(false);
       }} 
-      className={`flex items-center space-x-3 w-full px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab === id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'}`}
+      className={`flex items-center w-full px-4 py-3.5 rounded-xl transition-all duration-200 group ${
+        activeTab === id 
+        ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 dark:bg-blue-500 dark:shadow-none' 
+        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-100'
+      }`}
     >
-      <Icon size={20} />
-      <span className="font-bold text-sm tracking-wide">{label}</span>
+      <Icon size={20} className="shrink-0" />
+      <span className={`ml-3 font-bold text-sm tracking-wide whitespace-nowrap transition-all duration-300 ${
+        isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'
+      }`}>
+        {label}
+      </span>
     </button>
   );
 
@@ -1875,91 +1883,59 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
 
       {!isPinned && isSidebarOpen && <div className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300 min-w-0">
-        
-        {!isPinned && (
-          <div className="lg:hidden bg-white p-4 border-b border-slate-200 flex items-center shadow-sm sticky top-0 z-30 dark:bg-slate-800 dark:border-slate-700">
-            <button onClick={() => setIsSidebarOpen(true)} className="p-2 mr-3 -ml-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 focus:outline-none transition-colors"><Menu size={24} /></button>
-            <h1 className="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center"><PhoneCall size={20} className="mr-2 text-blue-600 dark:text-blue-400" />客服紀錄系統</h1>
+      {/* Sidebar Wrapper - 智慧內縮版本 */}
+      <div 
+        onMouseEnter={() => !isPinned && window.innerWidth >= 1024 && setIsSidebarOpen(true)}
+        onMouseLeave={() => !isPinned && window.innerWidth >= 1024 && setIsSidebarOpen(false)}
+        className={`bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300 h-screen shrink-0 z-50 overflow-hidden fixed lg:relative ${
+          isPinned ? 'w-64 translate-x-0' : (isSidebarOpen ? 'w-64 translate-x-0 shadow-2xl' : 'w-64 -translate-x-full lg:w-20 lg:translate-x-0 lg:shadow-none')
+        }`}
+      >
+        <div className={`p-4 lg:p-6 border-b border-slate-100 dark:border-slate-700 flex items-center shrink-0 ${isPinned || isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+           <div className="flex items-center space-x-3 overflow-hidden">
+              <div className="bg-blue-600 dark:bg-blue-500 text-white p-2.5 rounded-xl shadow-inner shrink-0"><PhoneCall size={22} /></div>
+              <h1 className={`text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>客服中心</h1>
+           </div>
+          <button onClick={() => setIsPinned(!isPinned)} className={`p-1.5 rounded-lg transition-colors hidden lg:block shrink-0 ${isPinned ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+            <Pin size={18} className={isPinned ? "" : "-rotate-45"} />
+          </button>
+        </div>
+
+        <div className={`px-4 lg:px-6 py-4 flex items-center shrink-0 transition-all duration-300 ${isPinned || isSidebarOpen ? 'space-x-3' : 'justify-center'}`}>
+          <UserAvatar username={activeUser.username} photoURL={activeUser.photoURL} className="w-10 h-10 text-sm shrink-0" />
+          <div className={`transition-all duration-300 overflow-hidden whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>
+            <div className="font-bold text-sm dark:text-slate-200 truncate">{activeUser.username}</div>
+            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md inline-block mt-0.5">{activeUser.role}</div>
           </div>
-        )}
+        </div>
 
-        <div className="flex-1 overflow-auto p-4 md:p-8 lg:p-10 w-full min-w-[320px]">
-          
-          {/* TAB 1: FORM */}
-          {activeTab === 'form' && currentUser.role !== ROLES.VIEWER && (
-            <div className="animate-in fade-in slide-in-from-bottom-6 duration-500 space-y-8 max-w-[1400px] mx-auto">
-              <div className="mb-8 flex justify-between items-end">
-                <div><h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight">新增紀錄區</h2><p className="text-sm text-slate-400 dark:text-slate-400 mt-2">以 <span className="font-bold text-blue-600 dark:text-blue-400">{currentUser.username}</span> 身份登錄。</p></div>
-              </div>
-              {submitStatus.msg && <div className={`p-4 rounded-2xl flex items-center space-x-3 border ${submitStatus.type === 'success' ? 'bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-400 border-green-100 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/40 text-red-700 dark:text-red-400 border-red-100 dark:border-red-800'}`}><CheckCircle size={20}/><span className="font-bold">{submitStatus.msg}</span></div>}
-              <form onSubmit={handleSubmit} className="space-y-8">
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
-                  <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><User size={18} className="mr-2"/> 基本與院所資訊</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div>
-                      <div className="flex justify-between items-end mb-2">
-                        <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block">接收時間 <span className="text-red-500 dark:text-red-400">*</span></label>
-                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, receiveTime: getFormatDate() }))} className="text-[10px] font-bold text-blue-600 dark:text-blue-400 flex items-center bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"><Clock size={12} className="mr-1"/> 設為現在</button>
-                      </div>
-                      <input type="datetime-local" name="receiveTime" required value={formData.receiveTime} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light] dark:[color-scheme:dark]"/>
-                    </div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
-                    <div className="md:col-span-1"><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label><input type="text" name="instCode" required pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/></div>
-                    <div className="md:col-span-2">
-                      <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所名稱與層級</label>
-                      <div className="flex space-x-4">
-                        <input type="text" name="instName" value={formData.instName} onChange={handleFormChange} readOnly={formData.instCode !== '999'} className={`w-2/3 p-3.5 border border-slate-200 dark:border-slate-600 rounded-2xl outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 ${formData.instCode === '999' ? 'bg-white dark:bg-slate-700 focus:ring-2 focus:ring-blue-500' : 'bg-slate-50 dark:bg-slate-700/50 font-bold'}`} placeholder={formData.instCode === '999' ? "請自行輸入單位名稱" : "名稱"}/>
-                        <input type="text" name="instLevel" value={formData.instLevel} readOnly className="w-1/3 p-3.5 border border-slate-200 dark:border-slate-600 rounded-2xl bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-bold outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="層級"/>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
-                  <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">類別 <span className="text-red-500 dark:text-red-400">*</span></label><select name="category" required value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">狀態 <span className="text-red-500 dark:text-red-400">*</span></label><select name="status" required value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" required value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : formData.progress === '' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}><option value="" disabled>請選擇...</option>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
-                    {(formData.progress !== '結案' || currentUser?.canAssignWhenClosed) && (
-                      <div className="animate-in zoom-in-95 duration-200">
-                        <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
-                        <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
-                          <option value="">-- 未指定 --</option>
-                          {dbUsers.filter(u => u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-6">
-                      <div>
-                        <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">詳細問題描述 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
-                        <textarea name="extraInfo" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
-                      </div>
-                      <div>
-                        <div className="flex justify-between items-end mb-2">
-                          <label className="text-xs font-bold block text-slate-700 dark:text-slate-300 flex items-center">
-                            給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
-                            {cannedPopupTarget === 'form' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
-                          </label>
-                        </div>
-                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} onFocus={() => { setCannedPopupTarget('form'); setShowCannedPopup(true); }} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" placeholder="點擊此處，右下角即可快速選擇罐頭文字..."></textarea>
-                      </div>
-                    </div>
-                </div>
-
-                <div className="flex justify-end pt-4 pb-12">
-                  <button type="submit" disabled={submitStatus.type === 'loading' || currentUser.role === ROLES.VIEWER} className={`px-14 py-4 text-white rounded-[1.5rem] font-black flex items-center shadow-2xl transition-all ${currentUser.role === ROLES.VIEWER ? 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed' : 'bg-blue-600 dark:bg-blue-500 shadow-blue-200 dark:shadow-none hover:bg-blue-700 dark:hover:bg-blue-600 hover:-translate-y-1 active:scale-95'}`}>
-                    {submitStatus.type === 'loading' ? <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin mr-3"></div> : <Save size={22} className="mr-3"/>} 
-                    {currentUser.role === ROLES.VIEWER ? '權限不足' : '儲存案件'}
-                  </button>
-                </div>
-              </form>
+        <div className="px-4 lg:px-6 pb-2 shrink-0">
+          <button onClick={() => setIsDarkMode(!isDarkMode)} className={`w-full flex items-center rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all overflow-hidden ${isPinned || isSidebarOpen ? 'px-4 py-2.5 justify-between' : 'p-2.5 justify-center'}`}>
+            <span className="flex items-center shrink-0">
+              {isDarkMode ? <Moon size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-indigo-400 transition-all`} /> : <Sun size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-amber-500 transition-all`} />}
+              <span className={`text-sm font-bold transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>{isDarkMode ? '深色模式' : '淺色模式'}</span>
+            </span>
+            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-all duration-300 shrink-0 ${isPinned || isSidebarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-0 hidden'} ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+              <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} />
             </div>
+          </button>
+        </div>
+
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto mt-2 border-t border-slate-100 dark:border-slate-700 pt-4">
+          {currentUser.role !== ROLES.VIEWER && (
+            <>{renderNavButton('form', Plus, '新增紀錄區', isPinned || isSidebarOpen)}{renderNavButton('maintenance', Edit, '紀錄維護區', isPinned || isSidebarOpen)}</>
           )}
+          {renderNavButton('list', List, '歷史查詢區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('all-records', Database, '紀錄資料區', isPinned || isSidebarOpen)}
+          {renderNavButton('dashboard', LayoutDashboard, '進階統計區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('anomaly', AlertCircle, '異常資料維護區', isPinned || isSidebarOpen)}
+          {currentUser.role === ROLES.ADMIN && renderNavButton('audit', FileText, '申請與日誌區', isPinned || isSidebarOpen)}
+          {renderNavButton('settings', Settings, '系統設定區', isPinned || isSidebarOpen)}
+        </nav>
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0">
+          <button onClick={handleLogout} className="w-full py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">登出系統</button>
+        </div>
+      </div>
 
           {/* TAB 3: MAINTENANCE (紀錄維護區) */}
           {activeTab === 'maintenance' && currentUser.role !== ROLES.VIEWER && (
