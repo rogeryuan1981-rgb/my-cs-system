@@ -636,7 +636,7 @@ export default function App() {
       timeoutId = setTimeout(() => {
         alert("⚠️ 系統安全提示：您已閒置超過 30 分鐘，為保護資訊安全，系統已自動登出。");
         handleLogout();
-      }, 30 * 60 * 1000);
+      }, 5000);
     };
 
     window.addEventListener('mousemove', resetTimer);
