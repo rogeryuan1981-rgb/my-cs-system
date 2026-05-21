@@ -756,49 +756,50 @@ export default function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const trimmedUsername = loginForm.username.trim(); // ✅ 自動清除前後空白
+    const trimmedUsername = loginForm.username.trim();
     const email = getEmailFromUsername(trimmedUsername);
     try {
       await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, loginForm.password);
+      
       const matchedUser = dbUsers.find(u => u.username === trimmedUsername);
+      
+      // ✅ 新增：檢查帳號是否被停用
+      if (matchedUser?.isDisabled) {
+        setAuthError('❌ 此帳號已被停用，請聯絡管理員。');
+        await auth.signOut();
+        return;
+      }
+
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
         setFormData(getInitialForm(matchedUser.username, channels, progresses));
-        
-        if (matchedUser.forcePasswordChange) {
-          setShowForcePwdModal(true);
-        } else {
-          setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
-        }
+        if (matchedUser.forcePasswordChange) setShowForcePwdModal(true);
+        else setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
         setAuthError('');
       } else {
-        setAuthError('登入成功，但資料庫無您的權限紀錄，請聯絡管理員。');
+        setAuthError('登入成功，但資料庫無您的權限紀錄。');
         await auth.signOut();
       }
     } catch (err) {
+      // ... (其餘 handleLogin 內部邏輯保持不變)
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         const legacyUser = dbUsers.find(u => u.username === trimmedUsername && u.password === loginForm.password);
         if (legacyUser) {
-          try {
+           if (legacyUser.isDisabled) { setAuthError('❌ 此帳號已被停用。'); return; }
+           try {
             await setPersistence(auth, browserSessionPersistence);
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
             if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', legacyUser.username);
             setFormData(getInitialForm(legacyUser.username, channels, progresses));
-            setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form');
-            setAuthError('');
+            setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form'); setAuthError('');
           } catch (createErr) {
             if (createErr.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
             else setAuthError('帳號升級失敗：' + createErr.message);
           }
-        } else {
-          setAuthError('❌ 帳號或密碼錯誤！請確認大小寫與是否有空白。');
-        }
-      } else if (err.code === 'auth/operation-not-allowed') {
-        setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
-      } else {
-        setAuthError('登入失敗：' + err.message);
-      }
+        } else setAuthError('❌ 帳號或密碼錯誤！');
+      } else if (err.code === 'auth/operation-not-allowed') setAuthError('❌ 系統錯誤：請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
+      else setAuthError('登入失敗：' + err.message);
     }
   };
 
@@ -2834,7 +2835,19 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                                     <span className="text-slate-400 dark:text-slate-500 text-xs italic font-bold">不適用</span>
                                   )}
                                 </td>
-                                <td className="p-4 text-center">{u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}</td>
+                                <td className="p-4 text-center">
+                                  <button 
+                                    onClick={async () => {
+                                        const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+                                        await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', u.id) : doc(db, 'cs_users', u.id), { isDisabled: !u.isDisabled });
+                                        showToast(u.isDisabled ? '已啟用該帳號' : '已停用該帳號');
+                                    }}
+                                    className={`p-1.5 rounded-lg transition-colors mr-2 ${u.isDisabled ? 'text-amber-500 bg-amber-50' : 'text-slate-300 hover:text-amber-500'}`}
+                                    title={u.isDisabled ? "點擊啟用帳號" : "點擊停用帳號"}
+                                  >
+                                    <Lock size={16} />
+                                  </button>
+                                  {u.id !== currentUser.id && <button onClick={()=>handleDeleteUser(u.id)} className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"><Trash2 size={16}/></button>}</td>
                               </tr>
                             ))}
                           </tbody>
