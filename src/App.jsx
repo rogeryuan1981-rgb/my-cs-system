@@ -22,6 +22,37 @@ if (typeof window !== 'undefined') {
 // --- System Variables ---
 const APP_VERSION = "v3.8 (全面現代化提示版)";
 
+const GLOBAL_FONT_SIZE_STYLES = `
+  /* 「一般」即為放大後的新基準；「放大」再額外提高約 12%。 */
+  html { font-size: 17px !important; }
+  html.cs-font-large { font-size: 19px !important; }
+  @media (min-width: 1440px) {
+    html { font-size: 18px !important; }
+    html.cs-font-large { font-size: 20px !important; }
+  }
+  @media (min-width: 1920px) {
+    html { font-size: 20px !important; }
+    html.cs-font-large { font-size: 22px !important; }
+  }
+  @media (min-width: 2560px) {
+    html { font-size: 22px !important; }
+    html.cs-font-large { font-size: 24px !important; }
+  }
+`;
+
+const formatNumber = (value) => Number(value || 0).toLocaleString('zh-TW');
+
+const getNiceChartScale = (rawMax, targetIntervals = 5) => {
+  const safeMax = Math.max(Number(rawMax) || 0, 10);
+  const roughStep = safeMax / targetIntervals;
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalizedStep = roughStep / magnitude;
+  const niceNormalizedStep = normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 2.5 ? 2.5 : normalizedStep <= 5 ? 5 : 10;
+  const step = niceNormalizedStep * magnitude;
+  const intervalCount = Math.ceil(safeMax / step);
+  return { max: step * intervalCount, ticks: Array.from({ length: intervalCount + 1 }, (_, index) => index * step) };
+};
+
 // --- Firebase Initialization ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   apiKey: "AIzaSyBvIOc7J-0ID2F2mQv2_BaHThApPw3uVl0",
@@ -108,7 +139,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
   const allData = datasets.flatMap(ds => ds.data || []);
   if (allData.length === 0) return <div className="h-48 flex items-center justify-center text-slate-400 dark:text-slate-500">無數據</div>;
 
-  const maxVal = Math.max(...allData, 10);
+  const { max: maxVal, ticks: yTicks } = getNiceChartScale(Math.max(...allData, 10));
   const height = 260, width = 800, paddingX = 40, paddingY = 40;
   const gridColor = isDarkMode ? "#334155" : "#e2e8f0";
   const axisTextColor = isDarkMode ? "#94a3b8" : "#94a3b8";
@@ -129,12 +160,13 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
       </div>
       <div className="w-full overflow-x-auto relative scrollbar-hide">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-64 md:h-80 drop-shadow-sm min-w-[600px]">
-          {[0, 0.5, 1].map(ratio => {
+          {yTicks.map(tickValue => {
+            const ratio = tickValue / maxVal;
             const y = height - paddingY - ratio * (height - paddingY * 2);
             return (
-              <g key={ratio}>
+              <g key={tickValue}>
                 <line x1={paddingX} y1={y} x2={width-paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
-                <text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{Math.round(maxVal * ratio)}</text>
+                <text x={paddingX - 10} y={y + 4} fontSize="10" fill={axisTextColor} textAnchor="end">{formatNumber(tickValue)}</text>
               </g>
             );
           })}
@@ -156,7 +188,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             return (
               <g key={`point-${ds.label}-${i}`} onMouseEnter={() => setHoveredPoint({ dsIdx, i })} onMouseLeave={() => setHoveredPoint(null)} className="cursor-pointer">
                 <circle cx={x} cy={y} r="4" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="2" className="transition-all duration-200" />
-                {val > 0 && <text x={x + dx} y={y + dy} fontSize="11" fill={ds.color} textAnchor="middle" fontWeight="black" className="select-none transition-all duration-200" stroke={bgStroke} strokeWidth="3" paintOrder="stroke" strokeLinejoin="round">{val}</text>}
+                {val > 0 && <text x={x + dx} y={y + dy} fontSize="11" fill={ds.color} textAnchor="middle" fontWeight="black" className="select-none transition-all duration-200" stroke={bgStroke} strokeWidth="3" paintOrder="stroke" strokeLinejoin="round">{formatNumber(val)}</text>}
               </g>
             );
           }))}
@@ -169,7 +201,7 @@ const LineChart = ({ datasets, labels, isDarkMode }) => {
             return (
               <g className="pointer-events-none">
                 <circle cx={x} cy={y} r="7" fill={isDarkMode ? "#1e293b" : "#ffffff"} stroke={ds.color} strokeWidth="3" />
-                <text x={x} y={y - 15} fontSize="18" fill={ds.color} textAnchor="middle" fontWeight="black" stroke={bgStroke} strokeWidth="5" paintOrder="stroke" strokeLinejoin="round">{val}</text>
+                <text x={x} y={y - 15} fontSize="18" fill={ds.color} textAnchor="middle" fontWeight="black" stroke={bgStroke} strokeWidth="5" paintOrder="stroke" strokeLinejoin="round">{formatNumber(val)}</text>
               </g>
             );
           })()}
@@ -206,7 +238,7 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
           return (
             <g key={ratio}>
               <line x1={paddingX} y1={y} x2={width - paddingX} y2={y} stroke={gridColor} strokeDasharray="4 4" />
-              <text x={paddingX - 12} y={y + 4} fontSize="14" fill={axisTextColor} textAnchor="end" fontWeight="900">{Math.round(maxVal * ratio)}</text>
+              <text x={paddingX - 12} y={y + 4} fontSize="14" fill={axisTextColor} textAnchor="end" fontWeight="900">{formatNumber(Math.round(maxVal * ratio))}</text>
             </g>
           );
         })}
@@ -237,7 +269,7 @@ const BarChart = ({ data, isDarkMode, color = "#6366f1", onClick }) => {
               {/* 頂部數值 - 始終加粗顯示 */}
               {val > 0 && (
                 <text x={x} y={y - 10} fontSize="15" fill={isDarkMode ? "#cbd5e1" : "#1e293b"} textAnchor="middle" fontWeight="900">
-                  {val}
+                  {formatNumber(val)}
                 </text>
               )}
               {/* X 軸標籤 - 針對長文字優化位置 */}
@@ -615,6 +647,7 @@ const EditField = ({ label, val, setVal, type = "text", options = [] }) => {
 
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(() => typeof localStorage !== 'undefined' ? localStorage.getItem('cs_theme') === 'dark' : false);
+  const [fontSizeMode, setFontSizeMode] = useState(() => typeof localStorage !== 'undefined' && localStorage.getItem('cs_font_size') === 'large' ? 'large' : 'normal');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
 
@@ -623,6 +656,11 @@ export default function App() {
     else document.documentElement.classList.remove('dark');
     if (typeof localStorage !== 'undefined') localStorage.setItem('cs_theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('cs-font-large', fontSizeMode === 'large');
+    if (typeof localStorage !== 'undefined') localStorage.setItem('cs_font_size', fontSizeMode);
+  }, [fontSizeMode]);
 
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [dbUsers, setDbUsers] = useState([]);
@@ -659,8 +697,10 @@ export default function App() {
   const [viewModalTicket, setViewModalTicket] = useState(null);
   const [isEditingModal, setIsEditingModal] = useState(false);
   const [modalEditForm, setModalEditForm] = useState(null);
+  const [isPendingInstitutionOpen, setIsPendingInstitutionOpen] = useState(false);
 
   useEffect(() => { setSelectedTickets([]); }, [activeTab]);
+  useEffect(() => { if (activeTab !== 'maintenance') setIsPendingInstitutionOpen(false); }, [activeTab]);
 
   const [formData, setFormData] = useState(getInitialForm());
   const [isLookingUp, setIsLookingUp] = useState(false);
@@ -1383,10 +1423,9 @@ export default function App() {
   const maintainTicketsList = useMemo(() => {
     if (!currentUser) return [];
     let result = tickets.filter(t => {
-      if (t.isDeleted) return false;
+      if (t.isDeleted || t.progress === '結案') return false;
       const matchSearch = debouncedMaintainSearchTerm ? ((t.ticketId || '').includes(debouncedMaintainSearchTerm) || (t.instName || '').includes(debouncedMaintainSearchTerm)) : true;
-      const needsInstitutionCorrection = String(t.instCode || '').trim() === '999';
-      if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : (t.progress !== '結案' || needsInstitutionCorrection); 
+      if (currentUser.role === ROLES.ADMIN) return matchSearch;
       
       // 判斷是否為本人
       const isOriginalMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
@@ -1396,14 +1435,25 @@ export default function App() {
                           (userMap[t.assignee] && userMap[t.assignee].operationProxy === currentUser.username);
       
       const isMine = isOriginalMine || isProxyMine;
-      const isUnresolved = t.progress !== '結案';
-      const needsMaintenance = isUnresolved || needsInstitutionCorrection;
-      
-      return debouncedMaintainSearchTerm ? isMine && needsMaintenance && matchSearch : isMine && needsMaintenance;
+      return isMine && matchSearch;
     });
     result.sort((a, b) => maintainSortOrder === 'asc' ? new Date(a.receiveTime).getTime() - new Date(b.receiveTime).getTime() : new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
     return result;
   }, [tickets, currentUser, debouncedMaintainSearchTerm, maintainSortOrder, userMap]);
+
+  const pendingInstitutionTickets = useMemo(() => {
+    if (!currentUser) return [];
+    const result = tickets.filter(t => {
+      if (t.isDeleted || t.progress !== '結案' || String(t.instCode || '').trim() !== '999') return false;
+      if (currentUser.role === ROLES.ADMIN) return true;
+      const isOriginalMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
+      const isProxyMine = (userMap[t.receiver] && userMap[t.receiver].operationProxy === currentUser.username) ||
+                          (userMap[t.assignee] && userMap[t.assignee].operationProxy === currentUser.username);
+      return isOriginalMine || isProxyMine;
+    });
+    result.sort((a, b) => maintainSortOrder === 'asc' ? new Date(a.receiveTime).getTime() - new Date(b.receiveTime).getTime() : new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
+    return result;
+  }, [tickets, currentUser, maintainSortOrder, userMap]);
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
@@ -2044,13 +2094,14 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   }, [tickets, dashStartDate, dashEndDate, personnelStartDate, personnelEndDate, trendCategory, categories, categoryMapping, correctionFilter, userMap]);
 
 
-  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
+  if (loading) return <><style>{GLOBAL_FONT_SIZE_STYLES}</style><div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div></>;
 
   if (!currentUser) {
     const isFirstTime = dbUsers.length === 0;
     
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900 relative overflow-hidden">
+        <style>{GLOBAL_FONT_SIZE_STYLES}</style>
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 dark:bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-400 dark:bg-indigo-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 dark:opacity-10"></div>
         <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl z-10 w-full max-w-md border border-slate-100 dark:border-slate-700 flex flex-col relative">
@@ -2107,15 +2158,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   return (
     <div className={isDarkMode ? 'dark' : ''}>
       {/* --- 全域 RWD 自適應縮放魔法 --- */}
-      <style>{`
-        /* 標準螢幕維持 Tailwind 預設的 16px */
-        /* 螢幕大於 1440px (一般大螢幕)，整體放大約 6% */
-        @media (min-width: 1440px) { html { font-size: 17px !important; } }
-        /* 螢幕大於 1920px (Full HD/超寬螢幕)，整體放大約 18% */
-        @media (min-width: 1920px) { html { font-size: 19px !important; } }
-        /* 螢幕大於 2560px (2K/4K/34吋等級)，整體放大約 31% */
-        @media (min-width: 2560px) { html { font-size: 21px !important; } }
-      `}</style>
+      <style>{GLOBAL_FONT_SIZE_STYLES}</style>
 
       <div className="flex h-screen bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100 overflow-hidden transition-colors duration-300">
       
@@ -2145,15 +2188,14 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           </div>
         </div>
 
-        <div className="px-4 lg:px-6 pb-2 shrink-0">
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className={`w-full flex items-center rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all overflow-hidden ${isPinned || isSidebarOpen ? 'px-4 py-2.5 justify-between' : 'p-2.5 justify-center'}`}>
-            <span className="flex items-center shrink-0">
-              {isDarkMode ? <Moon size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-indigo-400 transition-all`} /> : <Sun size={16} className={`${isPinned || isSidebarOpen ? 'mr-2' : ''} text-amber-500 transition-all`} />}
-              <span className={`text-sm font-bold transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>{isDarkMode ? '深色模式' : '淺色模式'}</span>
-            </span>
-            <div className={`w-8 h-4 rounded-full flex items-center p-1 transition-all duration-300 shrink-0 ${isPinned || isSidebarOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-0 hidden'} ${isDarkMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-              <div className={`w-3 h-3 bg-white rounded-full shadow-sm transform transition-transform ${isDarkMode ? 'translate-x-4' : ''}`} />
-            </div>
+        <div className={`px-4 lg:px-6 pb-2 shrink-0 flex gap-2 ${isPinned || isSidebarOpen ? 'flex-row' : 'flex-col items-center'}`}>
+          <button onClick={() => setIsDarkMode(!isDarkMode)} title={isDarkMode ? '切換為淺色模式' : '切換為深色模式'} className={`flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all overflow-hidden ${isPinned || isSidebarOpen ? 'flex-1 min-w-0 px-3 py-2.5' : 'w-10 h-10'}`}>
+            {isDarkMode ? <Moon size={16} className="text-indigo-400 shrink-0" /> : <Sun size={16} className="text-amber-500 shrink-0" />}
+            <span className={`ml-2 text-xs font-black transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden ml-0'}`}>{isDarkMode ? '深色' : '淺色'}</span>
+          </button>
+          <button onClick={() => setFontSizeMode(prev => prev === 'normal' ? 'large' : 'normal')} title={fontSizeMode === 'large' ? '切換為一般字體' : '切換為放大字體'} className={`flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 transition-all overflow-hidden ${isPinned || isSidebarOpen ? 'flex-1 min-w-0 px-3 py-2.5' : 'w-10 h-10'}`}>
+            <span className={`font-black shrink-0 ${fontSizeMode === 'large' ? 'text-base text-blue-600 dark:text-blue-400' : 'text-sm text-slate-500 dark:text-slate-300'}`}>Aa</span>
+            <span className={`ml-2 text-xs font-black transition-all duration-300 whitespace-nowrap ${isPinned || isSidebarOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden ml-0'}`}>{fontSizeMode === 'large' ? '放大' : '一般'}</span>
           </button>
         </div>
 
@@ -2284,7 +2326,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-2 gap-4">
                  <div>
                    <h2 className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tight mb-2">紀錄維護區</h2>
-                   <p className="text-sm text-slate-500 dark:text-slate-400">{currentUser.role === ROLES.ADMIN ? '管理員可查詢案件號以維護「已結案」紀錄。' : '僅顯示您負責或建檔的未結案紀錄。'}</p>
+                   <p className="text-sm text-slate-500 dark:text-slate-400">上方僅顯示未結案紀錄；已結案但院所代碼仍為 999 的案件，統一收納於下方「待補院所區」。</p>
                  </div>
                  <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                    <select value={maintainSortOrder} onChange={(e) => setMaintainSortOrder(e.target.value)} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm px-4 py-3 font-bold text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-blue-500">
@@ -2324,6 +2366,46 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                    );
                  })}
                  {maintainTicketsList.length === 0 && <div className="col-span-full py-20 text-center text-slate-400 dark:text-slate-500 font-bold text-lg">目前沒有符合條件的案件 🎉</div>}
+               </div>
+
+               <div className="mt-10 bg-white dark:bg-slate-800 rounded-[2rem] border border-amber-200 dark:border-amber-800 shadow-sm overflow-hidden">
+                 <button type="button" onClick={() => setIsPendingInstitutionOpen(prev => !prev)} className="w-full p-6 flex items-center justify-between text-left hover:bg-amber-50/60 dark:hover:bg-amber-900/10 transition-colors" aria-expanded={isPendingInstitutionOpen}>
+                   <div className="flex items-center gap-4">
+                     <div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl"><Database size={22}/></div>
+                     <div>
+                       <h3 className="font-black text-lg text-slate-800 dark:text-slate-100 flex items-center">待補院所區 <span className="ml-3 px-2.5 py-1 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 rounded-lg text-xs">{pendingInstitutionTickets.length}</span></h3>
+                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">已結案但院所代碼仍為 999 的案件</p>
+                     </div>
+                   </div>
+                   <span className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md" aria-label={isPendingInstitutionOpen ? '收合待補院所區' : '展開待補院所區'}>
+                     <Plus size={22} className={`transition-transform duration-200 ${isPendingInstitutionOpen ? 'rotate-45' : ''}`}/>
+                   </span>
+                 </button>
+                 {isPendingInstitutionOpen && (
+                   <div className="p-6 pt-0 border-t border-amber-100 dark:border-amber-900/40 animate-in slide-in-from-top-2 duration-200">
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
+                       {pendingInstitutionTickets.map(t => (
+                         <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-amber-50/50 dark:bg-amber-900/10 p-6 rounded-[2rem] border border-amber-200 dark:border-amber-800 shadow-sm cursor-pointer hover:shadow-lg hover:border-amber-400 transition-all flex flex-col relative overflow-hidden">
+                           <div className="flex items-center justify-between gap-3 mb-4">
+                             <div className="flex items-center gap-2">
+                               <span className="px-3 py-1 rounded-xl text-[10px] font-black bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">已結案</span>
+                               <span className="px-3 py-1 rounded-xl text-[10px] font-black bg-amber-500 text-white">待補院所</span>
+                             </div>
+                             <span className="text-[10px] font-mono text-slate-400">#{t.ticketId || t.id.slice(0,8)}</span>
+                           </div>
+                           <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
+                           <div className="text-xs font-mono text-amber-700 dark:text-amber-400 mb-3">院所代碼：999</div>
+                           <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 flex-1">{t.extraInfo || '無問題描述'}</p>
+                           <div className="pt-4 border-t border-amber-100 dark:border-amber-900/40 flex justify-between items-center text-xs font-bold">
+                             <div className="flex items-center text-slate-400"><UserAvatar username={t.receiver} photoURL={userMap[t.receiver]?.photoURL} className="w-5 h-5 text-[8px] mr-1.5"/><span>{t.receiver || '未知建檔人'}</span></div>
+                             <span className="text-slate-400">{new Date(t.receiveTime).toLocaleDateString()}</span>
+                           </div>
+                         </div>
+                       ))}
+                       {pendingInstitutionTickets.length === 0 && <div className="col-span-full py-12 text-center text-slate-400 font-bold">目前沒有待補院所案件</div>}
+                     </div>
+                   </div>
+                 )}
                </div>
 
                {maintainModal && (
@@ -2745,11 +2827,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 <div className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
                   <div>
                     <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6">總件數</div>
-                    <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{dashboardStats.total}</div>
+                    <div className="text-5xl md:text-6xl font-black text-slate-900 dark:text-slate-50 leading-none text-right">{formatNumber(dashboardStats.total)}</div>
                   </div>
                   <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-sm">
                     <span className="font-bold text-slate-400 dark:text-slate-500">當日新增件數</span>
-                    <span className="font-black text-slate-700 dark:text-slate-200">+{dashboardStats.todayTotal} 件</span>
+                    <span className="font-black text-slate-700 dark:text-slate-200">+{formatNumber(dashboardStats.todayTotal)} 件</span>
                   </div>
                 </div>
                 
@@ -2757,11 +2839,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 <div onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setHistoryProgress('未結案'); setSearchTerm(''); setActiveTab('list'); }} className="bg-white dark:bg-slate-800 p-8 md:p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between cursor-pointer hover:border-red-300 dark:hover:border-red-500 hover:shadow-md transition-all group" title="點擊檢視所有待處理案件">
                   <div>
                     <div className="text-slate-500 dark:text-slate-400 text-xl md:text-2xl font-black text-left mb-6 group-hover:text-red-500 dark:group-hover:text-red-400 transition-colors flex justify-between items-center">待處理件數<ArrowRight className="opacity-0 group-hover:opacity-100 text-red-500 dark:text-red-400 transition-opacity" size={24} /></div>
-                    <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{dashboardStats.pending}</div>
+                    <div className="text-5xl md:text-6xl font-black text-red-500 dark:text-red-400 leading-none text-right group-hover:scale-105 transform origin-right transition-transform">{formatNumber(dashboardStats.pending)}</div>
                   </div>
                   <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-sm group-hover:border-red-100 dark:group-hover:border-red-900/30 transition-colors">
                     <span className="font-bold text-slate-400 dark:text-slate-500">當日待處理</span>
-                    <span className="font-black text-red-500 dark:text-red-400">{dashboardStats.todayPending} 件</span>
+                    <span className="font-black text-red-500 dark:text-red-400">{formatNumber(dashboardStats.todayPending)} 件</span>
                   </div>
                 </div>
 
