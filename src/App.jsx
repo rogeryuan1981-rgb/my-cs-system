@@ -13,7 +13,7 @@ import { APP_VERSION, GLOBAL_FONT_SIZE_STYLES, ROLES } from './constants/app';
 import { auth, db, storage, functions, appId, secondaryAuth } from './config/firebase';
 import { getFormatDate, getFirstDayOfMonth, getLastDayOfMonth, getToday } from './utils/date';
 import { formatNumber, formatRepliesHistory, getLatestReply, resolveCloseTime, formatExcelDateTime } from './utils/formatters';
-import { getEmailFromUsername, getInitialForm, normalizeCannedMessages } from './utils/tickets';
+import { findInstitutionByCode, getEmailFromUsername, getInitialForm, isAllowedInstitutionCode, normalizeCannedMessages, normalizeInstitutionCode } from './utils/tickets';
 import { useDebounce } from './hooks/useDebounce';
 import UserAvatar from './components/common/UserAvatar';
 import Pagination from './components/common/Pagination';
@@ -703,11 +703,15 @@ export default function App() {
       setFormData(prev => ({ ...prev, instCode: '999', instLevel: '', instName: prev.instName.includes('查無資料') ? '' : prev.instName }));
       return;
     }
+    if (rawCode === '000') {
+      setFormData(prev => ({ ...prev, instName: '新增紀錄不可使用 000；無法確認院所請填 999', instLevel: '' }));
+      return;
+    }
     setIsLookingUp(true);
     setTimeout(() => {
-      const paddedCode = rawCode.padStart(10, '0');
-      let data = instMap[rawCode] || instMap[paddedCode];
-      if (data) setFormData(prev => ({ ...prev, instCode: rawCode.length < 10 ? paddedCode : rawCode, instName: data.name, instLevel: data.level }));
+      const normalizedCode = normalizeInstitutionCode(rawCode);
+      const data = findInstitutionByCode(rawCode, instMap);
+      if (data) setFormData(prev => ({ ...prev, instCode: normalizedCode, instName: data.name, instLevel: data.level }));
       else setFormData(prev => ({ ...prev, instName: '查無資料，請確認代碼或手動新增', instLevel: '' }));
       setIsLookingUp(false);
     }, 400);
@@ -727,7 +731,7 @@ export default function App() {
     
     // 3. 基礎欄位驗證
     const code = formData.instCode ? formData.instCode.trim() : '';
-    if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼英數字或 999' });
+    if (!code || code === '000' || code === '0000000000' || !isAllowedInstitutionCode(code, instMap)) return setSubmitStatus({ type: 'error', msg: '儲存失敗：新增紀錄的院所代碼只能是 10 碼醫事機構代碼或 999' });
     if (!formData.channel || !formData.category || !formData.status || !formData.progress) return setSubmitStatus({ type: 'error', msg: '請確實選擇下拉選單選項' });
     if (formData.assignee && userMap[formData.assignee]?.isDisabled) return setSubmitStatus({ type: 'error', msg: '已停用帳號不能被指定為處理人' });
     if (!allowEmptyContent && (!formData.extraInfo?.trim() || !formData.replyContent?.trim())) {
@@ -739,8 +743,8 @@ export default function App() {
     let finalInstLevel = formData.instLevel;
     
     if (code && code !== '999') {
-      const paddedCode = code.padStart(10, '0');
-      const matchedData = instMap[code] || instMap[paddedCode]; // 同步從記憶體地圖抓取
+      const normalizedCode = normalizeInstitutionCode(code);
+      const matchedData = findInstitutionByCode(code, instMap); // 同步從記憶體地圖抓取
       if (matchedData) {
         finalInstName = matchedData.name;
         finalInstLevel = matchedData.level;
@@ -771,7 +775,7 @@ export default function App() {
         ...formData, 
         // 以真正按下儲存的時間作為結案確認時間，避免保留上一筆「結案」進度時漏寫或沿用舊時間。
         closeTime: formData.progress === '結案' ? getFormatDate() : '',
-        instCode: code.length < 10 && code !== '999' ? code.padStart(10, '0') : code,
+        instCode: normalizeInstitutionCode(code),
         instName: finalInstName,
         instLevel: finalInstLevel,
         ticketId: newTicketId, 
@@ -861,10 +865,10 @@ export default function App() {
       setMaintainForm(prev => ({ ...prev, instCode: rawCode || '999', instLevel: rawCode === '999' ? '' : prev.instLevel }));
       return;
     }
-    const paddedCode = rawCode.padStart(10, '0');
-    const matchedData = instMap[rawCode] || instMap[paddedCode];
+    const normalizedCode = normalizeInstitutionCode(rawCode);
+    const matchedData = findInstitutionByCode(rawCode, instMap);
     if (matchedData) {
-      setMaintainForm(prev => ({ ...prev, instCode: paddedCode, instName: matchedData.name, instLevel: matchedData.level }));
+      setMaintainForm(prev => ({ ...prev, instCode: normalizedCode, instName: matchedData.name, instLevel: matchedData.level }));
     } else {
       setMaintainForm(prev => ({ ...prev, instCode: rawCode, instName: '查無資料，請確認院所代碼', instLevel: '' }));
     }
@@ -902,13 +906,13 @@ export default function App() {
 
       if (String(maintainModal.instCode || '').trim() === '999') {
         const rawCode = String(maintainForm.instCode || '').trim();
-        if (!rawCode || (rawCode !== '999' && !/^[A-Za-z0-9]{10}$/.test(rawCode))) {
-          return showToast('院所代碼必須為 10 碼英數字或 999', 'error');
+        if (!rawCode || !isAllowedInstitutionCode(rawCode, instMap)) {
+          return showToast('院所代碼必須為 10 碼英數字、999，或後台已建立的 000（未提供）', 'error');
         }
         if (rawCode !== '999') {
-          const matchedData = instMap[rawCode];
+          const matchedData = findInstitutionByCode(rawCode, instMap);
           if (!matchedData) return showToast('院所對照表查無此代碼，請確認後再儲存。', 'error');
-          updates.instCode = rawCode;
+          updates.instCode = normalizeInstitutionCode(rawCode);
           updates.instName = matchedData.name;
           updates.instLevel = matchedData.level;
         } else {
@@ -945,6 +949,11 @@ export default function App() {
   const handleModalSave = async () => {
     if (currentUser?.role !== ROLES.ADMIN || !modalEditForm || !viewModalTicket || isProcessing) return;
     if (modalEditForm.assignee && userMap[modalEditForm.assignee]?.isDisabled) return showToast('已停用帳號不能被指定為處理人。', 'error');
+    const modalInstCode = String(modalEditForm.instCode || '').trim();
+    const originalInstCode = String(viewModalTicket.instCode || '').trim();
+    if (modalInstCode === '0000000000') return showToast('「未提供」請使用特殊代碼 000，不可使用 0000000000。', 'error');
+    if (modalInstCode === '000' && originalInstCode !== '999') return showToast('000 僅能用於將既有 999 案件確認為「未提供」。', 'error');
+    if (!isAllowedInstitutionCode(modalInstCode, instMap)) return showToast('院所代碼必須為 10 碼英數字、999，或符合規則的 000。', 'error');
     setIsProcessing(true);
     try {
       const isClosingNow = modalEditForm.progress === '結案' && viewModalTicket.progress !== '結案';
@@ -1159,10 +1168,12 @@ export default function App() {
   const handleAddInst = async (e) => {
     e.preventDefault();
     if (currentUser?.role !== ROLES.ADMIN && currentUser?.role !== ROLES.USER) return;
-    const paddedCode = newInst.code.trim().padStart(10, '0');
+    const rawCode = newInst.code.trim();
+    if (rawCode !== '000' && (rawCode === '0000000000' || !/^[A-Za-z0-9]{10}$/.test(rawCode))) return showToast('院所代碼必須為 10 碼英數字；「未提供」請使用特殊代碼 000。', 'error');
+    const normalizedCode = normalizeInstitutionCode(rawCode);
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
-      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: paddedCode, name: newInst.name, level: newInst.level });
+      await addDoc(baseDbPath.length ? collection(db, ...baseDbPath, 'mohw_institutions') : collection(db, 'mohw_institutions'), { code: normalizedCode, name: newInst.name, level: newInst.level });
       setNewInst({ code: '', name: '', level: '診所' }); showToast('院所單筆新增成功！');
     } catch (e) { showToast('新增失敗', 'error'); }
   };
@@ -1210,7 +1221,7 @@ export default function App() {
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           if (!row || !row[1] || !row[3]) continue;
-          const code = String(row[1]).trim().padStart(10, '0');
+          const code = normalizeInstitutionCode(row[1]);
           if (instMap[code] && typeof instMap[code] !== 'boolean') continue; 
           const levelRaw = row[7] ? String(row[7]).trim().toUpperCase() : 'X';
           currentChunk.push({ code, name: String(row[3]).trim(), level: levelMapping[levelRaw] || '其他' });
@@ -1643,7 +1654,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     </div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">反映管道 <span className="text-red-500 dark:text-red-400">*</span></label><select name="channel" required value={formData.channel} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(channels)?channels:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                     <div><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">提問人資訊</label><input type="text" name="questioner" value={formData.questioner} onChange={handleFormChange} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="姓名 / 電話 / LINE"/></div>
-                    <div className="md:col-span-1"><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label><input type="text" name="instCode" required pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字，或填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼後點擊空白處"/></div>
+                    <div className="md:col-span-1"><label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所代碼 (自動比對) <span className="text-red-500 dark:text-red-400">*</span></label><input type="text" name="instCode" required pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字；無法確認院所請填寫 999" value={formData.instCode} onChange={handleFormChange} onBlur={handleInstCodeBlur} className="w-full p-3.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl font-mono focus:ring-2 focus:ring-blue-500 outline-none placeholder-slate-400 dark:placeholder-slate-500" placeholder="輸入10碼代碼，或填寫999"/></div>
                     <div className="md:col-span-2">
                       <label className="text-[11px] font-black text-slate-400 dark:text-slate-300 uppercase tracking-widest block mb-2">院所名稱與層級</label>
                       <div className="flex space-x-4">
@@ -1865,7 +1876,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                <div>
                                  <label className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest block mb-2">院所代碼</label>
-                                 <input type="text" value={maintainForm.instCode} onChange={e => setMaintainForm({...maintainForm, instCode: e.target.value, instName: e.target.value.trim() === '999' ? (maintainModal.instName || '') : '', instLevel: ''})} onBlur={handleMaintainInstCodeBlur} pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字，或保留 999" className="w-full p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-mono" />
+                                 <input type="text" value={maintainForm.instCode} onChange={e => setMaintainForm({...maintainForm, instCode: e.target.value, instName: e.target.value.trim() === '999' ? (maintainModal.instName || '') : '', instLevel: ''})} onBlur={handleMaintainInstCodeBlur} pattern="^([A-Za-z0-9]{10}|999|000)$" title="請輸入 10 碼英數字、999，或後台已建立的 000（未提供）" className="w-full p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-mono" />
                                </div>
                                <div>
                                  <label className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest block mb-2">院所名稱</label>

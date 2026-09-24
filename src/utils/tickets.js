@@ -2,6 +2,25 @@ import { getFormatDate } from './date';
 
 export const getEmailFromUsername = (username) => `${encodeURIComponent(username).replace(/%/g, '_')}@cs.local`.toLowerCase();
 
+export const normalizeInstitutionCode = (value) => {
+  const code = String(value || '').trim();
+  if (code === '000' || code === '999') return code;
+  return code.padStart(10, '0');
+};
+
+export const findInstitutionByCode = (value, institutionMap = {}) => {
+  const code = String(value || '').trim();
+  if (code === '000') return institutionMap['000'] || institutionMap['0000000000'];
+  return institutionMap[code] || institutionMap[normalizeInstitutionCode(code)];
+};
+
+export const isAllowedInstitutionCode = (value, institutionMap = {}) => {
+  const code = String(value || '').trim();
+  if (code === '999') return true;
+  if (code === '000') return Boolean(findInstitutionByCode(code, institutionMap));
+  return /^[A-Za-z0-9]{10}$/.test(code);
+};
+
 export const getInitialForm = (username = '', channels = [], progresses = [], defaultIsCorrection = false) => ({
   receiveTime: getFormatDate(),
   callEndTime: '',
