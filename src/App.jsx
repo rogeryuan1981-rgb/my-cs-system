@@ -12,7 +12,7 @@ import { httpsCallable } from 'firebase/functions';
 import { APP_VERSION, GLOBAL_FONT_SIZE_STYLES, ROLES } from './constants/app';
 import { auth, db, storage, functions, appId, secondaryAuth } from './config/firebase';
 import { getFormatDate, getFirstDayOfMonth, getLastDayOfMonth, getToday } from './utils/date';
-import { formatNumber, formatRepliesHistory, getLatestReply, resolveCloseTime } from './utils/formatters';
+import { formatNumber, formatRepliesHistory, getLatestReply, resolveCloseTime, formatExcelDateTime } from './utils/formatters';
 import { getEmailFromUsername, getInitialForm, normalizeCannedMessages } from './utils/tickets';
 import { useDebounce } from './hooks/useDebounce';
 import UserAvatar from './components/common/UserAvatar';
@@ -1067,12 +1067,12 @@ export default function App() {
 
     const exportData = targetData.map(t => ({
       '狀態標記': t.isDeleted ? '已刪除' : '正常',
-      '案件號': t.ticketId || '', '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
+      '案件號': t.ticketId || '', '接收時間(YYYY-MM-DD HH:mm)': formatExcelDateTime(t.receiveTime),
       '反映管道': t.channel || '', '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '', '院所名稱': t.instName || '',
       '醫療層級': t.instLevel || '', '提問人資訊': t.questioner || '', '服務項目': t.category || '', '補正': t.isCorrection === true ? '是' : '否', '案件狀態': t.status || '',
       '處理進度': t.progress || '', '建檔人': t.receiver || '', '指定處理人': t.assignee || '', '詳細問題描述': t.extraInfo || '',
       '回覆內容(完整紀錄)': formatRepliesHistory(t.replies, t.replyContent),
-      '結案時間(YYYY-MM-DD HH:mm)': resolveCloseTime(t) ? resolveCloseTime(t).replace('T', ' ') : ''
+      '結案時間(YYYY-MM-DD HH:mm)': formatExcelDateTime(resolveCloseTime(t))
     }));
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
