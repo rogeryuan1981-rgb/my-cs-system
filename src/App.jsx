@@ -746,7 +746,7 @@ export default function App() {
   const debouncedMaintainSearchTerm = useDebounce(maintainSearchTerm, 300);
   const [maintainSortOrder, setMaintainSortOrder] = useState('desc');
   const [maintainModal, setMaintainModal] = useState(null);
-  const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '' });
+  const [maintainForm, setMaintainForm] = useState({ progress: '', assignee: '', newReply: '', extraInfo: '', instCode: '', instName: '', instLevel: '' });
 
   const [institutions, setInstitutions] = useState([]);
   const [instMap, setInstMap] = useState({});
@@ -1101,6 +1101,7 @@ export default function App() {
 
   const handleUpdateUserProxy = async (id, value) => {
     if (currentUser?.role !== ROLES.ADMIN) return;
+    if (value && userMap[value]?.isDisabled) return showToast('已停用帳號不能被指定為職務接管人。', 'error');
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', id) : doc(db, 'cs_users', id), { operationProxy: value });
@@ -1182,6 +1183,7 @@ export default function App() {
     e.preventDefault();
     if (leaveForm.start && leaveForm.end && leaveForm.start > leaveForm.end) return showToast("請假開始日期不能晚於結束日期", 'error');
     if ((leaveForm.start || leaveForm.end) && !leaveForm.delegate) return showToast("請選擇案件代理人", 'error');
+    if (leaveForm.delegate && userMap[leaveForm.delegate]?.isDisabled) return showToast('已停用帳號不能被指定為代理人。', 'error');
     try {
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_users', activeUser.id) : doc(db, 'cs_users', activeUser.id);
@@ -1302,6 +1304,7 @@ export default function App() {
     const code = formData.instCode ? formData.instCode.trim() : '';
     if (!code || (code !== '999' && !/^[A-Za-z0-9]{10}$/.test(code))) return setSubmitStatus({ type: 'error', msg: '儲存失敗：院所代碼必須為 10 碼英數字或 999' });
     if (!formData.channel || !formData.category || !formData.status || !formData.progress) return setSubmitStatus({ type: 'error', msg: '請確實選擇下拉選單選項' });
+    if (formData.assignee && userMap[formData.assignee]?.isDisabled) return setSubmitStatus({ type: 'error', msg: '已停用帳號不能被指定為處理人' });
     if (!allowEmptyContent && (!formData.extraInfo?.trim() || !formData.replyContent?.trim())) {
       return setSubmitStatus({ type: 'error', msg: '問題描述與答覆不能為空' });
     }
@@ -1382,7 +1385,8 @@ export default function App() {
     let result = tickets.filter(t => {
       if (t.isDeleted) return false;
       const matchSearch = debouncedMaintainSearchTerm ? ((t.ticketId || '').includes(debouncedMaintainSearchTerm) || (t.instName || '').includes(debouncedMaintainSearchTerm)) : true;
-      if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : t.progress !== '結案'; 
+      const needsInstitutionCorrection = String(t.instCode || '').trim() === '999';
+      if (currentUser.role === ROLES.ADMIN) return debouncedMaintainSearchTerm ? matchSearch : (t.progress !== '結案' || needsInstitutionCorrection); 
       
       // 判斷是否為本人
       const isOriginalMine = t.receiver === currentUser.username || t.assignee === currentUser.username;
@@ -1393,8 +1397,9 @@ export default function App() {
       
       const isMine = isOriginalMine || isProxyMine;
       const isUnresolved = t.progress !== '結案';
+      const needsMaintenance = isUnresolved || needsInstitutionCorrection;
       
-      return debouncedMaintainSearchTerm ? isMine && isUnresolved && matchSearch : isMine && isUnresolved;
+      return debouncedMaintainSearchTerm ? isMine && needsMaintenance && matchSearch : isMine && needsMaintenance;
     });
     result.sort((a, b) => maintainSortOrder === 'asc' ? new Date(a.receiveTime).getTime() - new Date(b.receiveTime).getTime() : new Date(b.receiveTime).getTime() - new Date(a.receiveTime).getTime());
     return result;
@@ -1402,7 +1407,30 @@ export default function App() {
 
   const openMaintainModal = (ticket) => {
     setMaintainModal(ticket);
-    setMaintainForm({ progress: ticket.progress, assignee: ticket.assignee || '', newReply: '', extraInfo: ticket.extraInfo || '' });
+    setMaintainForm({
+      progress: ticket.progress,
+      assignee: ticket.assignee || '',
+      newReply: '',
+      extraInfo: ticket.extraInfo || '',
+      instCode: String(ticket.instCode || ''),
+      instName: ticket.instName || '',
+      instLevel: ticket.instLevel || ''
+    });
+  };
+
+  const handleMaintainInstCodeBlur = () => {
+    const rawCode = String(maintainForm.instCode || '').trim();
+    if (!rawCode || rawCode === '999') {
+      setMaintainForm(prev => ({ ...prev, instCode: rawCode || '999', instLevel: rawCode === '999' ? '' : prev.instLevel }));
+      return;
+    }
+    const paddedCode = rawCode.padStart(10, '0');
+    const matchedData = instMap[rawCode] || instMap[paddedCode];
+    if (matchedData) {
+      setMaintainForm(prev => ({ ...prev, instCode: paddedCode, instName: matchedData.name, instLevel: matchedData.level }));
+    } else {
+      setMaintainForm(prev => ({ ...prev, instCode: rawCode, instName: '查無資料，請確認院所代碼', instLevel: '' }));
+    }
   };
 
   const handleRequestDelete = async () => {
@@ -1418,15 +1446,44 @@ export default function App() {
   const handleMaintainSubmit = async (e) => {
     e.preventDefault();
     if (currentUser?.role === ROLES.VIEWER) return showToast("無權限", 'error');
+    if (maintainForm.assignee && userMap[maintainForm.assignee]?.isDisabled) return showToast('已停用帳號不能被指定為處理人。', 'error');
     try {
       const updates = { progress: maintainForm.progress };
+      const nextEditLogs = [...(maintainModal.editLogs || [])];
       if (maintainForm.progress === '結案' && maintainModal.progress !== '結案') updates.closeTime = getFormatDate();
       else if (maintainForm.progress !== '結案' && maintainModal.closeTime) updates.closeTime = '';
       updates.assignee = maintainForm.progress !== '結案' ? maintainForm.assignee : '';
 
       if (maintainForm.extraInfo !== maintainModal.extraInfo) {
         updates.extraInfo = maintainForm.extraInfo;
-        updates.editLogs = [...(maintainModal.editLogs || []), { time: getFormatDate(), user: currentUser.username, oldContent: maintainModal.extraInfo, newContent: maintainForm.extraInfo, type: 'extraInfo_edit' }];
+        nextEditLogs.push({ time: getFormatDate(), user: currentUser.username, oldContent: maintainModal.extraInfo, newContent: maintainForm.extraInfo, type: 'extraInfo_edit' });
+      }
+
+      if (String(maintainModal.instCode || '').trim() === '999') {
+        const rawCode = String(maintainForm.instCode || '').trim();
+        if (!rawCode || (rawCode !== '999' && !/^[A-Za-z0-9]{10}$/.test(rawCode))) {
+          return showToast('院所代碼必須為 10 碼英數字或 999', 'error');
+        }
+        if (rawCode !== '999') {
+          const matchedData = instMap[rawCode];
+          if (!matchedData) return showToast('院所對照表查無此代碼，請確認後再儲存。', 'error');
+          updates.instCode = rawCode;
+          updates.instName = matchedData.name;
+          updates.instLevel = matchedData.level;
+        } else {
+          updates.instCode = '999';
+          updates.instName = String(maintainForm.instName || '').trim();
+          updates.instLevel = String(maintainForm.instLevel || '').trim();
+        }
+        if (updates.instCode !== String(maintainModal.instCode || '') || updates.instName !== (maintainModal.instName || '') || updates.instLevel !== (maintainModal.instLevel || '')) {
+          nextEditLogs.push({
+            time: getFormatDate(),
+            user: currentUser.username,
+            oldContent: `${maintainModal.instCode || ''} / ${maintainModal.instName || ''}`,
+            newContent: `${updates.instCode} / ${updates.instName}`,
+            type: 'institution_edit'
+          });
+        }
       }
 
       if (maintainForm.newReply.trim()) {
@@ -1434,6 +1491,8 @@ export default function App() {
         updates.replies = [...(maintainModal.replies || []), newReplyObj];
         updates.replyContent = maintainForm.newReply.trim();
       }
+
+      if (nextEditLogs.length !== (maintainModal.editLogs || []).length) updates.editLogs = nextEditLogs;
 
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
       await updateDoc(baseDbPath.length ? doc(db, ...baseDbPath, 'cs_records', maintainModal.id) : doc(db, 'cs_records', maintainModal.id), updates);
@@ -1444,6 +1503,7 @@ export default function App() {
 
   const handleModalSave = async () => {
     if (currentUser?.role !== ROLES.ADMIN || !modalEditForm || !viewModalTicket || isProcessing) return;
+    if (modalEditForm.assignee && userMap[modalEditForm.assignee]?.isDisabled) return showToast('已停用帳號不能被指定為處理人。', 'error');
     setIsProcessing(true);
     try {
       const payload = {
@@ -2187,7 +2247,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         <label className="text-xs font-bold mb-2 block text-red-600 dark:text-red-400 flex items-center"><UserPlus size={14} className="mr-1"/> 指定處理人</label>
                         <select name="assignee" value={formData.assignee} onChange={handleFormChange} className="w-full p-3 border-2 border-red-200 dark:border-red-900/50 bg-white dark:bg-slate-700 font-bold text-red-700 dark:text-red-400 rounded-2xl outline-none focus:border-red-500">
                           <option value="">-- 未指定 --</option>
-                          {dbUsers.filter(u => u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                          {dbUsers.filter(u => u.role === ROLES.USER && !u.isDisabled).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
                       </div>
                     )}
@@ -2244,6 +2304,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                      <div key={t.id} onClick={() => openMaintainModal(t)} className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-500 transition-all group flex flex-col h-full relative overflow-hidden">
                        <div className="absolute top-4 right-6 flex items-center space-x-2">
                          {isOverdue && <span className="animate-pulse bg-red-600 text-white px-2 py-0.5 rounded-md text-[10px] font-black shadow-sm">逾期</span>}
+                         {String(t.instCode || '').trim() === '999' && <span className="bg-amber-500 text-white px-2 py-0.5 rounded-md text-[10px] font-black shadow-sm">待補院所</span>}
                          <span className="text-[10px] font-mono text-slate-300 dark:text-slate-500">#{t.ticketId || t.id.slice(0,8)}</span>
                        </div>
                        <div className="flex justify-between items-start mb-4 mt-2">
@@ -2308,6 +2369,31 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                        </div>
 
                        <form id="maintain-form" onSubmit={handleMaintainSubmit} className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-700">
+                         {String(maintainModal.instCode || '').trim() === '999' && (
+                           <div className="p-5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl">
+                             <div className="flex items-start gap-3 mb-4">
+                               <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"/>
+                               <div>
+                                 <div className="text-sm font-black text-amber-800 dark:text-amber-300">待補正院所資料</div>
+                                 <div className="text-xs font-medium text-amber-700/80 dark:text-amber-400/80 mt-1">此案件建檔時使用代碼 999。確認正式院所代碼後，可在此輸入並由院所對照表自動帶入名稱與層級。</div>
+                               </div>
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                               <div>
+                                 <label className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest block mb-2">院所代碼</label>
+                                 <input type="text" value={maintainForm.instCode} onChange={e => setMaintainForm({...maintainForm, instCode: e.target.value, instName: e.target.value.trim() === '999' ? (maintainModal.instName || '') : '', instLevel: ''})} onBlur={handleMaintainInstCodeBlur} pattern="^([A-Za-z0-9]{10}|999)$" title="請輸入 10 碼英數字，或保留 999" className="w-full p-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-mono" />
+                               </div>
+                               <div>
+                                 <label className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest block mb-2">院所名稱</label>
+                                 <input type="text" value={maintainForm.instName} onChange={e => setMaintainForm({...maintainForm, instName: e.target.value})} readOnly={String(maintainForm.instCode || '').trim() !== '999'} className={`w-full p-3 border border-amber-200 dark:border-amber-700 text-slate-800 dark:text-slate-100 rounded-xl outline-none ${String(maintainForm.instCode || '').trim() === '999' ? 'bg-white dark:bg-slate-800 focus:ring-2 focus:ring-amber-500' : 'bg-amber-100/50 dark:bg-slate-700/50 font-bold'}`} />
+                               </div>
+                               <div>
+                                 <label className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest block mb-2">醫療層級</label>
+                                 <input type="text" value={maintainForm.instLevel} readOnly className="w-full p-3 bg-amber-100/50 dark:bg-slate-700/50 border border-amber-200 dark:border-amber-700 text-slate-600 dark:text-slate-300 rounded-xl outline-none font-bold" placeholder="自動帶入" />
+                               </div>
+                             </div>
+                           </div>
+                         )}
                          <div className="grid grid-cols-2 gap-4">
                            <div>
                              <label className="text-xs font-black text-slate-800 dark:text-slate-200 mb-2 block">更新進度</label>
@@ -2320,7 +2406,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                                <label className="text-xs font-black text-red-600 dark:text-red-400 mb-2 block">指派後續處理人</label>
                                <select value={maintainForm.assignee} onChange={e=>setMaintainForm({...maintainForm, assignee:e.target.value})} className="w-full p-3 bg-white dark:bg-slate-700 border-2 border-red-200 dark:border-red-900/50 rounded-xl font-bold text-red-700 dark:text-red-400 outline-none">
                                  <option value="">-- 未指定 --</option>
-                                 {dbUsers.filter(u => u.role === ROLES.USER).map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
+                                 {dbUsers.filter(u => u.role === ROLES.USER && !u.isDisabled).map(u=><option key={u.id} value={u.username}>{u.username}</option>)}
                                </select>
                              </div>
                            ) : <div className="opacity-50"><label className="text-xs font-black text-slate-400 dark:text-slate-500 mb-2 block">處理人</label><input disabled value={maintainForm.assignee || '自動清除指派'} className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 rounded-xl"/></div>}
@@ -2883,7 +2969,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         <label className="text-xs font-bold text-slate-400 dark:text-slate-300 block mb-2">選擇代理人</label>
                         <select value={leaveForm.delegate} onChange={e=>setLeaveForm({...leaveForm, delegate: e.target.value})} className="w-full p-4 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
                           <option value="">-- 無代理人 --</option>
-                          {dbUsers.filter(u => u.username !== activeUser?.username && u.role === ROLES.USER).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
+                          {dbUsers.filter(u => u.username !== activeUser?.username && u.role === ROLES.USER && !u.isDisabled).map(u => <option key={u.id} value={u.username}>{u.username}</option>)}
                         </select>
                       </div>
                       <div className="flex space-x-3">
@@ -3046,7 +3132,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                                       className="w-full min-w-[100px] p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded outline-none focus:ring-2 focus:ring-blue-500 text-xs font-bold"
                                     >
                                       <option value="">-- 無 --</option>
-                                      {dbUsers.filter(user => user.username !== u.username && user.role === ROLES.USER).map(user => (
+                                      {dbUsers.filter(user => user.username !== u.username && user.role === ROLES.USER && !user.isDisabled).map(user => (
                                         <option key={user.id} value={user.username}>{user.username}</option>
                                       ))}
                                     </select>
@@ -3330,7 +3416,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         setVal={(v) => setModalEditForm({...modalEditForm, assignee: v})} 
                         type="select" 
                         options={dbUsers
-                          .filter(u => u.role !== '後台管理者' && u.role !== '系統管理員' && u.role !== '紀錄檢視者')
+                          .filter(u => !u.isDisabled && u.role !== '後台管理者' && u.role !== '系統管理員' && u.role !== '紀錄檢視者')
                           .map(u => u.username)
                         } 
                       />
