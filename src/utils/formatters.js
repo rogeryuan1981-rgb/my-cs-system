@@ -20,6 +20,12 @@ export const getLatestReply = (replies, fallbackContent) => {
   return fallbackContent || '';
 };
 
+// 舊版在「新增後保留結案進度」時可能漏寫 closeTime；createdAt 正是該筆按下儲存的時間。
+export const resolveCloseTime = (ticket) => {
+  if (!ticket || ticket.progress !== '結案') return '';
+  return ticket.closeTime || ticket.createdAt || '';
+};
+
 export const getNiceChartScale = (rawMax, targetIntervals = 5) => {
   const safeMax = Math.max(Number(rawMax) || 0, 10);
   const roughStep = safeMax / targetIntervals;

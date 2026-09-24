@@ -12,7 +12,7 @@ import { httpsCallable } from 'firebase/functions';
 import { APP_VERSION, GLOBAL_FONT_SIZE_STYLES, ROLES } from './constants/app';
 import { auth, db, storage, functions, appId, secondaryAuth } from './config/firebase';
 import { getFormatDate, getFirstDayOfMonth, getLastDayOfMonth, getToday } from './utils/date';
-import { formatNumber, formatRepliesHistory, getLatestReply } from './utils/formatters';
+import { formatNumber, formatRepliesHistory, getLatestReply, resolveCloseTime } from './utils/formatters';
 import { getEmailFromUsername, getInitialForm, normalizeCannedMessages } from './utils/tickets';
 import { useDebounce } from './hooks/useDebounce';
 import UserAvatar from './components/common/UserAvatar';
@@ -769,6 +769,8 @@ export default function App() {
       // 7. 封裝最終資料 (強制寫入剛剛同步查到的名稱與層級)
       const submissionData = { 
         ...formData, 
+        // 以真正按下儲存的時間作為結案確認時間，避免保留上一筆「結案」進度時漏寫或沿用舊時間。
+        closeTime: formData.progress === '結案' ? getFormatDate() : '',
         instCode: code.length < 10 && code !== '999' ? code.padStart(10, '0') : code,
         instName: finalInstName,
         instLevel: finalInstLevel,
@@ -885,8 +887,12 @@ export default function App() {
     try {
       const updates = { progress: maintainForm.progress };
       const nextEditLogs = [...(maintainModal.editLogs || [])];
-      if (maintainForm.progress === '結案' && maintainModal.progress !== '結案') updates.closeTime = getFormatDate();
-      else if (maintainForm.progress !== '結案' && maintainModal.closeTime) updates.closeTime = '';
+      if (maintainForm.progress === '結案') {
+        const isClosingNow = maintainModal.progress !== '結案';
+        updates.closeTime = isClosingNow ? getFormatDate() : (resolveCloseTime(maintainModal) || getFormatDate());
+      } else if (maintainModal.closeTime) {
+        updates.closeTime = '';
+      }
       updates.assignee = maintainForm.progress !== '結案' ? maintainForm.assignee : '';
 
       if (maintainForm.extraInfo !== maintainModal.extraInfo) {
@@ -941,8 +947,12 @@ export default function App() {
     if (modalEditForm.assignee && userMap[modalEditForm.assignee]?.isDisabled) return showToast('已停用帳號不能被指定為處理人。', 'error');
     setIsProcessing(true);
     try {
+      const isClosingNow = modalEditForm.progress === '結案' && viewModalTicket.progress !== '結案';
       const payload = {
         ...modalEditForm,
+        closeTime: modalEditForm.progress === '結案'
+          ? (isClosingNow ? getFormatDate() : resolveCloseTime(viewModalTicket) || getFormatDate())
+          : '',
         editLogs: [...(viewModalTicket.editLogs || []), { time: new Date().toISOString(), user: currentUser?.username || '系統員', action: '強制維護更新' }]
       };
       const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
@@ -1061,7 +1071,8 @@ export default function App() {
       '反映管道': t.channel || '', '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '', '院所名稱': t.instName || '',
       '醫療層級': t.instLevel || '', '提問人資訊': t.questioner || '', '服務項目': t.category || '', '補正': t.isCorrection === true ? '是' : '否', '案件狀態': t.status || '',
       '處理進度': t.progress || '', '建檔人': t.receiver || '', '指定處理人': t.assignee || '', '詳細問題描述': t.extraInfo || '',
-      '回覆內容(完整紀錄)': formatRepliesHistory(t.replies, t.replyContent), '結案時間(YYYY-MM-DD HH:mm)': t.closeTime ? t.closeTime.replace('T', ' ') : ''
+      '回覆內容(完整紀錄)': formatRepliesHistory(t.replies, t.replyContent),
+      '結案時間(YYYY-MM-DD HH:mm)': resolveCloseTime(t) ? resolveCloseTime(t).replace('T', ' ') : ''
     }));
     const ws = window.XLSX.utils.json_to_sheet(exportData);
     const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "客服紀錄匯出");
@@ -2882,7 +2893,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         <input type="checkbox" checked={(modalEditForm || {}).isCorrection === true} onChange={(e) => setModalEditForm({...modalEditForm, isCorrection: e.target.checked})} className="w-5 h-5 rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer" />
                         <span className="text-sm font-black text-slate-700 dark:text-slate-200">補正</span>
                       </label>
-                      <EditField label="案件進度" val={(modalEditForm || {}).progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} type="select" options={progresses} />
+                      <EditField label="案件進度" val={(modalEditForm || {}).progress} setVal={(v) => setModalEditForm({
+                        ...modalEditForm,
+                        progress: v
+                      })} type="select" options={progresses} />
                       <EditField 
                         label="負責同仁 (處理人)" 
                         val={(modalEditForm || {}).assignee || (modalEditForm || {}).receiver} 
