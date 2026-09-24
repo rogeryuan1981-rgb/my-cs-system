@@ -387,6 +387,54 @@ const CategoryMappingManager = ({ categories, mapping, showToast }) => {
   );
 };
 
+const StatusHintManager = ({ statuses, hints, showToast }) => {
+  const [localHints, setLocalHints] = useState({});
+  useEffect(() => setLocalHints(hints || {}), [hints]);
+
+  const handleSaveHints = async () => {
+    try {
+      const cleanedHints = {};
+      (Array.isArray(statuses) ? statuses : []).forEach(status => {
+        const hint = String(localHints[status] || '').trim();
+        if (hint) cleanedHints[status] = hint;
+      });
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { statusHints: cleanedHints }, { merge: true });
+      showToast('案件狀態提示文字已儲存！');
+    } catch (error) {
+      showToast('儲存案件狀態提示失敗：' + error.message, 'error');
+    }
+  };
+
+  return (
+    <div className="bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 mt-8">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+        <div>
+          <h4 className="font-black text-slate-800 dark:text-slate-100 flex items-center"><MessageSquare size={18} className="mr-2 text-indigo-600"/> 案件狀態提示文字設定</h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">提示支援多行文字；前台選定案件狀態後，將滑鼠移到該欄位即可查看。</p>
+        </div>
+        <button type="button" onClick={handleSaveHints} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm shrink-0">儲存提示文字</button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {(Array.isArray(statuses) ? statuses : []).map(status => (
+          <div key={status} className="bg-white dark:bg-slate-700 p-4 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500">
+            <label className="text-sm font-black text-slate-700 dark:text-slate-200 block mb-2">{status}</label>
+            <textarea
+              value={localHints[status] || ''}
+              onChange={e => setLocalHints(prev => ({ ...prev, [status]: e.target.value }))}
+              rows="3"
+              placeholder={`輸入「${status}」的前台提示內容…`}
+              className="w-full p-3 text-sm leading-relaxed bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none resize-y placeholder-slate-400"
+            />
+          </div>
+        ))}
+        {(!Array.isArray(statuses) || statuses.length === 0) && <p className="text-sm text-slate-400 font-bold py-4">請先在上方新增案件狀態。</p>}
+      </div>
+    </div>
+  );
+};
+
 // -------------------------------------------------
 // --- 加入防抖 Hook ---
 // -------------------------------------------------
@@ -496,6 +544,7 @@ export default function App() {
   const [progresses, setProgresses] = useState([]);
   const [cannedMessages, setCannedMessages] = useState([]);
   const [categoryMapping, setCategoryMapping] = useState({});
+  const [statusHints, setStatusHints] = useState({});
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]); 
   const [allowEmptyContent, setAllowEmptyContent] = useState(false);
@@ -725,6 +774,7 @@ export default function App() {
         setProgresses(data.progresses || []);
         setCannedMessages(data.cannedMessages || []); 
         setCategoryMapping(data.categoryMapping || {});
+        setStatusHints(data.statusHints || {});
         setOverdueHours(data.overdueHours || 24);
         setHolidays(data.holidays || []);
         setAllowEmptyContent(data.allowEmptyContent || false);
@@ -1997,7 +2047,18 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         <span className={`text-sm font-black ${formData.isCorrection ? 'text-amber-700 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>補正</span>
                       </label>
                     </div>
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">狀態 <span className="text-red-500 dark:text-red-400">*</span></label><select name="status" required value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+                    <div className="relative group">
+                      <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">案件狀態 <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <select name="status" required value={formData.status} onChange={handleFormChange} aria-describedby={formData.status && statusHints[formData.status] ? 'status-hint-tooltip' : undefined} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s} title={statusHints[s] || ''}>{s}</option>)}</select>
+                      {formData.status && statusHints[formData.status] && (
+                        <div id="status-hint-tooltip" role="tooltip" className="pointer-events-none absolute z-40 left-0 right-0 top-full mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all duration-200 translate-y-1 group-hover:translate-y-0 group-focus-within:translate-y-0">
+                          <div className="bg-slate-900 dark:bg-slate-950 text-white text-xs leading-relaxed whitespace-pre-line p-4 rounded-2xl shadow-2xl border border-slate-700">
+                            <div className="font-black text-amber-300 mb-1">{formData.status}｜提示</div>
+                            {statusHints[formData.status]}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" required value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : formData.progress === '' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}><option value="" disabled>請選擇...</option>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
                     {(formData.progress !== '結案' || currentUser?.canAssignWhenClosed) && (
                       <div className="animate-in zoom-in-95 duration-200">
@@ -2983,6 +3044,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <DropdownManager title="處理進度" dbKey="progresses" items={progresses} showToast={showToast} showConfirm={showConfirm} />
                     </div>
                   </div>
+                  <StatusHintManager statuses={statuses} hints={statusHints} showToast={showToast} />
                   <CategoryMappingManager categories={categories} mapping={categoryMapping} showToast={showToast} />
                 </div>
               )}
