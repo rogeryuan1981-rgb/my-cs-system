@@ -3192,10 +3192,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       className="w-full text-left p-4 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-2xl transition-colors border border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-700"
                     >
                       <div className="flex items-start justify-between gap-3 mb-2">
-                        <span className="text-sm font-black text-slate-800 dark:text-slate-100 whitespace-pre-line">{item.question}</span>
+                        <span className="text-sm font-black text-slate-800 dark:text-slate-100 whitespace-pre-line line-clamp-2" title={item.question}>{item.question}</span>
                         <span className="shrink-0 px-2 py-1 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400 rounded-lg text-[9px] font-black">{item.status || '舊版'}</span>
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 whitespace-pre-line"><span className="font-black text-blue-500">答：</span>{item.answer}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 whitespace-pre-line" title={item.answer}><span className="font-black text-blue-500">答：</span>{item.answer}</div>
                     </button>
                   ))}
                   {!formData.status && <div className="p-8 text-center text-xs font-bold text-amber-600 dark:text-amber-400">請先選擇案件狀態，才能顯示對應的罐頭問題。</div>}
