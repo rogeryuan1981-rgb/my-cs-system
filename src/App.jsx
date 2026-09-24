@@ -293,6 +293,18 @@ const CannedMessagesModal = ({ messages, onClose }) => {
   );
 };
 
+const normalizeCannedMessages = (messages) => (Array.isArray(messages) ? messages : []).map((item, index) => {
+  if (typeof item === 'string') {
+    return { id: `legacy-${index}`, status: '', question: item, answer: item };
+  }
+  return {
+    id: item?.id || `item-${index}`,
+    status: String(item?.status || ''),
+    question: String(item?.question || ''),
+    answer: String(item?.answer || '')
+  };
+});
+
 const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
   const [newItem, setNewItem] = useState('');
   const [draggedIdx, setDraggedIdx] = useState(null);
@@ -353,6 +365,95 @@ const DropdownManager = ({ title, dbKey, items, showToast, showConfirm }) => {
           </li>
         ))}
       </ul>
+    </div>
+  );
+};
+
+const CannedReplyManager = ({ items, statuses, showToast, showConfirm }) => {
+  const [localItems, setLocalItems] = useState([]);
+  useEffect(() => setLocalItems(normalizeCannedMessages(items)), [items]);
+
+  const updateItem = (index, field, value) => {
+    setLocalItems(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item));
+  };
+
+  const addItem = () => {
+    setLocalItems(prev => [...prev, {
+      id: `canned-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      status: Array.isArray(statuses) && statuses.length > 0 ? statuses[0] : '',
+      question: '',
+      answer: ''
+    }]);
+  };
+
+  const saveItems = async (nextItems = localItems, validateCompleteness = true) => {
+    const normalizedItems = nextItems.map(item => ({
+      id: item.id,
+      status: String(item.status || '').trim(),
+      question: String(item.question || '').trim(),
+      answer: String(item.answer || '').trim()
+    }));
+    const incomplete = normalizedItems.find(item => !item.status || !item.question || !item.answer);
+    if (validateCompleteness && incomplete) {
+      showToast('每組罐頭內容都必須選擇案件狀態，並填寫問題敘述與答覆。', 'error');
+      return false;
+    }
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { cannedMessages: normalizedItems }, { merge: true });
+      showToast('罐頭問題與答覆已儲存！');
+      return true;
+    } catch (error) {
+      showToast('儲存罐頭內容失敗：' + error.message, 'error');
+      return false;
+    }
+  };
+
+  const removeItem = (index) => {
+    const target = localItems[index];
+    showConfirm(`確定要刪除「${target?.question || '此組罐頭內容'}」嗎？`, async () => {
+      const nextItems = localItems.filter((_, itemIndex) => itemIndex !== index);
+      const saved = await saveItems(nextItems, false);
+      if (saved) setLocalItems(nextItems);
+    });
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+        <div>
+          <h3 className="font-black text-lg flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭問題與答覆設定</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">每個案件狀態可設定多組一對一的「問題敘述＋初步答覆」。</p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button type="button" onClick={addItem} className="px-5 py-3 bg-white dark:bg-slate-700 border border-indigo-200 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-50 dark:hover:bg-slate-600 font-black text-sm flex items-center"><Plus size={16} className="mr-1"/>新增組合</button>
+          <button type="button" onClick={() => saveItems()} className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md font-black text-sm"><Save size={16} className="inline mr-1"/>儲存全部</button>
+        </div>
+      </div>
+      <div className="space-y-5">
+        {localItems.map((item, index) => (
+          <div key={item.id} className="relative grid grid-cols-1 lg:grid-cols-[220px_1fr_1fr] gap-4 p-5 bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-100 dark:border-slate-700">
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">案件狀態</label>
+              <select value={item.status} onChange={e => updateItem(index, 'status', e.target.value)} className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold">
+                <option value="">請選擇狀態</option>
+                {(Array.isArray(statuses) ? statuses : []).map(status => <option key={status} value={status}>{status}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">罐頭問題敘述</label>
+              <textarea value={item.question} onChange={e => updateItem(index, 'question', e.target.value)} rows="3" placeholder="輸入詳細問題描述…" className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">罐頭問題答覆</label>
+              <textarea value={item.answer} onChange={e => updateItem(index, 'answer', e.target.value)} rows="3" placeholder="輸入對應的初步答覆…" className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
+            </div>
+            <button type="button" onClick={() => removeItem(index)} className="absolute top-3 right-3 p-2 bg-white dark:bg-slate-800 text-slate-300 hover:text-red-500 rounded-lg shadow-sm transition-colors" title="刪除此組"><Trash2 size={16}/></button>
+          </div>
+        ))}
+        {localItems.length === 0 && <div className="py-12 text-center text-sm font-bold text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-2xl">尚未設定罐頭問題與答覆，請點選「新增組合」。</div>}
+      </div>
     </div>
   );
 };
@@ -550,7 +651,7 @@ export default function App() {
   const [allowEmptyContent, setAllowEmptyContent] = useState(false);
   const [defaultIsCorrection, setDefaultIsCorrection] = useState(false);
   const [showCannedPopup, setShowCannedPopup] = useState(false);
-  const [cannedPopupTarget, setCannedPopupTarget] = useState(null);
+  const [cannedSearchTerm, setCannedSearchTerm] = useState('');
 
   const [isImportingHistory, setIsImportingHistory] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState([]); 
@@ -563,6 +664,27 @@ export default function App() {
 
   const [formData, setFormData] = useState(getInitialForm());
   const [isLookingUp, setIsLookingUp] = useState(false);
+
+  const normalizedCannedMessages = useMemo(() => normalizeCannedMessages(cannedMessages), [cannedMessages]);
+  const filteredCannedMessages = useMemo(() => {
+    if (!formData.status) return [];
+    const keyword = cannedSearchTerm.trim().toLowerCase();
+    return normalizedCannedMessages.filter(item => {
+      const matchesStatus = item.status === formData.status;
+      const searchableText = `${item.question} ${item.answer}`.toLowerCase();
+      return matchesStatus && (!keyword || searchableText.includes(keyword));
+    });
+  }, [normalizedCannedMessages, formData.status, cannedSearchTerm]);
+
+  const handleSelectCannedMessage = (item) => {
+    setFormData(prev => ({
+      ...prev,
+      extraInfo: prev.extraInfo ? `${prev.extraInfo}\n${item.question}` : item.question,
+      replyContent: prev.replyContent ? `${prev.replyContent}\n${item.answer}` : item.answer
+    }));
+    setShowCannedPopup(false);
+    setCannedSearchTerm('');
+  };
 
   useEffect(() => {
     setFormData(prev => ({
@@ -2072,17 +2194,16 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   </div>
                   <div className="space-y-6">
                       <div>
-                        <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">詳細問題描述 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400">*</span>}</label>
-                        <textarea name="extraInfo" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.extraInfo} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder="請詳細描述客戶的問題..."></textarea>
+                        <label className="text-xs font-bold mb-2 text-slate-700 dark:text-slate-300 flex items-center">詳細問題描述 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}{showCannedPopup && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>罐頭問題選擇中</span>}</label>
+                        <textarea id="extraInfo" name="extraInfo" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.extraInfo} onChange={handleFormChange} onFocus={() => setShowCannedPopup(true)} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500" placeholder={formData.status ? "可直接輸入，或從右下角選擇罐頭問題…" : "請先選擇案件狀態，再輸入或選擇問題…"}></textarea>
                       </div>
                       <div>
                         <div className="flex justify-between items-end mb-2">
                           <label className="text-xs font-bold block text-slate-700 dark:text-slate-300 flex items-center">
                             給予的初步答覆 {!allowEmptyContent && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
-                            {cannedPopupTarget === 'form' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
                           </label>
                         </div>
-                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} onFocus={() => { setCannedPopupTarget('form'); setShowCannedPopup(true); }} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" placeholder="點擊此處，右下角即可快速選擇罐頭文字..."></textarea>
+                        <textarea id="replyContent" name="replyContent" required={!allowEmptyContent} minLength={allowEmptyContent ? "0" : "2"} value={formData.replyContent} onChange={handleFormChange} rows="4" className="w-full p-5 border border-slate-200 dark:border-slate-600 rounded-3xl outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/30 dark:bg-blue-900/20 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" placeholder="選擇罐頭問題後將自動帶入對應答覆，也可自行修改..."></textarea>
                       </div>
                     </div>
                 </div>
@@ -2208,16 +2329,14 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                            <div className="flex justify-between items-end mb-2">
                              <label className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center">
                                追加新答覆 / 註記
-                               {cannedPopupTarget === 'maintenance' && <span className="ml-3 text-[10px] text-blue-500 font-black animate-pulse flex items-center"><MessageSquare size={12} className="mr-1"/>快速插入啟動中</span>}
                              </label>
                            </div>
                            <textarea 
                              value={maintainForm.newReply} 
                              onChange={e=>setMaintainForm({...maintainForm, newReply:e.target.value})} 
-                             onFocus={() => { setCannedPopupTarget('maintenance'); setShowCannedPopup(true); }}
                              rows="4" 
                              className="w-full p-4 bg-blue-50/30 dark:bg-blue-900/20 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400 dark:placeholder-slate-500 transition-colors" 
-                             placeholder="點擊此處，右下角即可快速選擇罐頭文字..."
+                             placeholder="輸入追加答覆或註記..."
                            ></textarea>
                          </div>
                        </form>
@@ -2775,11 +2894,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   </div>
 
                   {currentUser.role !== ROLES.VIEWER && (
-                    <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-700 shadow-sm mb-8">
-                      <h3 className="font-black text-lg mb-6 flex items-center text-slate-800 dark:text-slate-100"><MessageSquare size={20} className="mr-2 text-indigo-600 dark:text-indigo-400"/> 罐頭文字維護</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">新增的文字將自動顯示在所有人的「新增紀錄」與「紀錄維護」彈窗面板中。</p>
-                      <DropdownManager title="常用回覆範本" dbKey="cannedMessages" items={cannedMessages} showToast={showToast} showConfirm={showConfirm} />
-                    </div>
+                    <CannedReplyManager items={cannedMessages} statuses={statuses} showToast={showToast} showConfirm={showConfirm} />
                   )}
                 </>
               )}
@@ -3053,32 +3168,38 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
 
           {/* 右下角自動感應罐頭視窗 */}
           {showCannedPopup && (
-            <div className="fixed bottom-6 right-6 z-[60] w-80 animate-in slide-in-from-right-10 duration-300">
-              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-blue-100 dark:border-slate-700 flex flex-col max-h-[400px] overflow-hidden">
+            <div className="fixed bottom-6 right-6 z-[60] w-[calc(100vw-3rem)] sm:w-96 animate-in slide-in-from-right-10 duration-300">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-blue-100 dark:border-slate-700 flex flex-col max-h-[560px] overflow-hidden">
                 <div className="p-4 border-b border-slate-50 dark:border-slate-700 flex justify-between items-center bg-blue-50/50 dark:bg-slate-900/50">
-                  <span className="text-sm font-black text-blue-600 flex items-center"><MessageSquare size={16} className="mr-2"/> 快速插入回覆</span>
-                  <button onClick={() => setShowCannedPopup(false)} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
+                  <div>
+                    <span className="text-sm font-black text-blue-600 flex items-center"><MessageSquare size={16} className="mr-2"/> 選擇罐頭問題</span>
+                    <span className="text-[10px] font-bold text-slate-400 mt-1 block">案件狀態：{formData.status || '尚未選擇'}</span>
+                  </div>
+                  <button onClick={() => { setShowCannedPopup(false); setCannedSearchTerm(''); }} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
                 </div>
-                <div className="p-2 overflow-y-auto space-y-1">
-                  {cannedMessages.map((m, idx) => (
+                <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+                  <div className="relative">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                    <input type="text" value={cannedSearchTerm} onChange={e => setCannedSearchTerm(e.target.value)} placeholder="搜尋問題或答覆關鍵字…" className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-sm text-slate-800 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                <div className="p-2 overflow-y-auto space-y-2">
+                  {filteredCannedMessages.map((item) => (
                     <button
-                      key={idx}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        if (cannedPopupTarget === 'form') {
-                          const separator = formData.replyContent ? "\n" : "";
-                          setFormData(prev => ({ ...prev, replyContent: prev.replyContent + separator + m }));
-                        } else if (cannedPopupTarget === 'maintenance') {
-                          const separator = maintainForm.newReply ? "\n" : "";
-                          setMaintainForm(prev => ({ ...prev, newReply: prev.newReply + separator + m }));
-                        }
-                      }}
-                      className="w-full text-left p-3 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors border border-transparent hover:border-blue-100"
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleSelectCannedMessage(item)}
+                      className="w-full text-left p-4 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-2xl transition-colors border border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-700"
                     >
-                      {m}
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <span className="text-sm font-black text-slate-800 dark:text-slate-100 whitespace-pre-line">{item.question}</span>
+                        <span className="shrink-0 px-2 py-1 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400 rounded-lg text-[9px] font-black">{item.status || '舊版'}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 whitespace-pre-line"><span className="font-black text-blue-500">答：</span>{item.answer}</div>
                     </button>
                   ))}
-                  {cannedMessages.length === 0 && <div className="p-4 text-center text-xs text-slate-400">目前尚無罐頭文字</div>}
+                  {!formData.status && <div className="p-8 text-center text-xs font-bold text-amber-600 dark:text-amber-400">請先選擇案件狀態，才能顯示對應的罐頭問題。</div>}
+                  {formData.status && filteredCannedMessages.length === 0 && <div className="p-8 text-center text-xs text-slate-400">此案件狀態目前沒有符合的罐頭問題</div>}
                 </div>
               </div>
             </div>
@@ -3089,8 +3210,9 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
             <div 
               className="fixed inset-0 z-50 pointer-events-auto" 
               onClick={(e) => {
-                if (e.target.id !== 'replyContent' && !e.target.closest('.fixed.bottom-6.right-6')) {
+                if (e.target.id !== 'extraInfo' && !e.target.closest('.fixed.bottom-6.right-6')) {
                    setShowCannedPopup(false);
+                   setCannedSearchTerm('');
                 }
               }}
             />
