@@ -70,10 +70,11 @@ const getToday = () => {
 
 const getEmailFromUsername = (username) => `${encodeURIComponent(username).replace(/%/g, '_')}@cs.local`.toLowerCase();
 
-const getInitialForm = (username = '', channelsArr = [], progressesArr = []) => ({
+const getInitialForm = (username = '', channelsArr = [], progressesArr = [], defaultIsCorrection = false) => ({
   receiveTime: getFormatDate(), callEndTime: '',
   channel: Array.isArray(channelsArr) && channelsArr.length > 0 ? channelsArr[0] : '',
   receiver: username, instCode: '', instName: '', instLevel: '', category: '', status: '',
+  isCorrection: Boolean(defaultIsCorrection),
   extraInfo: '', questioner: '', replyContent: '', closeTime: '',
   progress: Array.isArray(progressesArr) && progressesArr.length > 0 ? progressesArr[0] : '待處理',
   assignee: '', replies: [], editLogs: []
@@ -498,6 +499,7 @@ export default function App() {
   const [overdueHours, setOverdueHours] = useState(24);
   const [holidays, setHolidays] = useState([]); 
   const [allowEmptyContent, setAllowEmptyContent] = useState(false);
+  const [defaultIsCorrection, setDefaultIsCorrection] = useState(false);
   const [showCannedPopup, setShowCannedPopup] = useState(false);
   const [cannedPopupTarget, setCannedPopupTarget] = useState(null);
 
@@ -559,6 +561,7 @@ export default function App() {
   
   const [trendCategory, setTrendCategory] = useState('全類別');
   const [categoryViewMode, setCategoryViewMode] = useState('detail');
+  const [correctionFilter, setCorrectionFilter] = useState('');
   const [personnelViewMode, setPersonnelViewMode] = useState('assignee');
 
   const [settingsTab, setSettingsTab] = useState('general');
@@ -725,6 +728,9 @@ export default function App() {
         setOverdueHours(data.overdueHours || 24);
         setHolidays(data.holidays || []);
         setAllowEmptyContent(data.allowEmptyContent || false);
+        const correctionDefault = Boolean(data.defaultIsCorrection);
+        setDefaultIsCorrection(correctionDefault);
+        setFormData(prev => ({ ...prev, isCorrection: correctionDefault }));
       } else {
         // 🛡️ 防護修正：資料不存在時，僅在 Console 提示，絕對不自動寫入預設值
         console.warn("⚠️ 系統警示：找不到 cs_settings 設定文件，請檢查資料庫路徑或手動於後台重新設定。");
@@ -773,7 +779,7 @@ export default function App() {
 
       if (matchedUser) {
         if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', matchedUser.username);
-        setFormData(getInitialForm(matchedUser.username, channels, progresses));
+        setFormData(getInitialForm(matchedUser.username, channels, progresses, defaultIsCorrection));
         if (matchedUser.forcePasswordChange) setShowForcePwdModal(true);
         else setActiveTab(matchedUser.role === ROLES.VIEWER ? 'list' : 'form');
         setAuthError('');
@@ -791,7 +797,7 @@ export default function App() {
             await setPersistence(auth, browserSessionPersistence);
             await createUserWithEmailAndPassword(auth, email, loginForm.password);
             if (typeof localStorage !== 'undefined') localStorage.setItem('cs_last_user', legacyUser.username);
-            setFormData(getInitialForm(legacyUser.username, channels, progresses));
+            setFormData(getInitialForm(legacyUser.username, channels, progresses, defaultIsCorrection));
             setActiveTab(legacyUser.role === ROLES.VIEWER ? 'list' : 'form'); setAuthError('');
           } catch (createErr) {
             if (createErr.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
@@ -823,7 +829,7 @@ export default function App() {
       
       setAuthError('');
       setActiveTab('form');
-      setFormData(getInitialForm(trimmedUsername, channels, progresses));
+      setFormData(getInitialForm(trimmedUsername, channels, progresses, defaultIsCorrection));
     } catch (e) { 
       if (e.code === 'auth/operation-not-allowed') setAuthError('❌ 請先至 Firebase 後台啟用「電子郵件/密碼」登入！');
       else setAuthError('建立失敗：' + e.message); 
@@ -941,6 +947,18 @@ export default function App() {
       showToast(!currentValue ? "彈性建檔已開啟：現在可以空白建檔！" : "彈性建檔已關閉：恢復必填限制！");
     } catch (e) {
       showToast("更新參數失敗：" + e.message, 'error');
+    }
+  };
+
+  const handleToggleDefaultCorrection = async (currentValue) => {
+    if (currentUser?.role !== ROLES.ADMIN) return;
+    try {
+      const baseDbPath = typeof __app_id !== 'undefined' ? ['artifacts', appId, 'public', 'data'] : [];
+      const docRef = baseDbPath.length ? doc(db, ...baseDbPath, 'cs_settings', 'dropdowns') : doc(db, 'cs_settings', 'dropdowns');
+      await setDoc(docRef, { defaultIsCorrection: !currentValue }, { merge: true });
+      showToast(!currentValue ? '新增紀錄將預設勾選「補正」' : '新增紀錄將預設為「非補正」');
+    } catch (e) {
+      showToast('更新補正預設值失敗：' + e.message, 'error');
     }
   };
   
@@ -1070,8 +1088,9 @@ export default function App() {
   };
 
   const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    let newFormData = { ...formData, [name]: value };
+    const { name, value, type, checked } = e.target;
+    const fieldValue = type === 'checkbox' ? checked : value;
+    let newFormData = { ...formData, [name]: fieldValue };
     if (name === 'progress' && value === '結案' && !formData.closeTime) newFormData.closeTime = getFormatDate();
     if (name === 'progress' && value !== '結案' && formData.closeTime) newFormData.closeTime = '';
     if (name === 'progress' && value === '結案' && !currentUser?.canAssignWhenClosed) newFormData.assignee = '';
@@ -1171,7 +1190,7 @@ export default function App() {
       // 9. 成功後的狀態更新與表單重置 (保留您原有的邏輯)
       setSubmitStatus({ type: 'success', msg: `案件 ${newTicketId} 建立成功！` });
       setFormData(prev => ({
-        ...getInitialForm(currentUser.username, channels, progresses),
+        ...getInitialForm(currentUser.username, channels, progresses, defaultIsCorrection),
         channel: (Array.isArray(channels) && channels.includes(prev.channel)) ? prev.channel : (channels[0] || ''),
         category: '', status: '',
         progress: (Array.isArray(progresses) && progresses.includes(prev.progress)) ? prev.progress : (progresses[0] || '待處理')
@@ -1373,7 +1392,7 @@ export default function App() {
       '狀態標記': t.isDeleted ? '已刪除' : '正常',
       '案件號': t.ticketId || '', '接收時間(YYYY-MM-DD HH:mm)': t.receiveTime ? t.receiveTime.replace('T', ' ') : '',
       '反映管道': t.channel || '', '院所代碼': t.instCode ? String(t.instCode) + '\u200B' : '', '院所名稱': t.instName || '',
-      '醫療層級': t.instLevel || '', '提問人資訊': t.questioner || '', '業務類別': t.category || '', '案件狀態': t.status || '',
+      '醫療層級': t.instLevel || '', '提問人資訊': t.questioner || '', '服務項目': t.category || '', '補正': t.isCorrection === true ? '是' : '否', '案件狀態': t.status || '',
       '處理進度': t.progress || '', '建檔人': t.receiver || '', '指定處理人': t.assignee || '', '詳細問題描述': t.extraInfo || '',
       '回覆內容(完整紀錄)': formatRepliesHistory(t.replies, t.replyContent), '結案時間(YYYY-MM-DD HH:mm)': t.closeTime ? t.closeTime.replace('T', ' ') : ''
     }));
@@ -1404,7 +1423,7 @@ export default function App() {
 
   const handleDownloadTemplate = () => {
     if (!window.XLSX) return showToast("Excel 模組尚未載入完成，請稍後再試。", 'error');
-    const headers = ['案件號', '接收時間(YYYY-MM-DD HH:mm)', '反映管道', '院所代碼', '院所名稱', '醫療層級', '提問人資訊', '業務類別', '案件狀態', '處理進度', '建檔人', '指定處理人', '詳細問題描述', '回覆內容(完整紀錄)', '結案時間(YYYY-MM-DD HH:mm)'];
+    const headers = ['案件號', '接收時間(YYYY-MM-DD HH:mm)', '反映管道', '院所代碼', '院所名稱', '醫療層級', '提問人資訊', '服務項目', '補正', '案件狀態', '處理進度', '建檔人', '指定處理人', '詳細問題描述', '回覆內容(完整紀錄)', '結案時間(YYYY-MM-DD HH:mm)'];
     const ws = window.XLSX.utils.aoa_to_sheet([headers]); const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, "匯入範本"); window.XLSX.writeFile(wb, "歷史紀錄匯入範本.xlsx");
   };
@@ -1422,7 +1441,8 @@ export default function App() {
         const validRows = [];
         jsonData.forEach((row) => {
           const rawTime = row['接收時間(YYYY-MM-DD HH:mm)'] || row['接收時間'];
-          if (rawTime && row['反映管道'] && row['業務類別'] && row['案件狀態'] && row['處理進度'] && row['建檔人']) validRows.push(row);
+          const serviceItem = row['服務項目'] || row['業務類別'] || row['類別'];
+          if (rawTime && row['反映管道'] && serviceItem && row['案件狀態'] && row['處理進度'] && row['建檔人']) validRows.push(row);
         });
 
         if (validRows.length > 5000) {
@@ -1441,7 +1461,9 @@ export default function App() {
             ticketId: String(row['案件號'] || '').trim() || '歷史資料匯入', receiveTime: rTime, channel: String(row['反映管道']).trim(),
             instCode: String(row['院所代碼'] || '').replace('\u200B', '').trim(), instName: String(row['院所名稱'] || '').trim(),
             instLevel: String(row['醫療層級'] || '').trim(), questioner: String(row['提問人資訊'] || '').trim(),
-            category: String(row['業務類別']).trim(), status: String(row['案件狀態']).trim(), progress: String(row['處理進度']).trim(),
+            category: String(row['服務項目'] || row['業務類別'] || row['類別']).trim(),
+            isCorrection: ['是', '補正', 'true', '1', 'yes', 'y'].includes(String(row['補正'] || '').trim().toLowerCase()),
+            status: String(row['案件狀態']).trim(), progress: String(row['處理進度']).trim(),
             receiver: String(row['建檔人']).trim(), assignee: String(row['指定處理人'] || '').trim(), extraInfo: String(row['詳細問題描述'] || '').trim(),
             replyContent: String(row['回覆內容(完整紀錄)'] || row['回覆內容'] || '').trim(), closeTime: cTime, replies: [], createdAt: new Date().toISOString(), isImported: true, isDeleted: false
           };
@@ -1586,7 +1608,7 @@ export default function App() {
       // 偵測各種可能遺失的必填欄位
       if (!t.receiver || t.receiver.trim() === '') reasons.push('建檔人空白');
       if (!t.channel || t.channel.trim() === '') reasons.push('管道空白');
-      if (!t.category || t.category.trim() === '') reasons.push('類別空白');
+      if (!t.category || t.category.trim() === '') reasons.push('服務項目空白');
       if (!t.status || t.status.trim() === '') reasons.push('狀態空白');
       if (!t.progress || t.progress.trim() === '') reasons.push('進度空白');
       if (!t.instCode || t.instCode.trim() === '') reasons.push('院所代碼空白');
@@ -1622,7 +1644,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
   if (!paginatedData || paginatedData.length === 0) {
     return (
       <tr>
-        <td colSpan={isSelectable ? "7" : "6"} className="p-20 text-center text-slate-400 font-black text-lg">
+        <td colSpan={isSelectable ? "8" : "7"} className="p-20 text-center text-slate-400 font-black text-lg">
           查無相關歷史紀錄
         </td>
       </tr>
@@ -1665,10 +1687,16 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
           <div className="text-xs font-mono text-slate-400 mt-1">{t.instCode}</div>
         </td>
 
-        {/* ▼ 新增：管道與類別 ▼ */}
+        {/* ▼ 服務項目與管道 ▼ */}
         <td className="p-6 align-middle">
           <div className="font-black text-sm text-slate-700 dark:text-slate-200">{t.category || '-'}</div>
           <div className="text-xs font-bold text-slate-400 mt-1">{t.channel || '-'}</div>
+        </td>
+
+        <td className="p-6 align-middle text-center">
+          <span className={`inline-flex px-3 py-1.5 rounded-xl text-xs font-black ${t.isCorrection === true ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+            {t.isCorrection === true ? '補正' : '非補正'}
+          </span>
         </td>
 
         {/* ▼ 新增：問題簡述 (限制寬度與最高2行) ▼ */}
@@ -1733,11 +1761,16 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     const categoryData = {}; const aggregatedCategoryData = {};
     const safeCategories = Array.isArray(categories) ? categories : [];
     safeCategories.forEach(c => categoryData[c] = 0);
+    const categoryRangeTickets = rangeTickets.filter(t => {
+      if (correctionFilter === 'correction') return t.isCorrection === true;
+      if (correctionFilter === 'nonCorrection') return t.isCorrection !== true;
+      return true;
+    });
     
     const assigneeData = {};
     const regionData = {};
 
-    rangeTickets.forEach(t => {
+    categoryRangeTickets.forEach(t => {
       if (safeCategories.includes(t.category)) categoryData[t.category] = (categoryData[t.category] || 0) + 1;
       else categoryData['已停用類別'] = (categoryData['已停用類別'] || 0) + 1;
     });
@@ -1776,7 +1809,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
     });
 
   return { total, pending, resolved, completionRate, todayTotal, todayPending, todayResolved, todayCompletionRate, categoryData, aggregatedCategoryData, trendData, monthLabels, assigneeData, regionData };
-  }, [tickets, dashStartDate, dashEndDate, personnelStartDate, personnelEndDate, trendCategory, categories, categoryMapping, userMap]);
+  }, [tickets, dashStartDate, dashEndDate, personnelStartDate, personnelEndDate, trendCategory, categories, categoryMapping, correctionFilter, userMap]);
 
 
   if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div></div>;
@@ -1956,7 +1989,14 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                 <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
                   <h3 className="font-black mb-6 flex items-center text-blue-600 dark:text-blue-400 tracking-wide uppercase text-sm"><FileText size={18} className="mr-2"/> 案件內容與指派</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">類別 <span className="text-red-500 dark:text-red-400">*</span></label><select name="category" required value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                    <div>
+                      <label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">服務項目 <span className="text-red-500 dark:text-red-400">*</span></label>
+                      <select name="category" required value={formData.category} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}</select>
+                      <label className={`mt-3 flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${formData.isCorrection ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700' : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600 hover:border-amber-300'}`}>
+                        <input type="checkbox" name="isCorrection" checked={formData.isCorrection === true} onChange={handleFormChange} className="w-5 h-5 rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer" />
+                        <span className={`text-sm font-black ${formData.isCorrection ? 'text-amber-700 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>補正</span>
+                      </label>
+                    </div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">狀態 <span className="text-red-500 dark:text-red-400">*</span></label><select name="status" required value={formData.status} onChange={handleFormChange} className="w-full p-3 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"><option value="" disabled>請選擇...</option>{(Array.isArray(statuses)?statuses:[]).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
                     <div><label className="text-xs font-bold mb-2 block text-slate-700 dark:text-slate-300">進度 <span className="text-red-500 dark:text-red-400">*</span></label><select name="progress" required value={formData.progress} onChange={handleFormChange} className={`w-full p-3 border border-slate-200 dark:border-slate-600 rounded-2xl font-black outline-none focus:ring-2 ${formData.progress === '結案' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 focus:ring-green-500' : formData.progress === '待處理' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 focus:ring-red-500' : formData.progress === '' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100' : 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 focus:ring-orange-500'}`}><option value="" disabled>請選擇...</option>{(Array.isArray(progresses)?progresses:[]).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
                     {(formData.progress !== '結案' || currentUser?.canAssignWhenClosed) && (
@@ -2025,7 +2065,10 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                          <span className="text-[10px] font-mono text-slate-300 dark:text-slate-500">#{t.ticketId || t.id.slice(0,8)}</span>
                        </div>
                        <div className="flex justify-between items-start mb-4 mt-2">
-                          <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase ${t.progress==='結案'?'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400':t.progress==='待處理'?'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400':'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400'}`}>{t.progress}</span>
+                            <span className={`px-3 py-1 rounded-xl text-[10px] font-black ${t.isCorrection === true ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>{t.isCorrection === true ? '補正' : '非補正'}</span>
+                          </div>
                           <span className="text-xs font-bold text-slate-400 dark:text-slate-500 mt-1">{new Date(t.receiveTime).toLocaleDateString()}</span>
                        </div>
                        <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{t.instName || '無特定院所'}</h4>
@@ -2180,7 +2223,8 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <tr>
                         {renderSortHeader('案號 / 日期', 'receiveTime')}
                         {renderSortHeader('院所與代碼', 'instCode')}
-                        {renderSortHeader('類別與管道', 'category')}
+                        {renderSortHeader('服務項目與管道', 'category')}
+                        {renderSortHeader('補正', 'isCorrection', 'center')}
                         {renderSortHeader('問題簡述', 'extraInfo')}
                         {renderSortHeader('建檔/處理同仁', 'receiver')}
                         {renderSortHeader('當前狀態', 'progress')}
@@ -2263,7 +2307,8 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                          </th>
                           {renderSortHeader('案號 / 日期', 'receiveTime')}
                           {renderSortHeader('院所與代碼', 'instCode')}
-                          {renderSortHeader('類別與管道', 'category')}
+                          {renderSortHeader('服務項目與管道', 'category')}
+                          {renderSortHeader('補正', 'isCorrection', 'center')}
                           {renderSortHeader('問題簡述', 'extraInfo')}
                           {renderSortHeader('建檔/處理同仁', 'receiver')}
                           {renderSortHeader('當前狀態', 'progress')}
@@ -2476,7 +2521,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                     <div>
                       <div className="flex items-center space-x-4">
-                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務類別分佈</h3>
+                        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100">服務項目分佈</h3>
                         <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
                           <button onClick={() => setCategoryViewMode('detail')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'detail' ? 'bg-white dark:bg-slate-600 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>細項類別</button>
                           <button onClick={() => setCategoryViewMode('major')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${categoryViewMode === 'major' ? 'bg-white dark:bg-slate-600 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>大類別彙整</button>
@@ -2484,11 +2529,18 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       </div>
                       <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 font-black italic">💡 點擊下方標籤或長條可直接跳轉歷史查詢區</p>
                     </div>
-                    <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
-                      <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
-                      <input type={dashStartDate ? "date" : "text"} placeholder="YYYY/MM/DD" onFocus={(e) => e.target.type = 'date'} onBlur={(e) => { if(!e.target.value) e.target.type = 'text'; }} value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
-                      <span className="text-slate-300 dark:text-slate-500 font-bold">~</span>
-                      <input type={dashEndDate ? "date" : "text"} placeholder="YYYY/MM/DD" onFocus={(e) => e.target.type = 'date'} onBlur={(e) => { if(!e.target.value) e.target.type = 'text'; }} value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select value={correctionFilter} onChange={e => setCorrectionFilter(e.target.value)} className="p-3 bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600 text-sm font-black text-slate-700 dark:text-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500">
+                        <option value="">全部（補正＋非補正）</option>
+                        <option value="correction">補正</option>
+                        <option value="nonCorrection">非補正</option>
+                      </select>
+                      <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-2xl border border-slate-100 dark:border-slate-600">
+                        <Calendar size={16} className="text-slate-400 dark:text-slate-400 ml-2"/>
+                        <input type={dashStartDate ? "date" : "text"} placeholder="YYYY/MM/DD" onFocus={(e) => e.target.type = 'date'} onBlur={(e) => { if(!e.target.value) e.target.type = 'text'; }} value={dashStartDate} onChange={e=>setDashStartDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"/>
+                        <span className="text-slate-300 dark:text-slate-500 font-bold">~</span>
+                        <input type={dashEndDate ? "date" : "text"} placeholder="YYYY/MM/DD" onFocus={(e) => e.target.type = 'date'} onBlur={(e) => { if(!e.target.value) e.target.type = 'text'; }} value={dashEndDate} onChange={e=>setDashEndDate(e.target.value)} className="bg-transparent text-sm font-black text-slate-700 dark:text-slate-200 outline-none cursor-pointer mr-2 [color-scheme:light] dark:[color-scheme:dark]"/>
+                      </div>
                     </div>
                   </div>
                   
@@ -2537,7 +2589,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                       <p className="text-xs text-slate-400 dark:text-slate-50 mt-1 font-bold">觀測各管道每月份案件數量波動</p>
                     </div>
                     <select value={trendCategory} onChange={e=>setTrendCategory(e.target.value)} className="p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-xl font-black text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="全類別">-- 綜合全類別 --</option>
+                      <option value="全類別">-- 綜合全服務項目 --</option>
                       {(Array.isArray(categories)?categories:[]).map(c=><option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
@@ -2706,6 +2758,24 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                         className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none shadow-inner ${allowEmptyContent ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
                       >
                         <span className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${allowEmptyContent ? 'translate-x-6' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between p-6 mt-4 bg-slate-50 dark:bg-slate-700/50 rounded-[1.5rem] border border-slate-100 dark:border-slate-600 transition-colors">
+                      <div className="pr-6">
+                        <div className="font-black text-sm text-slate-800 dark:text-slate-100 mb-1 flex items-center">
+                          新增紀錄預設勾選「補正」
+                          {defaultIsCorrection && <span className="ml-3 bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-2 py-0.5 rounded text-[10px] uppercase tracking-widest">已啟用</span>}
+                        </div>
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
+                          控制新增紀錄區「補正」核取方塊的預設狀態；使用者建檔時仍可自行取消或勾選。
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleToggleDefaultCorrection(defaultIsCorrection)}
+                        aria-label="切換新增紀錄補正預設值"
+                        className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none shadow-inner ${defaultIsCorrection ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${defaultIsCorrection ? 'translate-x-6' : 'translate-x-0'}`} />
                       </button>
                     </div>
                   </div>
@@ -2908,7 +2978,7 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-bold flex items-center"><AlertCircle size={14} className="mr-1 text-orange-500 dark:text-orange-400"/> 提示：按住項目左側的把手圖示可拖曳調整順序；系統預設以「結案」兩字計算完成率。</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                       <DropdownManager title="反映管道" dbKey="channels" items={channels} showToast={showToast} showConfirm={showConfirm} />
-                      <DropdownManager title="業務類別" dbKey="categories" items={categories} showToast={showToast} showConfirm={showConfirm} />
+                      <DropdownManager title="服務項目" dbKey="categories" items={categories} showToast={showToast} showConfirm={showConfirm} />
                       <DropdownManager title="案件狀態" dbKey="statuses" items={statuses} showToast={showToast} showConfirm={showConfirm} />
                       <DropdownManager title="處理進度" dbKey="progresses" items={progresses} showToast={showToast} showConfirm={showConfirm} />
                     </div>
@@ -3031,7 +3101,8 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                   <div className="space-y-8 animate-in fade-in">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                        <InfoCard label="反映管道" value={viewModalTicket.channel} />
-                       <InfoCard label="業務類別" value={viewModalTicket.category} />
+                       <InfoCard label="服務項目" value={viewModalTicket.category} />
+                       <InfoCard label="補正" value={viewModalTicket.isCorrection === true ? '是' : '否'} isHighlight={viewModalTicket.isCorrection === true} />
                        <InfoCard label="處理負責人" value={viewModalTicket.assignee || viewModalTicket.receiver} isHighlight={!!viewModalTicket.assignee} />
                        <InfoCard label="案件進度" value={viewModalTicket.progress} isHighlight={viewModalTicket.progress === '結案'} />
                     </div>
@@ -3063,7 +3134,11 @@ const renderTicketTable = (data, currentPage, setCurrentPage, isSelectable = fal
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 dark:bg-slate-900/50 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-700">
                       <EditField label="反映管道" val={(modalEditForm || {}).channel} setVal={(v) => setModalEditForm({...modalEditForm, channel: v})} type="select" options={channels} />
-                      <EditField label="業務類別" val={(modalEditForm || {}).category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} type="select" options={categories} />
+                      <EditField label="服務項目" val={(modalEditForm || {}).category} setVal={(v) => setModalEditForm({...modalEditForm, category: v})} type="select" options={categories} />
+                      <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${(modalEditForm || {}).isCorrection === true ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>
+                        <input type="checkbox" checked={(modalEditForm || {}).isCorrection === true} onChange={(e) => setModalEditForm({...modalEditForm, isCorrection: e.target.checked})} className="w-5 h-5 rounded border-slate-300 text-amber-500 focus:ring-amber-500 cursor-pointer" />
+                        <span className="text-sm font-black text-slate-700 dark:text-slate-200">補正</span>
+                      </label>
                       <EditField label="案件進度" val={(modalEditForm || {}).progress} setVal={(v) => setModalEditForm({...modalEditForm, progress: v})} type="select" options={progresses} />
                       <EditField 
                         label="負責同仁 (處理人)" 
